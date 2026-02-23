@@ -1,0 +1,23 @@
+[package]
+name = "rustflexstack"
+version = "0.1.0"
+edition = "2021"
+description = "ETSI C-ITS GeoNetworking and BTP protocol stack in Rust"
+license = "AGPL-3.0-only"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "rustflexstack"
+path = "src/lib.rs"
+
+
+[dependencies]
+pnet = "0.34.0"
+rand = "0.8"
+libc = "0.2"
+rasn = "0.26"
+
+[[example]]
+name = "cam_sender_receiver"
+path = "examples/cam_sender_receiver.rs"
