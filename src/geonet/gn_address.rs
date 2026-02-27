@@ -94,8 +94,9 @@ impl ST{
     }
 
     pub fn decode_from_address(address: u64) -> Self{
-        // Station type occupies bits 58-62 (bits 3-7 of the most significant byte)
-        match (address >> (8 * 7 + 3)) & 0x1F {
+        // Station type occupies bits 62-58 (bits 6-2 of the most significant byte)
+        // Bit 63 is M (manual/derived), so ST starts at bit 62
+        match (address >> (8 * 7 + 2)) & 0x1F {
             0 => ST::Unknown,
             1 => ST::Pedestrian,
             2 => ST::Cyclist,
@@ -109,7 +110,7 @@ impl ST{
             10 => ST::SpecialVehicle,
             11 => ST::Tram,
             12 => ST::RoadSideUnit,
-            _ => panic!("Invalid ST value"),
+            _ => ST::Unknown,
         }
     }
 }

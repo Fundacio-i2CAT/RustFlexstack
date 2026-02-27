@@ -125,7 +125,7 @@ impl UnspecifiedHST{
 }
 
 #[derive(Clone, PartialEq, Copy, Debug)]
-pub enum GeoAnycastHST{
+pub enum GeoAnycastHST {
     GeoAnycastCircle,
     GeoAnycastRectangle,
     GeoAnycastEllipse,
@@ -151,7 +151,7 @@ impl GeoAnycastHST {
 }
 
 #[derive(Clone, PartialEq, Copy, Debug)]
-pub enum GeoBroadcastHST{
+pub enum GeoBroadcastHST {
     GeoBroadcastCircle,
     GeoBroadcastRectangle,
     GeoBroadcastEllipse,
@@ -177,7 +177,7 @@ impl GeoBroadcastHST {
 }
 
 #[derive(Clone, PartialEq, Copy, Debug)]
-pub enum TopoBroadcastHST{
+pub enum TopoBroadcastHST {
     SingleHop,
     MultiHop,
 }
@@ -201,7 +201,7 @@ impl TopoBroadcastHST {
 }
 
 #[derive(Clone, PartialEq, Copy, Debug)]
-pub enum LocationServiceHST{
+pub enum LocationServiceHST {
     LsRequest,
     LsReply,
 }
