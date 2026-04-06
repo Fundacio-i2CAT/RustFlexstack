@@ -17,8 +17,21 @@ pnet = "0.34.0"
 rand = "0.8"
 libc = "0.2"
 rasn = "0.26"
+rasn-compiler = { version = "0.9", optional = true }
+sha2 = "0.10"
+p256 = { version = "0.13", features = ["ecdsa", "ecdsa-core"] }
+ecdsa = { version = "0.16", features = ["signing", "verifying"] }
+elliptic-curve = { version = "0.13", features = ["sec1"] }
 
 [[example]]
 name = "cam_sender_receiver"
 path = "examples/cam_sender_receiver.rs"
+
+[[example]]
+name = "generate_certificate_chain"
+path = "examples/generate_certificate_chain.rs"
+
+[[example]]
+name = "secured_cam_sender_receiver"
+path = "examples/secured_cam_sender_receiver.rs"
 

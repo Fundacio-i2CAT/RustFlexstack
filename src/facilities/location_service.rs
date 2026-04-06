@@ -73,12 +73,12 @@ pub struct GpsFix {
 impl Default for GpsFix {
     fn default() -> Self {
         GpsFix {
-            latitude:    0.0,
-            longitude:   0.0,
-            altitude_m:  0.0,
-            speed_mps:   0.0,
+            latitude: 0.0,
+            longitude: 0.0,
+            altitude_m: 0.0,
+            speed_mps: 0.0,
             heading_deg: 0.0,
-            pai:         false,
+            pai: false,
         }
     }
 }
@@ -97,7 +97,9 @@ pub struct LocationService {
 impl LocationService {
     /// Create a new, empty `LocationService` with no subscribers.
     pub fn new() -> Self {
-        LocationService { senders: Vec::new() }
+        LocationService {
+            senders: Vec::new(),
+        }
     }
 
     /// Register a new subscriber.

@@ -104,7 +104,7 @@ impl LdmFacility {
     /// An `LdmHandle` (`Arc<LdmFacility>`) that can be shared freely across
     /// threads.
     pub fn new(area_lat_etsi: i32, area_lon_etsi: i32, area_radius_m: f64) -> LdmHandle {
-        let store   = Arc::new(std::sync::RwLock::new(LdmStore::new()));
+        let store = Arc::new(std::sync::RwLock::new(LdmStore::new()));
         let service = LdmService::new(store);
 
         let if_ldm_3 = IfLdm3::new(service.clone());

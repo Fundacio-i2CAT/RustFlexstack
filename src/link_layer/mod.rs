@@ -7,5 +7,5 @@
 //! uses to send and receive raw packets.  Any concrete implementation
 //! (Ethernet, C-V2X, loopback, …) can implement this trait.
 
-pub mod raw_link_layer;
 pub mod packet_consts;
+pub mod raw_link_layer;

@@ -83,11 +83,11 @@ fn main() {
     // We subscribe twice: once for the GN router's position vector, and once
     // for the CA Basic Service CAM generation.
     let mut loc_svc = LocationService::new();
-    let gn_gps_rx  = loc_svc.subscribe(); // → GN position vector updates
-    let ca_gps_rx  = loc_svc.subscribe(); // → CAM transmission
+    let gn_gps_rx = loc_svc.subscribe(); // → GN position vector updates
+    let ca_gps_rx = loc_svc.subscribe(); // → CAM transmission
 
     // ── Spawn GeoNetworking router ────────────────────────────────────────────
-    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone());
+    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone(), None, None, None);
 
     // ── Spawn BTP router ─────────────────────────────────────────────────────
     let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib.clone());
@@ -131,7 +131,13 @@ fn main() {
     thread::spawn(move || {
         while let Ok(fix) = gn_gps_rx.recv() {
             let mut epv = LongPositionVector::decode([0u8; 24]);
-            epv.update_from_gps(fix.latitude, fix.longitude, fix.speed_mps, fix.heading_deg, fix.pai);
+            epv.update_from_gps(
+                fix.latitude,
+                fix.longitude,
+                fix.speed_mps,
+                fix.heading_deg,
+                fix.pai,
+            );
             gn_h3.update_position_vector(epv);
         }
     });
@@ -143,12 +149,14 @@ fn main() {
     let ldm = LdmFacility::new(415_520_000, 21_340_000, 5_000.0);
 
     // Register this node as a CAM data provider and consumer.
-    ldm.if_ldm_3.register_data_provider(RegisterDataProviderReq {
-        application_id: ITS_AID_CAM,
-    });
-    ldm.if_ldm_4.register_data_consumer(RegisterDataConsumerReq {
-        application_id: ITS_AID_CAM,
-    });
+    ldm.if_ldm_3
+        .register_data_provider(RegisterDataProviderReq {
+            application_id: ITS_AID_CAM,
+        });
+    ldm.if_ldm_4
+        .register_data_consumer(RegisterDataConsumerReq {
+            application_id: ITS_AID_CAM,
+        });
 
     // ── CA Basic Service ─────────────────────────────────────────────────────
     //
@@ -175,31 +183,43 @@ fn main() {
     // This uses the ETSI IF.LDM.4 interface and confirms that received CAMs
     // are correctly stored and retrievable.
     let ldm_reader = ldm.clone();
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_secs(1));
-            let resp = ldm_reader.if_ldm_4.request_data_objects(RequestDataObjectsReq {
-                application_id:    ITS_AID_CAM,
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(1));
+        let resp = ldm_reader
+            .if_ldm_4
+            .request_data_objects(RequestDataObjectsReq {
+                application_id: ITS_AID_CAM,
                 data_object_types: vec![ITS_AID_CAM],
-                filter:            None,
-                order:             None,
-                max_results:       None,
+                filter: None,
+                order: None,
+                max_results: None,
             });
-            if resp.data_objects.is_empty() {
-                println!("[LDM] No CAM records in store");
-            } else {
-                println!("[LDM] {} CAM record(s):", resp.data_objects.len());
-                for entry in &resp.data_objects {
-                    if let ItsDataObject::Cam(cam) = &entry.data_object {
-                        let lat = cam.cam.cam_parameters.basic_container
-                            .reference_position.latitude.0 as f64 / 1e7;
-                        let lon = cam.cam.cam_parameters.basic_container
-                            .reference_position.longitude.0 as f64 / 1e7;
-                        println!(
-                            "  [LDM CAM] record={:>5} station={:>10}  lat={:.5}  lon={:.5}",
-                            entry.record_id, cam.header.station_id.0, lat, lon,
-                        );
-                    }
+        if resp.data_objects.is_empty() {
+            println!("[LDM] No CAM records in store");
+        } else {
+            println!("[LDM] {} CAM record(s):", resp.data_objects.len());
+            for entry in &resp.data_objects {
+                if let ItsDataObject::Cam(cam) = &entry.data_object {
+                    let lat = cam
+                        .cam
+                        .cam_parameters
+                        .basic_container
+                        .reference_position
+                        .latitude
+                        .0 as f64
+                        / 1e7;
+                    let lon = cam
+                        .cam
+                        .cam_parameters
+                        .basic_container
+                        .reference_position
+                        .longitude
+                        .0 as f64
+                        / 1e7;
+                    println!(
+                        "  [LDM CAM] record={:>5} station={:>10}  lat={:.5}  lon={:.5}",
+                        entry.record_id, cam.header.station_id.0, lat, lon,
+                    );
                 }
             }
         }
@@ -216,12 +236,12 @@ fn main() {
         thread::sleep(Duration::from_millis(100));
         // 41.552°N  2.134°E — Parc Tecnològic del Vallès
         loc_svc.publish(GpsFix {
-            latitude:    41.552,
-            longitude:   2.134,
-            altitude_m:  120.0,
-            speed_mps:   0.0,
+            latitude: 41.552,
+            longitude: 2.134,
+            altitude_m: 120.0,
+            speed_mps: 0.0,
             heading_deg: 0.0,
-            pai:         true,
+            pai: true,
         });
     }
 }

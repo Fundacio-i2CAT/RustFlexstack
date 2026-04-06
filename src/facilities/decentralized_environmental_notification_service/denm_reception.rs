@@ -33,11 +33,7 @@ impl DENMReceptionManagement {
     ///
     /// The caller should hold the corresponding `Receiver<Denm>` — typically
     /// returned from [`DecentralizedEnvironmentalNotificationService::new`].
-    pub fn spawn(
-        btp_handle: BTPRouterHandle,
-        coder:      DenmCoder,
-        denm_tx:    Sender<Denm>,
-    ) {
+    pub fn spawn(btp_handle: BTPRouterHandle, coder: DenmCoder, denm_tx: Sender<Denm>) {
         // Create an internal BTPDataIndication channel and register it
         // on BTP port 2002 (DENM destination port per ETSI EN 302 637-3).
         let (ind_tx, ind_rx) = mpsc::channel::<BTPDataIndication>();

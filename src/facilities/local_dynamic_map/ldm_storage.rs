@@ -18,8 +18,8 @@
 
 use crate::facilities::ca_basic_service::cam_coder::Cam;
 use crate::facilities::decentralized_environmental_notification_service::denm_coder::Denm;
-use crate::facilities::vru_awareness_service::vam_coder::Vam;
 use crate::facilities::local_dynamic_map::ldm_constants::now_its_ms;
+use crate::facilities::vru_awareness_service::vam_coder::Vam;
 
 use std::collections::HashMap;
 
@@ -48,9 +48,9 @@ impl ItsDataObject {
             ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM,
         };
         match self {
-            ItsDataObject::Cam(_)              => ITS_AID_CAM,
-            ItsDataObject::Denm(_)             => ITS_AID_DENM,
-            ItsDataObject::Vam(_)              => ITS_AID_VAM,
+            ItsDataObject::Cam(_) => ITS_AID_CAM,
+            ItsDataObject::Denm(_) => ITS_AID_DENM,
+            ItsDataObject::Vam(_) => ITS_AID_VAM,
             ItsDataObject::Unknown { its_aid, .. } => *its_aid,
         }
     }
@@ -65,29 +65,28 @@ impl ItsDataObject {
 #[derive(Debug)]
 pub struct StoredRecord {
     /// LDM-assigned monotonic identifier.
-    pub id:               u64,
+    pub id: u64,
     /// ITS-AID of the data provider.
-    pub application_id:   u32,
+    pub application_id: u32,
     /// Time this record was inserted / last updated (ms since ITS epoch).
     pub timestamp_its_ms: u64,
     /// Validity window in seconds; record expires when
     /// `timestamp_its_ms + time_validity_s * 1000 < now`.
-    pub time_validity_s:  u32,
+    pub time_validity_s: u32,
     /// Position latitude (ETSI × 1e7 integer units).
-    pub lat_etsi:         i32,
+    pub lat_etsi: i32,
     /// Position longitude (ETSI × 1e7 integer units).
-    pub lon_etsi:         i32,
+    pub lon_etsi: i32,
     /// Altitude in centimetres above WGS-84 ellipsoid.
-    pub altitude_cm:      i32,
+    pub altitude_cm: i32,
     /// The ITS data object.
-    pub data_object:      ItsDataObject,
+    pub data_object: ItsDataObject,
 }
 
 impl StoredRecord {
     /// Return `true` if this record has passed its validity horizon.
     pub fn is_expired(&self) -> bool {
-        let expiry_ms = self.timestamp_its_ms
-            + (self.time_validity_s as u64) * 1000;
+        let expiry_ms = self.timestamp_its_ms + (self.time_validity_s as u64) * 1000;
         now_its_ms() > expiry_ms
     }
 }
@@ -116,26 +115,29 @@ impl LdmStore {
     /// Insert a new record and return its assigned ID.
     pub fn insert(
         &mut self,
-        application_id:   u32,
+        application_id: u32,
         timestamp_its_ms: u64,
-        time_validity_s:  u32,
-        lat_etsi:         i32,
-        lon_etsi:         i32,
-        altitude_cm:      i32,
-        data_object:      ItsDataObject,
+        time_validity_s: u32,
+        lat_etsi: i32,
+        lon_etsi: i32,
+        altitude_cm: i32,
+        data_object: ItsDataObject,
     ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
-        self.records.insert(id, StoredRecord {
+        self.records.insert(
             id,
-            application_id,
-            timestamp_its_ms,
-            time_validity_s,
-            lat_etsi,
-            lon_etsi,
-            altitude_cm,
-            data_object,
-        });
+            StoredRecord {
+                id,
+                application_id,
+                timestamp_its_ms,
+                time_validity_s,
+                lat_etsi,
+                lon_etsi,
+                altitude_cm,
+                data_object,
+            },
+        );
         id
     }
 
@@ -144,21 +146,21 @@ impl LdmStore {
     /// Returns `false` when `id` is not found.
     pub fn update(
         &mut self,
-        id:               u64,
+        id: u64,
         timestamp_its_ms: u64,
-        time_validity_s:  u32,
-        lat_etsi:         i32,
-        lon_etsi:         i32,
-        altitude_cm:      i32,
-        data_object:      ItsDataObject,
+        time_validity_s: u32,
+        lat_etsi: i32,
+        lon_etsi: i32,
+        altitude_cm: i32,
+        data_object: ItsDataObject,
     ) -> bool {
         if let Some(rec) = self.records.get_mut(&id) {
             rec.timestamp_its_ms = timestamp_its_ms;
-            rec.time_validity_s  = time_validity_s;
-            rec.lat_etsi         = lat_etsi;
-            rec.lon_etsi         = lon_etsi;
-            rec.altitude_cm      = altitude_cm;
-            rec.data_object      = data_object;
+            rec.time_validity_s = time_validity_s;
+            rec.lat_etsi = lat_etsi;
+            rec.lon_etsi = lon_etsi;
+            rec.altitude_cm = altitude_cm;
+            rec.data_object = data_object;
             true
         } else {
             false
@@ -172,7 +174,8 @@ impl LdmStore {
 
     /// Remove all expired records and return the count removed.
     pub fn remove_expired(&mut self) -> usize {
-        let expired: Vec<u64> = self.records
+        let expired: Vec<u64> = self
+            .records
             .values()
             .filter(|r| r.is_expired())
             .map(|r| r.id)
@@ -193,7 +196,8 @@ impl LdmStore {
         area_radius_m: f64,
     ) -> usize {
         use crate::facilities::local_dynamic_map::ldm_constants::haversine_m;
-        let out: Vec<u64> = self.records
+        let out: Vec<u64> = self
+            .records
             .values()
             .filter(|r| {
                 haversine_m(r.lat_etsi, r.lon_etsi, area_lat_etsi, area_lon_etsi) > area_radius_m

@@ -142,7 +142,7 @@ pub enum LogicalOperator {
 #[derive(Debug, Clone)]
 pub struct FilterStatement {
     pub attribute: FilterAttribute,
-    pub operator:  ComparisonOperator,
+    pub operator: ComparisonOperator,
     /// Reference value; ETSI coordinates, speeds, etc. are all expressible as
     /// `i64` without loss.
     pub ref_value: i64,
@@ -153,9 +153,9 @@ pub struct FilterStatement {
 /// If `logical` and `stmt2` are `None` only `stmt1` is evaluated.
 #[derive(Debug, Clone)]
 pub struct Filter {
-    pub stmt1:   FilterStatement,
+    pub stmt1: FilterStatement,
     pub logical: Option<LogicalOperator>,
-    pub stmt2:   Option<FilterStatement>,
+    pub stmt2: Option<FilterStatement>,
 }
 
 // ─── Ordering ────────────────────────────────────────────────────────────────
@@ -205,19 +205,19 @@ pub struct DeregisterDataProviderResp {
 #[derive(Debug)]
 pub struct AddDataProviderReq {
     /// ITS-AID of the providing application.
-    pub application_id:  u32,
+    pub application_id: u32,
     /// Timestamp in milliseconds since ITS epoch (2004-01-01).
-    pub timestamp_its:   u64,
+    pub timestamp_its: u64,
     /// Latitude in ETSI × 1e7 integer units.
-    pub lat_etsi:        i32,
+    pub lat_etsi: i32,
     /// Longitude in ETSI × 1e7 integer units.
-    pub lon_etsi:        i32,
+    pub lon_etsi: i32,
     /// Altitude in centimetres above WGS-84 ellipsoid.
-    pub altitude_cm:     i32,
+    pub altitude_cm: i32,
     /// How long (in whole seconds) this record is considered valid.
     pub time_validity_s: u32,
     /// The ITS data object to store.
-    pub data_object:     ItsDataObject,
+    pub data_object: ItsDataObject,
 }
 
 /// Response to `add_provider_data`.
@@ -232,20 +232,20 @@ pub struct AddDataProviderResp {
 #[derive(Debug)]
 pub struct UpdateDataProviderReq {
     /// LDM record identifier returned by a prior `add_provider_data` call.
-    pub record_id:       u64,
+    pub record_id: u64,
     /// New timestamp in milliseconds since ITS epoch.
-    pub timestamp_its:   u64,
+    pub timestamp_its: u64,
     /// Updated latitude (ETSI × 1e7).
-    pub lat_etsi:        i32,
+    pub lat_etsi: i32,
     /// Updated longitude (ETSI × 1e7).
-    pub lon_etsi:        i32,
+    pub lon_etsi: i32,
     /// Updated altitude in cm.
-    pub altitude_cm:     i32,
+    pub altitude_cm: i32,
     /// Updated validity window in seconds.
     pub time_validity_s: u32,
     /// Replacement data object; must have the same `ItsDataObject` variant as
     /// the record being updated.
-    pub data_object:     ItsDataObject,
+    pub data_object: ItsDataObject,
 }
 
 /// Response to `update_provider_data`.
@@ -297,41 +297,41 @@ pub struct DeregisterDataConsumerResp {
 #[derive(Debug, Clone)]
 pub struct RequestDataObjectsReq {
     /// ITS-AID of the requesting application.
-    pub application_id:    u32,
+    pub application_id: u32,
     /// ITS-AID values of the data types to retrieve (e.g. `[ITS_AID_CAM]`).
     /// An empty vector means "all types".
     pub data_object_types: Vec<u32>,
     /// Optional filter expression.
-    pub filter:            Option<Filter>,
+    pub filter: Option<Filter>,
     /// Optional sort order; applied after filtering.
-    pub order:             Option<Vec<OrderTupleValue>>,
+    pub order: Option<Vec<OrderTupleValue>>,
     /// Maximum number of records to return (`None` = unlimited).
-    pub max_results:       Option<usize>,
+    pub max_results: Option<usize>,
 }
 
 /// A single result record returned inside `RequestDataObjectsResp`.
 #[derive(Debug)]
 pub struct DataObjectEntry {
     /// LDM-assigned record identifier.
-    pub record_id:       u64,
+    pub record_id: u64,
     /// ITS-AID of the data provider.
-    pub application_id:  u32,
+    pub application_id: u32,
     /// Timestamp of the record (ms since ITS epoch).
-    pub timestamp_its:   u64,
+    pub timestamp_its: u64,
     /// Latitude of the record (ETSI × 1e7).
-    pub lat_etsi:        i32,
+    pub lat_etsi: i32,
     /// Longitude of the record (ETSI × 1e7).
-    pub lon_etsi:        i32,
+    pub lon_etsi: i32,
     /// Altitude of the record in cm.
-    pub altitude_cm:     i32,
+    pub altitude_cm: i32,
     /// The stored data object.
-    pub data_object:     ItsDataObject,
+    pub data_object: ItsDataObject,
 }
 
 /// Response to `request_data_objects`.
 #[derive(Debug)]
 pub struct RequestDataObjectsResp {
-    pub result:       RequestedDataObjectsResult,
+    pub result: RequestedDataObjectsResult,
     pub data_objects: Vec<DataObjectEntry>,
 }
 
@@ -339,21 +339,21 @@ pub struct RequestDataObjectsResp {
 #[derive(Debug, Clone)]
 pub struct SubscribeDataObjectsReq {
     /// ITS-AID of the subscribing application.
-    pub application_id:     u32,
+    pub application_id: u32,
     /// ITS-AID values to subscribe to; empty = all types.
-    pub data_object_types:  Vec<u32>,
+    pub data_object_types: Vec<u32>,
     /// Optional filter applied before delivering notifications.
-    pub filter:             Option<Filter>,
+    pub filter: Option<Filter>,
     /// Minimum interval between notifications in milliseconds.
     pub notify_interval_ms: u64,
     /// Maximum number of records per notification.
-    pub max_results:        Option<usize>,
+    pub max_results: Option<usize>,
 }
 
 /// Response to `subscribe_data_consumer`.
 #[derive(Debug)]
 pub struct SubscribeDataObjectsResp {
-    pub result:          SubscribeDataObjectsResult,
+    pub result: SubscribeDataObjectsResult,
     /// Opaque subscription identifier; pass to `unsubscribe_data_consumer`.
     pub subscription_id: Option<u64>,
 }

@@ -37,7 +37,7 @@ impl LdmMaintenance {
     /// each maintenance cycle.  A zero or negative `area_radius_m` disables
     /// the spatial GC (only expiry-based GC runs).
     pub fn spawn(
-        service:       Arc<LdmService>,
+        service: Arc<LdmService>,
         area_lat_etsi: i32,
         area_lon_etsi: i32,
         area_radius_m: f64,

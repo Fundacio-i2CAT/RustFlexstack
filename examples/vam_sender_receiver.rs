@@ -79,11 +79,11 @@ fn main() {
     // We subscribe twice: once for the GN router's position vector, and once
     // for the VRU Awareness Service VAM generation.
     let mut loc_svc = LocationService::new();
-    let gn_gps_rx  = loc_svc.subscribe(); // → GN position vector updates
+    let gn_gps_rx = loc_svc.subscribe(); // → GN position vector updates
     let vru_gps_rx = loc_svc.subscribe(); // → VAM transmission
 
     // ── Spawn GeoNetworking router ────────────────────────────────────────────
-    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone());
+    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone(), None, None, None);
 
     // ── Spawn BTP router ──────────────────────────────────────────────────────
     let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib.clone());
@@ -127,7 +127,13 @@ fn main() {
     thread::spawn(move || {
         while let Ok(fix) = gn_gps_rx.recv() {
             let mut epv = LongPositionVector::decode([0u8; 24]);
-            epv.update_from_gps(fix.latitude, fix.longitude, fix.speed_mps, fix.heading_deg, fix.pai);
+            epv.update_from_gps(
+                fix.latitude,
+                fix.longitude,
+                fix.speed_mps,
+                fix.heading_deg,
+                fix.pai,
+            );
             gn_h3.update_position_vector(epv);
         }
     });
@@ -152,8 +158,22 @@ fn main() {
     // ── Decoded VAM printer ───────────────────────────────────────────────────
     thread::spawn(move || {
         while let Ok(vam) = vam_rx.recv() {
-            let lat = vam.vam.vam_parameters.basic_container.reference_position.latitude.0 as f64 / 1e7;
-            let lon = vam.vam.vam_parameters.basic_container.reference_position.longitude.0 as f64 / 1e7;
+            let lat = vam
+                .vam
+                .vam_parameters
+                .basic_container
+                .reference_position
+                .latitude
+                .0 as f64
+                / 1e7;
+            let lon = vam
+                .vam
+                .vam_parameters
+                .basic_container
+                .reference_position
+                .longitude
+                .0 as f64
+                / 1e7;
             println!(
                 "[VAM RX] station={:>10}  lat={:.5}  lon={:.5}",
                 vam.header.0.station_id.0, lat, lon,
@@ -172,12 +192,12 @@ fn main() {
         thread::sleep(Duration::from_millis(100));
         // 41.552°N  2.134°E — Parc Tecnològic del Vallès
         loc_svc.publish(GpsFix {
-            latitude:    41.552,
-            longitude:   2.134,
-            altitude_m:  120.0,
-            speed_mps:   1.5,
+            latitude: 41.552,
+            longitude: 2.134,
+            altitude_m: 120.0,
+            speed_mps: 1.5,
             heading_deg: 90.0,
-            pai:         true,
+            pai: true,
         });
     }
 }

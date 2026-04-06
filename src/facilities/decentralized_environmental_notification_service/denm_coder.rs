@@ -12,18 +12,17 @@
 // ─── Re-exports from compiled ASN.1 bindings ─────────────────────────────────
 
 pub use super::denm_bindings::denm_pdu_description::{
-    AlacarteContainer, DenmPayload, LocationContainer, ManagementContainer,
-    SituationContainer, Termination, DENM,
+    AlacarteContainer, DenmPayload, LocationContainer, ManagementContainer, SituationContainer,
+    Termination, DENM,
 };
 pub use super::denm_bindings::etsi_its_cdd::{
-    AccidentSubCauseCode, ActionId, Altitude, AltitudeConfidence, AltitudeValue,
-    CauseCodeChoice, CauseCodeV2, DeltaAltitude, DeltaLatitude, DeltaLongitude,
-    DeltaReferencePosition, DeltaTimeMilliSecondPositive, DeltaTimeSecond,
-    HeadingValue, InformationQuality, ItsPduHeader, Latitude, Longitude,
-    MessageId, OrdinalNumber1B, Path, PathPoint, PosConfidenceEllipse,
-    ReferencePosition, SemiAxisLength, SequenceNumber, Speed, SpeedConfidence,
-    SpeedValue, StationId, StationType, SubCauseCodeType, TimestampIts, Traces,
-    TrafficParticipantType, Wgs84Angle, Wgs84AngleConfidence, Wgs84AngleValue,
+    AccidentSubCauseCode, ActionId, Altitude, AltitudeConfidence, AltitudeValue, CauseCodeChoice,
+    CauseCodeV2, DeltaAltitude, DeltaLatitude, DeltaLongitude, DeltaReferencePosition,
+    DeltaTimeMilliSecondPositive, DeltaTimeSecond, HeadingValue, InformationQuality, ItsPduHeader,
+    Latitude, Longitude, MessageId, OrdinalNumber1B, Path, PathPoint, PosConfidenceEllipse,
+    ReferencePosition, SemiAxisLength, SequenceNumber, Speed, SpeedConfidence, SpeedValue,
+    StationId, StationType, SubCauseCodeType, TimestampIts, Traces, TrafficParticipantType,
+    Wgs84Angle, Wgs84AngleConfidence, Wgs84AngleValue,
 };
 
 // ─── ITS epoch constant ───────────────────────────────────────────────────────
@@ -83,7 +82,6 @@ impl DenmCoder {
 
     /// UPER-decode a [`Denm`] PDU from bytes.
     pub fn decode(&self, bytes: &[u8]) -> Result<Denm, String> {
-        rasn::uper::decode::<Denm>(bytes)
-            .map_err(|e| format!("DENM UPER decode error: {e}"))
+        rasn::uper::decode::<Denm>(bytes).map_err(|e| format!("DENM UPER decode error: {e}"))
     }
 }

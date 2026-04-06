@@ -163,19 +163,21 @@ impl RawLinkLayer {
                     std::mem::size_of::<libc::c_int>() as libc::socklen_t,
                 );
                 if ret < 0 {
-                    eprintln!("[LL RX] PACKET_IGNORE_OUTGOING not supported, falling back to MAC filter");
+                    eprintln!(
+                        "[LL RX] PACKET_IGNORE_OUTGOING not supported, falling back to MAC filter"
+                    );
                 }
             }
 
             // Bind to the specific interface so we don't receive from all NICs.
             let sll = libc::sockaddr_ll {
-                sll_family:   libc::AF_PACKET as u16,
+                sll_family: libc::AF_PACKET as u16,
                 sll_protocol: (ETH_P_GEONET as u16).to_be(),
-                sll_ifindex:  if_index as i32,
-                sll_hatype:   0,
-                sll_pkttype:  0,
-                sll_halen:    0,
-                sll_addr:     [0u8; 8],
+                sll_ifindex: if_index as i32,
+                sll_hatype: 0,
+                sll_pkttype: 0,
+                sll_halen: 0,
+                sll_addr: [0u8; 8],
             };
             let ret = unsafe {
                 libc::bind(
@@ -186,12 +188,17 @@ impl RawLinkLayer {
             };
             if ret < 0 {
                 eprintln!("[LL RX] Failed to bind socket");
-                unsafe { libc::close(sock); }
+                unsafe {
+                    libc::close(sock);
+                }
                 return;
             }
 
             // Set a 100 ms receive timeout so we can check the stop flag.
-            let tv = libc::timeval { tv_sec: 0, tv_usec: 100_000 };
+            let tv = libc::timeval {
+                tv_sec: 0,
+                tv_usec: 100_000,
+            };
             unsafe {
                 libc::setsockopt(
                     sock,
@@ -208,12 +215,7 @@ impl RawLinkLayer {
                     break;
                 }
                 let n = unsafe {
-                    libc::recv(
-                        sock,
-                        buf.as_mut_ptr() as *mut libc::c_void,
-                        buf.len(),
-                        0,
-                    )
+                    libc::recv(sock, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), 0)
                 };
                 if n < 0 {
                     // EAGAIN / EWOULDBLOCK = timeout, just loop
@@ -236,7 +238,9 @@ impl RawLinkLayer {
                 let _ = gn_tx.send(frame[14..].to_vec());
             }
 
-            unsafe { libc::close(sock); }
+            unsafe {
+                libc::close(sock);
+            }
             eprintln!("[LL RX] Thread exiting");
         });
 

@@ -82,11 +82,11 @@ fn main() {
     //
     // A single LocationService publishes GPS fixes.  We subscribe once for the
     // GN router's position vector updates.
-    let mut loc_svc  = LocationService::new();
-    let gn_gps_rx    = loc_svc.subscribe();
+    let mut loc_svc = LocationService::new();
+    let gn_gps_rx = loc_svc.subscribe();
 
     // ── Spawn GeoNetworking router ────────────────────────────────────────────
-    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone());
+    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone(), None, None, None);
 
     // ── Spawn BTP router ──────────────────────────────────────────────────────
     let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib.clone());
@@ -127,7 +127,13 @@ fn main() {
     thread::spawn(move || {
         while let Ok(fix) = gn_gps_rx.recv() {
             let mut epv = LongPositionVector::decode([0u8; 24]);
-            epv.update_from_gps(fix.latitude, fix.longitude, fix.speed_mps, fix.heading_deg, fix.pai);
+            epv.update_from_gps(
+                fix.latitude,
+                fix.longitude,
+                fix.speed_mps,
+                fix.heading_deg,
+                fix.pai,
+            );
             gn_h3.update_position_vector(epv);
         }
     });
@@ -163,12 +169,12 @@ fn main() {
 
     // Publish position fixes to keep the GN position vector up to date.
     let gps_fix = GpsFix {
-        latitude:    41.552,
-        longitude:   2.134,
-        altitude_m:  120.0,
-        speed_mps:   14.0, // ~50 km/h
+        latitude: 41.552,
+        longitude: 2.134,
+        altitude_m: 120.0,
+        speed_mps: 14.0, // ~50 km/h
         heading_deg: 90.0,
-        pai:         true,
+        pai: true,
     };
     loc_svc.publish(gps_fix.clone());
 
@@ -177,15 +183,15 @@ fn main() {
     // Send 1 DENM/s for 30 s, 1 000 m geo-broadcast circle.
     println!("Triggering road-hazard DENM (accident) for 30 s @ 1 Hz");
     den_svc.trigger_denm(DENRequest {
-        event_latitude:     gps_fix.latitude,
-        event_longitude:    gps_fix.longitude,
-        event_altitude_m:   gps_fix.altitude_m,
-        cause_code:         CauseCodeChoice::accident2(AccidentSubCauseCode(0)),
+        event_latitude: gps_fix.latitude,
+        event_longitude: gps_fix.longitude,
+        event_altitude_m: gps_fix.altitude_m,
+        cause_code: CauseCodeChoice::accident2(AccidentSubCauseCode(0)),
         information_quality: 4,
-        event_speed_raw:    (gps_fix.speed_mps * 100.0) as u16,
-        event_heading_raw:  (gps_fix.heading_deg * 10.0) as u16,
-        denm_interval_ms:   1_000,
-        time_period_ms:     30_000,
+        event_speed_raw: (gps_fix.speed_mps * 100.0) as u16,
+        event_heading_raw: (gps_fix.heading_deg * 10.0) as u16,
+        denm_interval_ms: 1_000,
+        time_period_ms: 30_000,
         relevance_radius_m: 1_000,
     });
 

@@ -20,11 +20,9 @@ use std::sync::Arc;
 
 use crate::facilities::local_dynamic_map::ldm_service::LdmService;
 use crate::facilities::local_dynamic_map::ldm_types::{
-    AddDataProviderReq, AddDataProviderResp,
-    DeleteDataProviderReq, DeleteDataProviderResp,
-    DeregisterDataProviderReq, DeregisterDataProviderResp,
-    RegisterDataProviderReq, RegisterDataProviderResp,
-    UpdateDataProviderReq, UpdateDataProviderResp,
+    AddDataProviderReq, AddDataProviderResp, DeleteDataProviderReq, DeleteDataProviderResp,
+    DeregisterDataProviderReq, DeregisterDataProviderResp, RegisterDataProviderReq,
+    RegisterDataProviderResp, UpdateDataProviderReq, UpdateDataProviderResp,
 };
 
 /// ETSI IF.LDM.3 — Data Provider interface.

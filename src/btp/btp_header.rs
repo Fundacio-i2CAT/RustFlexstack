@@ -30,7 +30,10 @@ pub struct BTPAHeader {
 
 impl BTPAHeader {
     pub fn new() -> Self {
-        BTPAHeader { destination_port: 0, source_port: 0 }
+        BTPAHeader {
+            destination_port: 0,
+            source_port: 0,
+        }
     }
 
     /// Build a BTP-A header from a [`BTPDataRequest`].
@@ -87,7 +90,10 @@ pub struct BTPBHeader {
 
 impl BTPBHeader {
     pub fn new() -> Self {
-        BTPBHeader { destination_port: 0, destination_port_info: 0 }
+        BTPBHeader {
+            destination_port: 0,
+            destination_port_info: 0,
+        }
     }
 
     /// Build a BTP-B header from a [`BTPDataRequest`].

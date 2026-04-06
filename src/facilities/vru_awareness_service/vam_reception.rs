@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! VAM Reception Management.
+//! VAM Reception Management — ETSI TS 103 300-3 V2.3.1 (2025-12).
 //!
 //! Mirrors `VAMReceptionManagement` in
 //! `flexstack/facilities/vru_awareness_service/vam_reception_management.py`.
@@ -33,11 +33,7 @@ impl VAMReceptionManagement {
     ///
     /// The caller should hold the corresponding `Receiver<Vam>` — typically
     /// returned from [`VruAwarenessService::new`].
-    pub fn spawn(
-        btp_handle: BTPRouterHandle,
-        coder:      VamCoder,
-        vam_tx:     Sender<Vam>,
-    ) {
+    pub fn spawn(btp_handle: BTPRouterHandle, coder: VamCoder, vam_tx: Sender<Vam>) {
         // Create an internal BTPDataIndication channel and register it
         // on BTP port 2018 (VAM destination port per ETSI TS 103 300-3).
         let (ind_tx, ind_rx) = mpsc::channel::<BTPDataIndication>();
@@ -51,15 +47,27 @@ impl VAMReceptionManagement {
                             "[VAM RX] station={} gen_dt={} lat={:.5} lon={:.5}",
                             vam.header.0.station_id.0,
                             vam.vam.generation_delta_time.0,
-                            vam.vam.vam_parameters.basic_container.reference_position.latitude.0 as f64 / 1e7,
-                            vam.vam.vam_parameters.basic_container.reference_position.longitude.0 as f64 / 1e7,
+                            vam.vam
+                                .vam_parameters
+                                .basic_container
+                                .reference_position
+                                .latitude
+                                .0 as f64
+                                / 1e7,
+                            vam.vam
+                                .vam_parameters
+                                .basic_container
+                                .reference_position
+                                .longitude
+                                .0 as f64
+                                / 1e7,
                         );
                         // Forward to caller; if they dropped the receiver, stop quietly.
                         if vam_tx.send(vam).is_err() {
                             break;
                         }
                     }
-                    Err(e) => eprintln!("[VAM RX] Decode error: {}", e),
+                    Err(e) => eprintln!("[VAM RX] Decode error (clause 7): {}", e),
                 }
             }
             eprintln!("[VAM RX] Thread exiting");

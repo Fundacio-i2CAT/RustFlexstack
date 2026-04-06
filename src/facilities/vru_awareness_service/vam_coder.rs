@@ -11,18 +11,17 @@
 
 // ─── Re-exports from compiled ASN.1 bindings ─────────────────────────────────
 
+pub use super::vam_bindings::etsi_its_cdd::{
+    AccelerationConfidence, Altitude, AltitudeConfidence, AltitudeValue, BasicContainer, Curvature,
+    CurvatureCalculationMode, GenerationDeltaTime, ItsPduHeader, Latitude, Longitude,
+    LongitudinalAcceleration, LongitudinalAccelerationValue, MessageId, OrdinalNumber1B,
+    PositionConfidenceEllipse, ReferencePositionWithConfidence, SemiAxisLength, Speed,
+    SpeedConfidence, SpeedValue, StationId, TrafficParticipantType, Wgs84Angle,
+    Wgs84AngleConfidence, Wgs84AngleValue,
+};
 pub use super::vam_bindings::vam_pdu_descriptions::{
     ItsPduHeaderVam, VamParameters, VruAwareness, VruHighFrequencyContainer,
     VruLowFrequencyContainer, VruMotionPredictionContainer, VAM,
-};
-pub use super::vam_bindings::etsi_its_cdd::{
-    AccelerationConfidence, Altitude, AltitudeConfidence, AltitudeValue,
-    BasicContainer, Curvature, CurvatureCalculationMode, GenerationDeltaTime,
-    ItsPduHeader, Latitude, Longitude, LongitudinalAcceleration,
-    LongitudinalAccelerationValue, MessageId, OrdinalNumber1B,
-    PositionConfidenceEllipse, ReferencePositionWithConfidence, SemiAxisLength,
-    Speed, SpeedConfidence, SpeedValue, StationId, TrafficParticipantType,
-    Wgs84Angle, Wgs84AngleConfidence, Wgs84AngleValue,
 };
 
 // ─── GenerationDeltaTime helpers ─────────────────────────────────────────────
@@ -91,7 +90,6 @@ impl VamCoder {
 
     /// UPER-decode a [`Vam`] PDU from bytes.
     pub fn decode(&self, bytes: &[u8]) -> Result<Vam, String> {
-        rasn::uper::decode::<Vam>(bytes)
-            .map_err(|e| format!("VAM UPER decode error: {e}"))
+        rasn::uper::decode::<Vam>(bytes).map_err(|e| format!("VAM UPER decode error: {e}"))
     }
 }

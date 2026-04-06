@@ -7363,11 +7363,10 @@ pub mod vam_pdu_descriptions {
         DeltaTimeQuarterSecond, GeneralizedLanePosition, GenerationDeltaTime,
         HeadingChangeIndication, ItsPduHeader, LanePosition, LateralAcceleration,
         LongitudinalAcceleration, PathHistory, PathPredicted, SequenceOfSafeDistanceIndication,
-        SequenceOfTrajectoryInterceptionIndication,
-        Speed, StabilityChangeIndication, StationId, TrajectoryInterceptionIndication,
-        VerticalAcceleration, VruClusterInformation, VruDeviceUsage, VruEnvironment,
-        VruExteriorLights, VruMovementControl, VruProfileAndSubprofile, VruSizeClass, Wgs84Angle,
-        YawRate,
+        SequenceOfTrajectoryInterceptionIndication, Speed, StabilityChangeIndication, StationId,
+        TrajectoryInterceptionIndication, VerticalAcceleration, VruClusterInformation,
+        VruDeviceUsage, VruEnvironment, VruExteriorLights, VruMovementControl,
+        VruProfileAndSubprofile, VruSizeClass, Wgs84Angle, YawRate,
     };
     use core::borrow::Borrow;
     use rasn::prelude::*;

@@ -12,17 +12,16 @@
 // ─── Re-exports from compiled ASN.1 bindings ────────────────────────────────
 
 pub use super::cam_bindings::cam_pdu_descriptions::{
-    BasicVehicleContainerHighFrequency, CAM, CamParameters, CamPayload, HighFrequencyContainer,
+    BasicVehicleContainerHighFrequency, CamParameters, CamPayload, HighFrequencyContainer, CAM,
 };
 pub use super::cam_bindings::etsi_its_cdd::{
     AccelerationComponent, AccelerationConfidence, AccelerationValue, Altitude, AltitudeConfidence,
     AltitudeValue, BasicContainer, Curvature, CurvatureCalculationMode, CurvatureConfidence,
     CurvatureValue, DriveDirection, GenerationDeltaTime, Heading, HeadingConfidence, HeadingValue,
     ItsPduHeader, Latitude, Longitude, MessageId, OrdinalNumber1B, PositionConfidenceEllipse,
-    ReferencePositionWithConfidence, SemiAxisLength, Speed,
-    SpeedConfidence, SpeedValue, StationId, StationType, TrafficParticipantType, VehicleLength,
-    VehicleLengthConfidenceIndication, VehicleLengthValue, VehicleWidth, Wgs84AngleValue, YawRate,
-    YawRateConfidence, YawRateValue,
+    ReferencePositionWithConfidence, SemiAxisLength, Speed, SpeedConfidence, SpeedValue, StationId,
+    StationType, TrafficParticipantType, VehicleLength, VehicleLengthConfidenceIndication,
+    VehicleLengthValue, VehicleWidth, Wgs84AngleValue, YawRate, YawRateConfidence, YawRateValue,
 };
 
 // ─── GenerationDeltaTime helpers ─────────────────────────────────────────────
@@ -84,7 +83,6 @@ impl CamCoder {
 
     /// UPER-decode a [`Cam`] PDU from bytes.
     pub fn decode(&self, bytes: &[u8]) -> Result<Cam, String> {
-        rasn::uper::decode::<Cam>(bytes)
-            .map_err(|e| format!("CAM UPER decode error: {e}"))
+        rasn::uper::decode::<Cam>(bytes).map_err(|e| format!("CAM UPER decode error: {e}"))
     }
 }
