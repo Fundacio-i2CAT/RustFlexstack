@@ -3,23 +3,18 @@
 //! Provides [`Certificate`] (read-only wrapper) and [`OwnCertificate`]
 //! (includes the private-key identifier for signing).
 
-use rasn::prelude::*;
-use sha2::{Digest, Sha256};
-
 use crate::security::ecdsa_backend::EcdsaBackend;
 use crate::security::security_asn::etsi_ts103097_module::EtsiTs103097Certificate;
 use crate::security::security_asn::ieee1609_dot2::{
-    CertificateBase, CertificateType, IssuerIdentifier, SignerIdentifier,
-    Ieee1609Dot2Content, Ieee1609Dot2Data, SignedData, ToBeSignedCertificate,
-    ToBeSignedData, SignedDataPayload,
+    CertificateBase, CertificateType, IssuerIdentifier,
+    Ieee1609Dot2Data, ToBeSignedCertificate,
+    ToBeSignedData,
 };
 use crate::security::security_asn::ieee1609_dot2_base_types::Signature as Ieee1609Signature;
-use crate::security::security_asn::ieee1609_dot2::{
-    Certificate as AsnCertificate, SequenceOfCertificate,
-};
+use crate::security::security_asn::ieee1609_dot2::Certificate as AsnCertificate;
 use crate::security::security_asn::ieee1609_dot2_base_types::{
     EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, HashedId8,
-    PublicVerificationKey, Uint8, Opaque,
+    PublicVerificationKey, Uint8,
 };
 use crate::security::security_asn::ieee1609_dot2::{
     SubjectPermissions, VerificationKeyIndicator,
@@ -316,7 +311,6 @@ impl Certificate {
                     return false;
                 }
             }
-            _ => return false,
         }
         if self.issuer.is_some() && self.is_issued() {
             return self.verify_issued(backend);

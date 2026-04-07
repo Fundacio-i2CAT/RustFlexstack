@@ -243,7 +243,7 @@ impl VAMTransmissionManagement {
         gps_rx: Receiver<GpsFix>,
     ) {
         thread::spawn(move || {
-            let mut t_gen_vam_ms: u64 = T_GEN_VAM_MIN_MS;
+            let t_gen_vam_ms: u64 = T_GEN_VAM_MIN_MS;
             let _ = t_gen_vam_ms; // used for future DCC integration
 
             // State of last transmitted VAM

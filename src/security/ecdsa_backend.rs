@@ -11,7 +11,6 @@
 use p256::ecdsa::signature::Signer;
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::ecdsa::signature::Verifier;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 

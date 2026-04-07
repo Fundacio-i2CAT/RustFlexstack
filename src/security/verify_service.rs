@@ -4,15 +4,12 @@
 //! chain, checks per-profile header constraints, and verifies the ECDSA
 //! signature.
 
-use rasn::prelude::*;
-
 use crate::security::certificate::{decode_ieee1609_dot2_data, encode_tbs_data, Certificate};
 use crate::security::certificate_library::CertificateLibrary;
 use crate::security::ecdsa_backend::EcdsaBackend;
 use crate::security::security_asn::ieee1609_dot2::{
     Ieee1609Dot2Content, SignerIdentifier,
 };
-use crate::security::security_asn::ieee1609_dot2_base_types::PublicVerificationKey;
 use crate::security::security_asn::ieee1609_dot2::VerificationKeyIndicator;
 use crate::security::sign_service::SignService;
 use crate::security::sn_sap::{ReportVerify, SNVerifyConfirm, SNVerifyRequest};
@@ -348,6 +345,7 @@ pub enum VerifyEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rasn::prelude::*;
     use crate::security::certificate::OwnCertificate;
     use crate::security::certificate_library::CertificateLibrary;
     use crate::security::ecdsa_backend::EcdsaBackend;

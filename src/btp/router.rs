@@ -44,7 +44,7 @@ pub enum BTPRouterInput {
 // ------------------------------------------------------------------
 
 pub struct Router {
-    mib: Mib,
+    _mib: Mib,
     port_callbacks: HashMap<u16, Sender<BTPDataIndication>>,
     gn_request_tx: Sender<GNDataRequest>,
 }
@@ -87,7 +87,7 @@ impl BTPRouterHandle {
 impl Router {
     pub fn new(mib: Mib, gn_request_tx: Sender<GNDataRequest>) -> Self {
         Router {
-            mib,
+            _mib: mib,
             port_callbacks: HashMap::new(),
             gn_request_tx,
         }
@@ -235,14 +235,11 @@ impl Router {
 mod tests {
     use super::*;
     use crate::btp::btp_header::{BTPAHeader, BTPBHeader};
-    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
-    use crate::geonet::mib::Mib;
     use crate::geonet::position_vector::LongPositionVector;
     use crate::geonet::service_access_point::{
-        Area, CommonNH, CommunicationProfile, GNDataIndication, HeaderSubType, HeaderType,
+        CommonNH, GNDataIndication, HeaderSubType, HeaderType,
         PacketTransportType, TopoBroadcastHST, TrafficClass, UnspecifiedHST,
     };
-    use crate::security::sn_sap::SecurityProfile;
     use std::sync::mpsc;
     use std::time::Duration;
 

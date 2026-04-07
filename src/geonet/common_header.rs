@@ -102,10 +102,9 @@ mod tests {
     use super::*;
     use crate::geonet::mib::Mib;
     use crate::geonet::service_access_point::{
-        CommonNH, GNDataRequest, HeaderSubType, HeaderType, PacketTransportType,
-        TopoBroadcastHST, GeoBroadcastHST, TrafficClass, Area, CommunicationProfile,
+        Area, CommonNH, CommunicationProfile, GNDataRequest, HeaderSubType, HeaderType,
+        PacketTransportType, TopoBroadcastHST, TrafficClass,
     };
-    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
     use crate::security::sn_sap::SecurityProfile;
 
     fn make_gn_request() -> GNDataRequest {

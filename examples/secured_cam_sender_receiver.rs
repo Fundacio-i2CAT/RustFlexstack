@@ -278,7 +278,7 @@ fn main() {
                         message: sec_message.to_vec(),
                     };
 
-                    let (confirm, events) = {
+                    let (confirm, _events) = {
                         let mut svc = sign_svc_rx.lock().unwrap();
                         let svc = &mut *svc;
                         let result = verify_message(

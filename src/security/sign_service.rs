@@ -21,13 +21,12 @@ use crate::security::security_asn::ieee1609_dot2::{
 };
 use crate::security::security_asn::ieee1609_dot2::Certificate as AsnCertificate;
 use crate::security::security_asn::ieee1609_dot2_base_types::{
-    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, HashedId8, Psid,
+    HashAlgorithm, HashedId8, Psid,
     ThreeDLocation, Time64, Elevation, Latitude, Longitude,
     NinetyDegreeInt, OneEightyDegreeInt, Opaque, Uint8, Uint16, Uint64,
 };
-use crate::security::security_asn::ieee1609_dot2_base_types::Signature as Ieee1609Signature;
 use crate::security::security_asn::ieee1609_dot2::HeaderInfo;
-use crate::security::sn_sap::{GenerationLocation, SNSignConfirm, SNSignRequest};
+use crate::security::sn_sap::{SNSignConfirm, SNSignRequest};
 use crate::security::time_service::timestamp_its_microseconds;
 
 // ─── CAM signer state ────────────────────────────────────────────────────

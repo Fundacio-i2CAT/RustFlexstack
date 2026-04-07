@@ -33,7 +33,7 @@ use rustflexstack::facilities::ca_basic_service::cam_coder::{
 use rustflexstack::facilities::decentralized_environmental_notification_service::denm_coder::CauseCodeChoice;
 use rustflexstack::facilities::decentralized_environmental_notification_service::{
     denm_coder::AccidentSubCauseCode, DENRequest, DecentralizedEnvironmentalNotificationService,
-    DenmCoder, VehicleData as DenVehicleData,
+    VehicleData as DenVehicleData,
 };
 use rustflexstack::facilities::vru_awareness_service::vam_coder::{
     generation_delta_time_now as vam_gdt, vam_header, AccelerationConfidence as VamAccelConf,

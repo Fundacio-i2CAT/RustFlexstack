@@ -64,7 +64,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 pub struct DecentralizedEnvironmentalNotificationService {
     tx_management: DENMTransmissionManagement,
     /// Reception management writes decoded DENMs into this sender.
-    denm_tx: Sender<Denm>,
+    _denm_tx: Sender<Denm>,
 }
 
 impl DecentralizedEnvironmentalNotificationService {
@@ -84,7 +84,7 @@ impl DecentralizedEnvironmentalNotificationService {
 
         let svc = DecentralizedEnvironmentalNotificationService {
             tx_management,
-            denm_tx,
+            _denm_tx: denm_tx,
         };
         (svc, denm_rx)
     }
