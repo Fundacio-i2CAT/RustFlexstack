@@ -28,9 +28,18 @@ pub struct BTPAHeader {
     source_port: u16,
 }
 
+impl Default for BTPAHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BTPAHeader {
     pub fn new() -> Self {
-        BTPAHeader { destination_port: 0, source_port: 0 }
+        BTPAHeader {
+            destination_port: 0,
+            source_port: 0,
+        }
     }
 
     /// Build a BTP-A header from a [`BTPDataRequest`].
@@ -85,9 +94,18 @@ pub struct BTPBHeader {
     pub destination_port_info: u16,
 }
 
+impl Default for BTPBHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BTPBHeader {
     pub fn new() -> Self {
-        BTPBHeader { destination_port: 0, destination_port_info: 0 }
+        BTPBHeader {
+            destination_port: 0,
+            destination_port_info: 0,
+        }
     }
 
     /// Build a BTP-B header from a [`BTPDataRequest`].
@@ -112,5 +130,125 @@ impl BTPBHeader {
             destination_port: u16::from_be_bytes([bytes[0], bytes[1]]),
             destination_port_info: u16::from_be_bytes([bytes[2], bytes[3]]),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::btp::service_access_point::BTPDataRequest;
+
+    // ── BTPAHeader ────────────────────────────────────────────────────────
+
+    #[test]
+    fn btpa_new_defaults_to_zero() {
+        let h = BTPAHeader::new();
+        assert_eq!(h.destination_port(), 0);
+        assert_eq!(h.source_port(), 0);
+    }
+
+    #[test]
+    fn btpa_encode_decode_roundtrip() {
+        let h = BTPAHeader {
+            destination_port: 2001,
+            source_port: 5000,
+        };
+        let encoded = h.encode();
+        let decoded = BTPAHeader::decode(encoded);
+        assert_eq!(decoded.destination_port(), 2001);
+        assert_eq!(decoded.source_port(), 5000);
+    }
+
+    #[test]
+    fn btpa_encode_big_endian() {
+        let h = BTPAHeader {
+            destination_port: 0x07D1, // 2001
+            source_port: 0x1388,      // 5000
+        };
+        let bytes = h.encode();
+        assert_eq!(bytes, [0x07, 0xD1, 0x13, 0x88]);
+    }
+
+    #[test]
+    fn btpa_initialize_with_request() {
+        let mut req = BTPDataRequest::new();
+        req.destination_port = 2001;
+        req.source_port = 3000;
+        let h = BTPAHeader::initialize_with_request(&req);
+        assert_eq!(h.destination_port(), 2001);
+        assert_eq!(h.source_port(), 3000);
+    }
+
+    #[test]
+    fn btpa_max_port_values() {
+        let h = BTPAHeader {
+            destination_port: u16::MAX,
+            source_port: u16::MAX,
+        };
+        let decoded = BTPAHeader::decode(h.encode());
+        assert_eq!(decoded.destination_port(), u16::MAX);
+        assert_eq!(decoded.source_port(), u16::MAX);
+    }
+
+    // ── BTPBHeader ────────────────────────────────────────────────────────
+
+    #[test]
+    fn btpb_new_defaults_to_zero() {
+        let h = BTPBHeader::new();
+        assert_eq!(h.destination_port, 0);
+        assert_eq!(h.destination_port_info, 0);
+    }
+
+    #[test]
+    fn btpb_encode_decode_roundtrip() {
+        let h = BTPBHeader {
+            destination_port: 2002,
+            destination_port_info: 42,
+        };
+        let encoded = h.encode();
+        let decoded = BTPBHeader::decode(encoded);
+        assert_eq!(decoded.destination_port, 2002);
+        assert_eq!(decoded.destination_port_info, 42);
+    }
+
+    #[test]
+    fn btpb_encode_big_endian() {
+        let h = BTPBHeader {
+            destination_port: 0x07D2,      // 2002
+            destination_port_info: 0x002A, // 42
+        };
+        let bytes = h.encode();
+        assert_eq!(bytes, [0x07, 0xD2, 0x00, 0x2A]);
+    }
+
+    #[test]
+    fn btpb_initialize_with_request() {
+        let mut req = BTPDataRequest::new();
+        req.destination_port = 2001;
+        req.destination_port_info = 99;
+        let h = BTPBHeader::initialize_with_request(&req);
+        assert_eq!(h.destination_port, 2001);
+        assert_eq!(h.destination_port_info, 99);
+    }
+
+    #[test]
+    fn btpb_cam_port() {
+        let h = BTPBHeader {
+            destination_port: 2001,
+            destination_port_info: 0,
+        };
+        let decoded = BTPBHeader::decode(h.encode());
+        assert_eq!(decoded.destination_port, 2001);
+        assert_eq!(decoded.destination_port_info, 0);
+    }
+
+    #[test]
+    fn btpb_denm_port() {
+        let h = BTPBHeader {
+            destination_port: 2002,
+            destination_port_info: 0,
+        };
+        let decoded = BTPBHeader::decode(h.encode());
+        assert_eq!(decoded.destination_port, 2002);
     }
 }

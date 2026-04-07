@@ -16,22 +16,22 @@
 
 /// ITS-S application identifiers (ETSI TS 102 965).
 pub const ITS_AID_DENM: u32 = 1;
-pub const ITS_AID_CAM:  u32 = 2;
-pub const ITS_AID_POI:  u32 = 3;
+pub const ITS_AID_CAM: u32 = 2;
+pub const ITS_AID_POI: u32 = 3;
 pub const ITS_AID_SAEM: u32 = 4;
 pub const ITS_AID_EEBL: u32 = 5;
-pub const ITS_AID_IVI:  u32 = 6;
-pub const ITS_AID_TLC:  u32 = 7;
-pub const ITS_AID_GPC:  u32 = 9;
+pub const ITS_AID_IVI: u32 = 6;
+pub const ITS_AID_TLC: u32 = 7;
+pub const ITS_AID_GPC: u32 = 9;
 pub const ITS_AID_GNSS: u32 = 10;
-pub const ITS_AID_TPG:  u32 = 11;
-pub const ITS_AID_CRL:  u32 = 12;
-pub const ITS_AID_CRT:  u32 = 13;
-pub const ITS_AID_SRM:  u32 = 14;
-pub const ITS_AID_SSM:  u32 = 15;
-pub const ITS_AID_VAM:  u32 = 16;
+pub const ITS_AID_TPG: u32 = 11;
+pub const ITS_AID_CRL: u32 = 12;
+pub const ITS_AID_CRT: u32 = 13;
+pub const ITS_AID_SRM: u32 = 14;
+pub const ITS_AID_SSM: u32 = 15;
+pub const ITS_AID_VAM: u32 = 16;
 pub const ITS_AID_IMZM: u32 = 17;
-pub const ITS_AID_PAM:  u32 = 21;
+pub const ITS_AID_PAM: u32 = 21;
 
 /// Milliseconds between UNIX epoch (1970-01-01) and the ITS epoch (2004-01-01).
 /// Used to convert `std::time::SystemTime` to ITS milliseconds.
@@ -85,8 +85,7 @@ pub fn haversine_m(lat1_etsi: i32, lon1_etsi: i32, lat2_etsi: i32, lon2_etsi: i3
     let dlat = lat2 - lat1;
     let dlon = ((lon2_etsi - lon1_etsi) as f64 * 1e-7).to_radians();
 
-    let a = (dlat / 2.0).sin().powi(2)
-        + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
     let c = 2.0 * a.sqrt().asin();
 
     EARTH_RADIUS_M * c

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! VRU Awareness Service — VRU Awareness Basic Service (ETSI TS 103 300-3).
+//! VRU Awareness Service — VRU Awareness Basic Service (ETSI TS 103 300-3 V2.3.1).
 //!
 //! Implements VAM generation and reception on top of the BTP and
 //! GeoNetworking layers already present in this crate.
@@ -58,10 +58,10 @@ use std::sync::mpsc::{self, Receiver, Sender};
 /// Create with [`new`](Self::new), then call [`start`](Self::start) once the
 /// GPS channel wiring is ready.
 pub struct VruAwarenessService {
-    btp_handle:  BTPRouterHandle,
+    btp_handle: BTPRouterHandle,
     device_data: DeviceData,
     /// Reception management writes decoded VAMs into this sender.
-    vam_tx:      Sender<Vam>,
+    vam_tx: Sender<Vam>,
 }
 
 impl VruAwarenessService {
@@ -70,12 +70,13 @@ impl VruAwarenessService {
     /// Returns `(service, vam_receiver)`.  Hold `vam_receiver` to consume
     /// decoded incoming VAMs.  Call [`start`](Self::start) with a GPS fix
     /// receiver to begin transmitting and receiving.
-    pub fn new(
-        btp_handle:  BTPRouterHandle,
-        device_data: DeviceData,
-    ) -> (Self, Receiver<Vam>) {
+    pub fn new(btp_handle: BTPRouterHandle, device_data: DeviceData) -> (Self, Receiver<Vam>) {
         let (vam_tx, vam_rx) = mpsc::channel::<Vam>();
-        let svc = VruAwarenessService { btp_handle, device_data, vam_tx };
+        let svc = VruAwarenessService {
+            btp_handle,
+            device_data,
+            vam_tx,
+        };
         (svc, vam_rx)
     }
 

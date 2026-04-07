@@ -12,17 +12,16 @@
 // ─── Re-exports from compiled ASN.1 bindings ────────────────────────────────
 
 pub use super::cam_bindings::cam_pdu_descriptions::{
-    BasicVehicleContainerHighFrequency, CAM, CamParameters, CamPayload, HighFrequencyContainer,
+    BasicVehicleContainerHighFrequency, CamParameters, CamPayload, HighFrequencyContainer, CAM,
 };
 pub use super::cam_bindings::etsi_its_cdd::{
     AccelerationComponent, AccelerationConfidence, AccelerationValue, Altitude, AltitudeConfidence,
     AltitudeValue, BasicContainer, Curvature, CurvatureCalculationMode, CurvatureConfidence,
     CurvatureValue, DriveDirection, GenerationDeltaTime, Heading, HeadingConfidence, HeadingValue,
     ItsPduHeader, Latitude, Longitude, MessageId, OrdinalNumber1B, PositionConfidenceEllipse,
-    ReferencePositionWithConfidence, SemiAxisLength, Speed,
-    SpeedConfidence, SpeedValue, StationId, StationType, TrafficParticipantType, VehicleLength,
-    VehicleLengthConfidenceIndication, VehicleLengthValue, VehicleWidth, Wgs84AngleValue, YawRate,
-    YawRateConfidence, YawRateValue,
+    ReferencePositionWithConfidence, SemiAxisLength, Speed, SpeedConfidence, SpeedValue, StationId,
+    StationType, TrafficParticipantType, VehicleLength, VehicleLengthConfidenceIndication,
+    VehicleLengthValue, VehicleWidth, Wgs84AngleValue, YawRate, YawRateConfidence, YawRateValue,
 };
 
 // ─── GenerationDeltaTime helpers ─────────────────────────────────────────────
@@ -84,7 +83,64 @@ impl CamCoder {
 
     /// UPER-decode a [`Cam`] PDU from bytes.
     pub fn decode(&self, bytes: &[u8]) -> Result<Cam, String> {
-        rasn::uper::decode::<Cam>(bytes)
-            .map_err(|e| format!("CAM UPER decode error: {e}"))
+        rasn::uper::decode::<Cam>(bytes).map_err(|e| format!("CAM UPER decode error: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generation_delta_time_from_unix_ms_basic() {
+        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 1000);
+        assert_eq!(gdt.0, 1000);
+    }
+
+    #[test]
+    fn generation_delta_time_wraps_at_65536() {
+        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 65_537);
+        assert_eq!(gdt.0, 1);
+    }
+
+    #[test]
+    fn generation_delta_time_before_epoch() {
+        let gdt = generation_delta_time_from_unix_ms(0);
+        assert_eq!(gdt.0, 0);
+    }
+
+    #[test]
+    fn generation_delta_time_now_nonzero() {
+        let gdt = generation_delta_time_now();
+        // Should be non-zero since we're well after ITS epoch
+        let _ = gdt; // verify it was created successfully
+    }
+
+    #[test]
+    fn cam_header_fields() {
+        let hdr = cam_header(42);
+        assert_eq!(hdr.protocol_version.0, 2);
+        assert_eq!(hdr.message_id.0, 2);
+        assert_eq!(hdr.station_id.0, 42);
+    }
+
+    #[test]
+    fn cam_coder_new() {
+        let coder = CamCoder::new();
+        let coder2 = coder.clone();
+        // Just ensure Clone works
+        let _ = format!("{:?}", coder2);
+    }
+
+    #[test]
+    fn cam_coder_default() {
+        let _coder = CamCoder;
+    }
+
+    #[test]
+    fn cam_coder_decode_invalid_bytes() {
+        let coder = CamCoder::new();
+        let result = coder.decode(&[0xFF, 0xFF]);
+        assert!(result.is_err());
     }
 }

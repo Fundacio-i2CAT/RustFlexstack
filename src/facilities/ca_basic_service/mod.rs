@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! CA Basic Service — Cooperative Awareness Basic Service (ETSI EN 302 637-2).
+//! CA Basic Service — Cooperative Awareness Basic Service (ETSI TS 103 900 V2.2.1).
 //!
 //! Implements CAM generation and reception on top of the BTP and
 //! GeoNetworking layers already present in this crate.
@@ -59,12 +59,12 @@ use std::sync::mpsc::{self, Receiver, Sender};
 /// Create with [`new`](Self::new), then call [`start`](Self::start) once the
 /// GPS channel wiring is ready.
 pub struct CooperativeAwarenessBasicService {
-    btp_handle:   BTPRouterHandle,
+    btp_handle: BTPRouterHandle,
     vehicle_data: VehicleData,
     /// Reception management writes decoded CAMs into this sender.
-    cam_tx:       Sender<Cam>,
+    cam_tx: Sender<Cam>,
     /// Optional LDM handle — if provided, received CAMs are stored in the LDM.
-    ldm:          Option<LdmHandle>,
+    ldm: Option<LdmHandle>,
 }
 
 impl CooperativeAwarenessBasicService {
@@ -77,12 +77,17 @@ impl CooperativeAwarenessBasicService {
     /// Pass `Some(ldm_handle)` to have every received CAM inserted into the
     /// LDM automatically before it is delivered to the `cam_receiver`.
     pub fn new(
-        btp_handle:   BTPRouterHandle,
+        btp_handle: BTPRouterHandle,
         vehicle_data: VehicleData,
-        ldm:          Option<LdmHandle>,
+        ldm: Option<LdmHandle>,
     ) -> (Self, Receiver<Cam>) {
         let (cam_tx, cam_rx) = mpsc::channel::<Cam>();
-        let svc = CooperativeAwarenessBasicService { btp_handle, vehicle_data, cam_tx, ldm };
+        let svc = CooperativeAwarenessBasicService {
+            btp_handle,
+            vehicle_data,
+            cam_tx,
+            ldm,
+        };
         (svc, cam_rx)
     }
 
@@ -94,7 +99,12 @@ impl CooperativeAwarenessBasicService {
     /// The transmission thread starts producing CAMs as soon as fixes arrive.
     pub fn start(self, gps_rx: Receiver<GpsFix>) {
         let coder = CamCoder::new();
-        CAMReceptionManagement::spawn(self.btp_handle.clone(), coder.clone(), self.cam_tx, self.ldm);
+        CAMReceptionManagement::spawn(
+            self.btp_handle.clone(),
+            coder.clone(),
+            self.cam_tx,
+            self.ldm,
+        );
         CAMTransmissionManagement::spawn(self.btp_handle, coder, self.vehicle_data, gps_rx);
     }
 }

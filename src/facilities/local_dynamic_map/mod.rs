@@ -98,13 +98,13 @@ impl LdmFacility {
     /// * `area_lat_etsi`  — latitude of the local station (ETSI × 1e7).
     /// * `area_lon_etsi`  — longitude of the local station (ETSI × 1e7).
     /// * `area_radius_m`  — maintenance area radius in metres.
-    ///                      Pass `0.0` to disable spatial GC.
+    ///   Pass `0.0` to disable spatial GC.
     ///
     /// # Returns
     /// An `LdmHandle` (`Arc<LdmFacility>`) that can be shared freely across
     /// threads.
     pub fn new(area_lat_etsi: i32, area_lon_etsi: i32, area_radius_m: f64) -> LdmHandle {
-        let store   = Arc::new(std::sync::RwLock::new(LdmStore::new()));
+        let store = Arc::new(std::sync::RwLock::new(LdmStore::new()));
         let service = LdmService::new(store);
 
         let if_ldm_3 = IfLdm3::new(service.clone());

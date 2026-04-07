@@ -73,12 +73,12 @@ pub struct GpsFix {
 impl Default for GpsFix {
     fn default() -> Self {
         GpsFix {
-            latitude:    0.0,
-            longitude:   0.0,
-            altitude_m:  0.0,
-            speed_mps:   0.0,
+            latitude: 0.0,
+            longitude: 0.0,
+            altitude_m: 0.0,
+            speed_mps: 0.0,
             heading_deg: 0.0,
-            pai:         false,
+            pai: false,
         }
     }
 }
@@ -97,7 +97,9 @@ pub struct LocationService {
 impl LocationService {
     /// Create a new, empty `LocationService` with no subscribers.
     pub fn new() -> Self {
-        LocationService { senders: Vec::new() }
+        LocationService {
+            senders: Vec::new(),
+        }
     }
 
     /// Register a new subscriber.
@@ -128,5 +130,80 @@ impl LocationService {
 impl Default for LocationService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_has_no_subscribers() {
+        let svc = LocationService::new();
+        assert_eq!(svc.subscriber_count(), 0);
+    }
+
+    #[test]
+    fn default_same_as_new() {
+        let svc = LocationService::default();
+        assert_eq!(svc.subscriber_count(), 0);
+    }
+
+    #[test]
+    fn subscribe_increases_count() {
+        let mut svc = LocationService::new();
+        let _rx1 = svc.subscribe();
+        assert_eq!(svc.subscriber_count(), 1);
+        let _rx2 = svc.subscribe();
+        assert_eq!(svc.subscriber_count(), 2);
+    }
+
+    #[test]
+    fn publish_delivers_to_subscribers() {
+        let mut svc = LocationService::new();
+        let rx = svc.subscribe();
+        let fix = GpsFix {
+            latitude: 41.552,
+            longitude: 2.134,
+            altitude_m: 120.0,
+            speed_mps: 10.0,
+            heading_deg: 90.0,
+            pai: true,
+        };
+        svc.publish(fix);
+        let received = rx.recv().unwrap();
+        assert!((received.latitude - 41.552).abs() < 1e-6);
+        assert!((received.longitude - 2.134).abs() < 1e-6);
+        assert!(received.pai);
+    }
+
+    #[test]
+    fn publish_to_multiple_subscribers() {
+        let mut svc = LocationService::new();
+        let rx1 = svc.subscribe();
+        let rx2 = svc.subscribe();
+        let fix = GpsFix::default();
+        svc.publish(fix);
+        assert!(rx1.recv().is_ok());
+        assert!(rx2.recv().is_ok());
+    }
+
+    #[test]
+    fn dead_receiver_pruned_on_publish() {
+        let mut svc = LocationService::new();
+        let rx = svc.subscribe();
+        assert_eq!(svc.subscriber_count(), 1);
+        drop(rx);
+        svc.publish(GpsFix::default());
+        assert_eq!(svc.subscriber_count(), 0);
+    }
+
+    #[test]
+    fn gps_fix_default() {
+        let fix = GpsFix::default();
+        assert_eq!(fix.latitude, 0.0);
+        assert_eq!(fix.longitude, 0.0);
+        assert_eq!(fix.speed_mps, 0.0);
+        assert!(!fix.pai);
     }
 }

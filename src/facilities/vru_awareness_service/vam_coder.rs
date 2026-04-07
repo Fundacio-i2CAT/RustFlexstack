@@ -11,18 +11,17 @@
 
 // ─── Re-exports from compiled ASN.1 bindings ─────────────────────────────────
 
+pub use super::vam_bindings::etsi_its_cdd::{
+    AccelerationConfidence, Altitude, AltitudeConfidence, AltitudeValue, BasicContainer, Curvature,
+    CurvatureCalculationMode, GenerationDeltaTime, ItsPduHeader, Latitude, Longitude,
+    LongitudinalAcceleration, LongitudinalAccelerationValue, MessageId, OrdinalNumber1B,
+    PositionConfidenceEllipse, ReferencePositionWithConfidence, SemiAxisLength, Speed,
+    SpeedConfidence, SpeedValue, StationId, TrafficParticipantType, Wgs84Angle,
+    Wgs84AngleConfidence, Wgs84AngleValue,
+};
 pub use super::vam_bindings::vam_pdu_descriptions::{
     ItsPduHeaderVam, VamParameters, VruAwareness, VruHighFrequencyContainer,
     VruLowFrequencyContainer, VruMotionPredictionContainer, VAM,
-};
-pub use super::vam_bindings::etsi_its_cdd::{
-    AccelerationConfidence, Altitude, AltitudeConfidence, AltitudeValue,
-    BasicContainer, Curvature, CurvatureCalculationMode, GenerationDeltaTime,
-    ItsPduHeader, Latitude, Longitude, LongitudinalAcceleration,
-    LongitudinalAccelerationValue, MessageId, OrdinalNumber1B,
-    PositionConfidenceEllipse, ReferencePositionWithConfidence, SemiAxisLength,
-    Speed, SpeedConfidence, SpeedValue, StationId, TrafficParticipantType,
-    Wgs84Angle, Wgs84AngleConfidence, Wgs84AngleValue,
 };
 
 // ─── GenerationDeltaTime helpers ─────────────────────────────────────────────
@@ -91,7 +90,55 @@ impl VamCoder {
 
     /// UPER-decode a [`Vam`] PDU from bytes.
     pub fn decode(&self, bytes: &[u8]) -> Result<Vam, String> {
-        rasn::uper::decode::<Vam>(bytes)
-            .map_err(|e| format!("VAM UPER decode error: {e}"))
+        rasn::uper::decode::<Vam>(bytes).map_err(|e| format!("VAM UPER decode error: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generation_delta_time_from_unix_ms_basic() {
+        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 2000);
+        assert_eq!(gdt.0, 2000);
+    }
+
+    #[test]
+    fn generation_delta_time_wraps() {
+        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 65_536);
+        assert_eq!(gdt.0, 0);
+    }
+
+    #[test]
+    fn generation_delta_time_now_runs() {
+        let _ = generation_delta_time_now();
+    }
+
+    #[test]
+    fn vam_header_fields() {
+        let hdr = vam_header(123);
+        assert_eq!(hdr.0.protocol_version.0, 3);
+        assert_eq!(hdr.0.message_id.0, 16);
+        assert_eq!(hdr.0.station_id.0, 123);
+    }
+
+    #[test]
+    fn vam_coder_new() {
+        let coder = VamCoder::new();
+        let coder2 = coder.clone();
+        let _ = format!("{:?}", coder2);
+    }
+
+    #[test]
+    fn vam_coder_default() {
+        let _coder = VamCoder;
+    }
+
+    #[test]
+    fn vam_coder_decode_invalid_bytes() {
+        let coder = VamCoder::new();
+        let result = coder.decode(&[0xFF, 0xFF]);
+        assert!(result.is_err());
     }
 }

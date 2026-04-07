@@ -16,16 +16,15 @@
 //!
 //! All methods are thin delegations to `LdmService`.
 
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
 
 use crate::facilities::local_dynamic_map::ldm_service::LdmService;
 use crate::facilities::local_dynamic_map::ldm_types::{
-    DeregisterDataConsumerReq, DeregisterDataConsumerResp,
-    RegisterDataConsumerReq, RegisterDataConsumerResp,
-    RequestDataObjectsReq, RequestDataObjectsResp,
-    SubscribeDataObjectsReq, SubscribeDataObjectsResp,
-    UnsubscribeDataConsumerReq, UnsubscribeDataConsumerResp,
+    DeregisterDataConsumerReq, DeregisterDataConsumerResp, RegisterDataConsumerReq,
+    RegisterDataConsumerResp, RequestDataObjectsReq, RequestDataObjectsResp,
+    SubscribeDataObjectsReq, SubscribeDataObjectsResp, UnsubscribeDataConsumerReq,
+    UnsubscribeDataConsumerResp,
 };
 
 /// ETSI IF.LDM.4 — Data Consumer interface.

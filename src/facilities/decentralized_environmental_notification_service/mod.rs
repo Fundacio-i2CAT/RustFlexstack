@@ -48,7 +48,7 @@ pub mod denm_transmission;
 
 pub use denm_coder::{Denm, DenmCoder};
 pub use denm_reception::DENMReceptionManagement;
-pub use denm_transmission::{DENRequest, DENMTransmissionManagement, VehicleData};
+pub use denm_transmission::{DENMTransmissionManagement, DENRequest, VehicleData};
 
 use crate::btp::router::BTPRouterHandle;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -64,7 +64,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 pub struct DecentralizedEnvironmentalNotificationService {
     tx_management: DENMTransmissionManagement,
     /// Reception management writes decoded DENMs into this sender.
-    denm_tx:       Sender<Denm>,
+    _denm_tx: Sender<Denm>,
 }
 
 impl DecentralizedEnvironmentalNotificationService {
@@ -73,23 +73,19 @@ impl DecentralizedEnvironmentalNotificationService {
     /// Returns `(service, denm_receiver)`.  Hold `denm_receiver` to consume
     /// decoded incoming DENMs.  The reception thread is started immediately
     /// (it registers BTP port 2002 right away).
-    pub fn new(
-        btp_handle:   BTPRouterHandle,
-        vehicle_data: VehicleData,
-    ) -> (Self, Receiver<Denm>) {
+    pub fn new(btp_handle: BTPRouterHandle, vehicle_data: VehicleData) -> (Self, Receiver<Denm>) {
         let coder = DenmCoder::new();
         let (denm_tx, denm_rx) = mpsc::channel::<Denm>();
 
         // Start reception immediately.
         DENMReceptionManagement::spawn(btp_handle.clone(), coder.clone(), denm_tx.clone());
 
-        let tx_management = DENMTransmissionManagement::new(
-            btp_handle,
-            coder,
-            vehicle_data,
-        );
+        let tx_management = DENMTransmissionManagement::new(btp_handle, coder, vehicle_data);
 
-        let svc = DecentralizedEnvironmentalNotificationService { tx_management, denm_tx };
+        let svc = DecentralizedEnvironmentalNotificationService {
+            tx_management,
+            _denm_tx: denm_tx,
+        };
         (svc, denm_rx)
     }
 

@@ -6,7 +6,8 @@
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::doc_overindented_list_items
 )]
 pub mod denm_pdu_description {
     extern crate alloc;
@@ -780,7 +781,8 @@ pub mod denm_pdu_description {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::doc_overindented_list_items
 )]
 pub mod etsi_its_cdd {
     extern crate alloc;
