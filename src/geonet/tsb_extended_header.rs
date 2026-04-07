@@ -53,12 +53,16 @@ impl TSBExtendedHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geonet::position_vector::{LongPositionVector, Tst};
     use crate::geonet::gn_address::{GNAddress, M, MID, ST};
+    use crate::geonet::position_vector::{LongPositionVector, Tst};
 
     fn make_tsb() -> TSBExtendedHeader {
         let so_pv = LongPositionVector {
-            gn_addr: GNAddress::new(M::GnUnicast, ST::Motorcycle, MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])),
+            gn_addr: GNAddress::new(
+                M::GnUnicast,
+                ST::Motorcycle,
+                MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]),
+            ),
             tst: Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000),
             latitude: 415520000,
             longitude: 21340000,

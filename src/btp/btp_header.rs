@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn btpb_encode_big_endian() {
         let h = BTPBHeader {
-            destination_port: 0x07D2, // 2002
+            destination_port: 0x07D2,      // 2002
             destination_port_info: 0x002A, // 42
         };
         let bytes = h.encode();

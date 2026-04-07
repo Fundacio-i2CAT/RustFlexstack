@@ -23,17 +23,16 @@ use super::denm_coder::{
     DenmPayload, HeadingValue, InformationQuality, Latitude, LocationContainer, Longitude,
     ManagementContainer, Path, PathPoint, PosConfidenceEllipse, ReferencePosition, SemiAxisLength,
     SequenceNumber, SituationContainer, Speed, SpeedConfidence, SpeedValue, StationId, StationType,
-    Traces, TrafficParticipantType, Wgs84Angle, Wgs84AngleConfidence,
-    Wgs84AngleValue,
+    Traces, TrafficParticipantType, Wgs84Angle, Wgs84AngleConfidence, Wgs84AngleValue,
 };
 use crate::btp::router::BTPRouterHandle;
-use crate::security::sn_sap::SecurityProfile;
 use crate::btp::service_access_point::BTPDataRequest;
 use crate::geonet::gn_address::{GNAddress, M, MID, ST};
 use crate::geonet::service_access_point::{
     Area, CommonNH, CommunicationProfile, GeoBroadcastHST, HeaderSubType, HeaderType,
     PacketTransportType, TrafficClass,
 };
+use crate::security::sn_sap::SecurityProfile;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::thread;
 use std::time::Duration;

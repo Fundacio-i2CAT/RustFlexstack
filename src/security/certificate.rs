@@ -5,19 +5,15 @@
 
 use crate::security::ecdsa_backend::EcdsaBackend;
 use crate::security::security_asn::etsi_ts103097_module::EtsiTs103097Certificate;
+use crate::security::security_asn::ieee1609_dot2::Certificate as AsnCertificate;
 use crate::security::security_asn::ieee1609_dot2::{
-    CertificateBase, CertificateType, IssuerIdentifier,
-    Ieee1609Dot2Data, ToBeSignedCertificate,
+    CertificateBase, CertificateType, Ieee1609Dot2Data, IssuerIdentifier, ToBeSignedCertificate,
     ToBeSignedData,
 };
+use crate::security::security_asn::ieee1609_dot2::{SubjectPermissions, VerificationKeyIndicator};
 use crate::security::security_asn::ieee1609_dot2_base_types::Signature as Ieee1609Signature;
-use crate::security::security_asn::ieee1609_dot2::Certificate as AsnCertificate;
 use crate::security::security_asn::ieee1609_dot2_base_types::{
-    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, HashedId8,
-    PublicVerificationKey, Uint8,
-};
-use crate::security::security_asn::ieee1609_dot2::{
-    SubjectPermissions, VerificationKeyIndicator,
+    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, HashedId8, PublicVerificationKey, Uint8,
 };
 
 // ─── COER encode / decode helpers ────────────────────────────────────────
@@ -164,9 +160,7 @@ impl Certificate {
     pub fn verification_key_is_nist_p256(&self) -> bool {
         matches!(
             &self.tbs().verify_key_indicator,
-            VerificationKeyIndicator::verificationKey(
-                PublicVerificationKey::ecdsaNistP256(_)
-            )
+            VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(_))
         )
     }
 
@@ -329,7 +323,10 @@ impl Certificate {
             return false;
         }
         let tbs = self.tbs();
-        if !matches!(tbs.id, crate::security::security_asn::ieee1609_dot2::CertificateId::none(_)) {
+        if !matches!(
+            tbs.id,
+            crate::security::security_asn::ieee1609_dot2::CertificateId::none(_)
+        ) {
             return false;
         }
         if tbs.cert_issue_permissions.is_some() {
@@ -394,11 +391,7 @@ impl OwnCertificate {
 
     /// Sign (or re-sign) `target`'s `toBeSigned` and return a new `Certificate`
     /// with the updated signature.
-    pub fn sign_certificate(
-        &self,
-        backend: &EcdsaBackend,
-        target: &Certificate,
-    ) -> Certificate {
+    pub fn sign_certificate(&self, backend: &EcdsaBackend, target: &Certificate) -> Certificate {
         let tbs_bytes = encode_tbs_certificate(target.tbs());
         let sig = backend.sign(&tbs_bytes, self.key_id);
 
@@ -411,11 +404,7 @@ impl OwnCertificate {
 
     /// Build the inner `AsnCertificate` from the wrapper's certificate dict,
     /// setting the issuer to `self`, signing, and returning the result.
-    pub fn issue_certificate(
-        &self,
-        backend: &EcdsaBackend,
-        target: &Certificate,
-    ) -> Certificate {
+    pub fn issue_certificate(&self, backend: &EcdsaBackend, target: &Certificate) -> Certificate {
         // Set issuer to our HashedId8
         let mut new_base = target.base().clone();
         let h8 = self.as_hashedid8();
@@ -432,10 +421,7 @@ impl OwnCertificate {
     }
 
     /// Create a brand-new self-signed certificate.
-    pub fn initialize_self_signed(
-        backend: &mut EcdsaBackend,
-        tbs: ToBeSignedCertificate,
-    ) -> Self {
+    pub fn initialize_self_signed(backend: &mut EcdsaBackend, tbs: ToBeSignedCertificate) -> Self {
         let key_id = backend.create_key();
         let pk = backend.get_public_key(key_id);
 
@@ -509,19 +495,15 @@ mod tests {
 
     fn make_root_tbs() -> ToBeSignedCertificate {
         use crate::security::security_asn::ieee1609_dot2::{
-            CertificateId, PsidGroupPermissions, SequenceOfPsidGroupPermissions,
-            SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
-            SequenceOfCertRequestExtensions, EndEntityType,
+            CertificateId, EndEntityType, PsidGroupPermissions, SequenceOfAppExtensions,
+            SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions,
+            SequenceOfPsidGroupPermissions,
         };
         use crate::security::security_asn::ieee1609_dot2_base_types::{
-            CrlSeries, Duration as AsnDuration, ValidityPeriod,
-            Time32, Uint16, Uint32, HashedId3,
+            CrlSeries, Duration as AsnDuration, HashedId3, Time32, Uint16, Uint32, ValidityPeriod,
         };
 
-        let validity = ValidityPeriod::new(
-            Time32(Uint32(0)),
-            AsnDuration::years(Uint16(30)),
-        );
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
 
         let perms = SequenceOfPsidGroupPermissions(
             vec![PsidGroupPermissions::new(
@@ -537,9 +519,8 @@ mod tests {
             .into(),
         );
 
-        let placeholder_pk = PublicVerificationKey::ecdsaNistP256(
-            EccP256CurvePoint::x_only(vec![0u8; 32].into()),
-        );
+        let placeholder_pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
 
         ToBeSignedCertificate::new(
             CertificateId::none(()),
@@ -563,28 +544,21 @@ mod tests {
 
     fn make_at_tbs() -> ToBeSignedCertificate {
         use crate::security::security_asn::ieee1609_dot2::{
-            CertificateId, PsidSsp, SequenceOfPsidSsp,
-            SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
-            SequenceOfCertRequestExtensions,
+            CertificateId, PsidSsp, SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
+            SequenceOfCertRequestExtensions, SequenceOfPsidSsp,
         };
         use crate::security::security_asn::ieee1609_dot2_base_types::{
-            CrlSeries, Duration as AsnDuration, Psid, ValidityPeriod,
-            Time32, Uint16, Uint32, HashedId3,
+            CrlSeries, Duration as AsnDuration, HashedId3, Psid, Time32, Uint16, Uint32,
+            ValidityPeriod,
         };
 
-        let validity = ValidityPeriod::new(
-            Time32(Uint32(0)),
-            AsnDuration::years(Uint16(1)),
-        );
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
 
-        let app_perms = SequenceOfPsidSsp(
-            vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)]
-                .into(),
-        );
+        let app_perms =
+            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)].into());
 
-        let placeholder_pk = PublicVerificationKey::ecdsaNistP256(
-            EccP256CurvePoint::x_only(vec![0u8; 32].into()),
-        );
+        let placeholder_pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
 
         ToBeSignedCertificate::new(
             CertificateId::none(()),

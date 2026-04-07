@@ -150,7 +150,11 @@ mod tests {
 
     #[test]
     fn ls_request_encode_decode_roundtrip() {
-        let req_addr = GNAddress::new(M::GnUnicast, ST::HeavyTruck, MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]));
+        let req_addr = GNAddress::new(
+            M::GnUnicast,
+            ST::HeavyTruck,
+            MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]),
+        );
         let header = LSRequestExtendedHeader::initialize(55, make_lpv(), req_addr);
         let encoded = header.encode();
         assert_eq!(encoded.len(), 36);

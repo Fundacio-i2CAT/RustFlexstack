@@ -7,10 +7,8 @@
 use crate::security::certificate::{decode_ieee1609_dot2_data, encode_tbs_data, Certificate};
 use crate::security::certificate_library::CertificateLibrary;
 use crate::security::ecdsa_backend::EcdsaBackend;
-use crate::security::security_asn::ieee1609_dot2::{
-    Ieee1609Dot2Content, SignerIdentifier,
-};
 use crate::security::security_asn::ieee1609_dot2::VerificationKeyIndicator;
+use crate::security::security_asn::ieee1609_dot2::{Ieee1609Dot2Content, SignerIdentifier};
 use crate::security::sign_service::SignService;
 use crate::security::sn_sap::{ReportVerify, SNVerifyConfirm, SNVerifyRequest};
 
@@ -230,8 +228,16 @@ pub fn verify_message(
     }
 
     // §5.2: p2pcdLearningRequest and missingCrlIdentifier must be absent
-    if signed_data.tbs_data.header_info.p2pcd_learning_request.is_some()
-        || signed_data.tbs_data.header_info.missing_crl_identifier.is_some()
+    if signed_data
+        .tbs_data
+        .header_info
+        .p2pcd_learning_request
+        .is_some()
+        || signed_data
+            .tbs_data
+            .header_info
+            .missing_crl_identifier
+            .is_some()
     {
         return (
             SNVerifyConfirm {
@@ -247,7 +253,12 @@ pub fn verify_message(
 
     // §7.1.2: DENM-specific header constraints
     if psid == 37 {
-        if signed_data.tbs_data.header_info.generation_location.is_none() {
+        if signed_data
+            .tbs_data
+            .header_info
+            .generation_location
+            .is_none()
+        {
             return (
                 SNVerifyConfirm {
                     report: ReportVerify::IncompatibleProtocol,
@@ -262,8 +273,16 @@ pub fn verify_message(
         // Forbidden fields for DENM
         if signed_data.tbs_data.header_info.expiry_time.is_some()
             || signed_data.tbs_data.header_info.encryption_key.is_some()
-            || signed_data.tbs_data.header_info.inline_p2pcd_request.is_some()
-            || signed_data.tbs_data.header_info.requested_certificate.is_some()
+            || signed_data
+                .tbs_data
+                .header_info
+                .inline_p2pcd_request
+                .is_some()
+            || signed_data
+                .tbs_data
+                .header_info
+                .requested_certificate
+                .is_some()
         {
             return (
                 SNVerifyConfirm {
@@ -345,22 +364,22 @@ pub enum VerifyEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rasn::prelude::*;
     use crate::security::certificate::OwnCertificate;
     use crate::security::certificate_library::CertificateLibrary;
     use crate::security::ecdsa_backend::EcdsaBackend;
     use crate::security::security_asn::ieee1609_dot2::{
-        CertificateId, PsidGroupPermissions, PsidSsp, SequenceOfPsidGroupPermissions,
-        SequenceOfPsidSsp, SubjectPermissions, ToBeSignedCertificate, VerificationKeyIndicator,
-        SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
-        SequenceOfCertRequestExtensions, EndEntityType,
+        CertificateId, EndEntityType, PsidGroupPermissions, PsidSsp, SequenceOfAppExtensions,
+        SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions,
+        SequenceOfPsidGroupPermissions, SequenceOfPsidSsp, SubjectPermissions,
+        ToBeSignedCertificate, VerificationKeyIndicator,
     };
     use crate::security::security_asn::ieee1609_dot2_base_types::{
-        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, Psid,
-        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod, HashedId3,
+        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, HashedId3, Psid,
+        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod,
     };
     use crate::security::sign_service::SignService;
     use crate::security::sn_sap::{GenerationLocation, SNSignRequest, SNVerifyRequest};
+    use rasn::prelude::*;
 
     fn make_root_tbs() -> ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
@@ -377,9 +396,8 @@ mod tests {
             )]
             .into(),
         );
-        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
-            vec![0u8; 32].into(),
-        ));
+        let pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
             CertificateId::none(()),
             HashedId3(FixedOctetString::from([0u8; 3])),
@@ -404,9 +422,8 @@ mod tests {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
         let app_perms =
             SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)].into());
-        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
-            vec![0u8; 32].into(),
-        ));
+        let pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
             CertificateId::none(()),
             HashedId3(FixedOctetString::from([0u8; 3])),
@@ -488,11 +505,7 @@ mod tests {
                 .collect(),
         );
 
-        (
-            EcdsaBackend::new(),
-            verify_lib,
-            svc,
-        )
+        (EcdsaBackend::new(), verify_lib, svc)
     }
 
     #[test]
@@ -501,9 +514,7 @@ mod tests {
         let sec_msg = sign_cam_message(&mut svc);
 
         // Verify using sign service's own backend and cert library
-        let req = SNVerifyRequest {
-            message: sec_msg,
-        };
+        let req = SNVerifyRequest { message: sec_msg };
         let mut verify_lib = CertificateLibrary::new(
             &svc.backend,
             svc.cert_library
@@ -533,9 +544,7 @@ mod tests {
         let (_, _, mut svc) = setup();
         let sec_msg = sign_denm_message(&mut svc);
 
-        let req = SNVerifyRequest {
-            message: sec_msg,
-        };
+        let req = SNVerifyRequest { message: sec_msg };
         let mut verify_lib = CertificateLibrary::new(
             &svc.backend,
             svc.cert_library
@@ -569,9 +578,7 @@ mod tests {
             *b ^= 0xFF;
         }
 
-        let req = SNVerifyRequest {
-            message: sec_msg,
-        };
+        let req = SNVerifyRequest { message: sec_msg };
         let mut verify_lib = CertificateLibrary::new(
             &svc.backend,
             svc.cert_library

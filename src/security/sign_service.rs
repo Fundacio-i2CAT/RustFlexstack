@@ -15,17 +15,16 @@ use crate::security::certificate::{
 };
 use crate::security::certificate_library::CertificateLibrary;
 use crate::security::ecdsa_backend::EcdsaBackend;
-use crate::security::security_asn::ieee1609_dot2::{
-    Ieee1609Dot2Content, Ieee1609Dot2Data, SequenceOfCertificate, SignedData,
-    SignedDataPayload, SignerIdentifier, ToBeSignedData,
-};
 use crate::security::security_asn::ieee1609_dot2::Certificate as AsnCertificate;
-use crate::security::security_asn::ieee1609_dot2_base_types::{
-    HashAlgorithm, HashedId8, Psid,
-    ThreeDLocation, Time64, Elevation, Latitude, Longitude,
-    NinetyDegreeInt, OneEightyDegreeInt, Opaque, Uint8, Uint16, Uint64,
-};
 use crate::security::security_asn::ieee1609_dot2::HeaderInfo;
+use crate::security::security_asn::ieee1609_dot2::{
+    Ieee1609Dot2Content, Ieee1609Dot2Data, SequenceOfCertificate, SignedData, SignedDataPayload,
+    SignerIdentifier, ToBeSignedData,
+};
+use crate::security::security_asn::ieee1609_dot2_base_types::{
+    Elevation, HashAlgorithm, HashedId8, Latitude, Longitude, NinetyDegreeInt, OneEightyDegreeInt,
+    Opaque, Psid, ThreeDLocation, Time64, Uint16, Uint64, Uint8,
+};
 use crate::security::sn_sap::{SNSignConfirm, SNSignRequest};
 use crate::security::time_service::timestamp_its_microseconds;
 
@@ -46,18 +45,13 @@ impl CamSignerState {
         }
     }
 
-    fn choose_signer(
-        &mut self,
-        cert: &OwnCertificate,
-    ) -> SignerIdentifier {
+    fn choose_signer(&mut self, cert: &OwnCertificate) -> SignerIdentifier {
         let now = crate::security::time_service::unix_time_secs();
         if now - self.last_full_cert_time > 1.0 || self.requested_own_certificate {
             self.last_full_cert_time = now;
             self.requested_own_certificate = false;
             let asn_cert: AsnCertificate = cert.cert.inner.0.clone();
-            SignerIdentifier::certificate(SequenceOfCertificate(
-                vec![asn_cert].into(),
-            ))
+            SignerIdentifier::certificate(SequenceOfCertificate(vec![asn_cert].into()))
         } else {
             let h = cert.as_hashedid8();
             SignerIdentifier::digest(HashedId8(FixedOctetString::from(h)))
@@ -134,17 +128,9 @@ impl SignService {
         let tbs_bytes = encode_tbs_data(&tbs_data);
         let signature = at.sign_message(&self.backend, &tbs_bytes);
 
-        let signed_data = SignedData::new(
-            HashAlgorithm::sha256,
-            tbs_data,
-            signer,
-            signature,
-        );
+        let signed_data = SignedData::new(HashAlgorithm::sha256, tbs_data, signer, signature);
 
-        let outer = Ieee1609Dot2Data::new(
-            Uint8(3),
-            Ieee1609Dot2Content::signedData(signed_data),
-        );
+        let outer = Ieee1609Dot2Data::new(Uint8(3), Ieee1609Dot2Content::signedData(signed_data));
         encode_ieee1609_dot2_data(&outer)
     }
 
@@ -161,7 +147,15 @@ impl SignService {
         let header_info = HeaderInfo::new(
             Psid(Integer::from(request.its_aid as i64)),
             Some(Time64(Uint64(timestamp_its_microseconds()))),
-            None, None, None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
 
         let sec_message = self.build_signed_data(&request.tbs_message, header_info, signer, at);
@@ -181,9 +175,7 @@ impl SignService {
             .expect("DENM requires generation_location");
 
         let asn_cert: AsnCertificate = at.cert.inner.0.clone();
-        let signer = SignerIdentifier::certificate(SequenceOfCertificate(
-            vec![asn_cert].into(),
-        ));
+        let signer = SignerIdentifier::certificate(SequenceOfCertificate(vec![asn_cert].into()));
 
         let header_info = HeaderInfo::new(
             Psid(Integer::from(request.its_aid as i64)),
@@ -194,7 +186,13 @@ impl SignService {
                 longitude: Longitude(OneEightyDegreeInt(gen_loc.longitude)),
                 elevation: Elevation(Uint16(gen_loc.elevation)),
             }),
-            None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         );
 
         let sec_message = self.build_signed_data(&request.tbs_message, header_info, signer, at);
@@ -244,10 +242,15 @@ impl SignService {
         let header_info = HeaderInfo::new(
             Psid(Integer::from(request.its_aid as i64)),
             Some(Time64(Uint64(timestamp_its_microseconds()))),
-            None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
             inline_p2pcd,
             requested_cert,
-            None, None,
+            None,
+            None,
         );
 
         let sec_message = self.build_signed_data(&request.tbs_message, header_info, signer, &at);
@@ -277,7 +280,10 @@ impl SignService {
             }
         }
         for h3 in request_list {
-            if self.cert_library.get_ca_certificate_by_hashedid3(h3).is_some()
+            if self
+                .cert_library
+                .get_ca_certificate_by_hashedid3(h3)
+                .is_some()
                 && !self.requested_ats.contains(h3)
             {
                 self.requested_ats.push(*h3);
@@ -307,14 +313,14 @@ mod tests {
     use crate::security::certificate_library::CertificateLibrary;
     use crate::security::ecdsa_backend::EcdsaBackend;
     use crate::security::security_asn::ieee1609_dot2::{
-        CertificateId, PsidGroupPermissions, PsidSsp, SequenceOfPsidGroupPermissions,
-        SequenceOfPsidSsp, SubjectPermissions, ToBeSignedCertificate, VerificationKeyIndicator,
-        SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
-        SequenceOfCertRequestExtensions, EndEntityType,
+        CertificateId, EndEntityType, PsidGroupPermissions, PsidSsp, SequenceOfAppExtensions,
+        SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions,
+        SequenceOfPsidGroupPermissions, SequenceOfPsidSsp, SubjectPermissions,
+        ToBeSignedCertificate, VerificationKeyIndicator,
     };
     use crate::security::security_asn::ieee1609_dot2_base_types::{
-        CrlSeries, Duration as AsnDuration, EccP256CurvePoint,
-        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod, HashedId3,
+        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, HashedId3, PublicVerificationKey,
+        Time32, Uint16, Uint32, ValidityPeriod,
     };
     use crate::security::sn_sap::{GenerationLocation, SNSignRequest};
 
@@ -333,9 +339,8 @@ mod tests {
             )]
             .into(),
         );
-        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
-            vec![0u8; 32].into(),
-        ));
+        let pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
             CertificateId::none(()),
             HashedId3(FixedOctetString::from([0u8; 3])),
@@ -360,9 +365,8 @@ mod tests {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
         let app_perms =
             SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)].into());
-        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
-            vec![0u8; 32].into(),
-        ));
+        let pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
             CertificateId::none(()),
             HashedId3(FixedOctetString::from([0u8; 3])),

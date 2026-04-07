@@ -176,12 +176,8 @@ impl Router {
         let btp_bytes: [u8; 4] = gn_ind.data[0..4].try_into().unwrap();
         let header = BTPBHeader::decode(btp_bytes);
 
-        let indication =
-            BTPDataIndication::initialize_with_gn_data_indication(&gn_ind)
-                .set_destination_port_and_info(
-                    header.destination_port,
-                    header.destination_port_info,
-                );
+        let indication = BTPDataIndication::initialize_with_gn_data_indication(&gn_ind)
+            .set_destination_port_and_info(header.destination_port, header.destination_port_info);
 
         match self.port_callbacks.get(&indication.destination_port) {
             Some(tx) => {
@@ -204,9 +200,8 @@ impl Router {
         let btp_bytes: [u8; 4] = gn_ind.data[0..4].try_into().unwrap();
         let header = BTPAHeader::decode(btp_bytes);
 
-        let mut indication =
-            BTPDataIndication::initialize_with_gn_data_indication(&gn_ind)
-                .set_destination_port_and_info(header.destination_port(), 0);
+        let mut indication = BTPDataIndication::initialize_with_gn_data_indication(&gn_ind)
+            .set_destination_port_and_info(header.destination_port(), 0);
         indication.source_port = header.source_port();
 
         match self.port_callbacks.get(&indication.destination_port) {
@@ -237,8 +232,8 @@ mod tests {
     use crate::btp::btp_header::{BTPAHeader, BTPBHeader};
     use crate::geonet::position_vector::LongPositionVector;
     use crate::geonet::service_access_point::{
-        CommonNH, GNDataIndication, HeaderSubType, HeaderType,
-        PacketTransportType, TopoBroadcastHST, TrafficClass, UnspecifiedHST,
+        CommonNH, GNDataIndication, HeaderSubType, HeaderType, PacketTransportType,
+        TopoBroadcastHST, TrafficClass, UnspecifiedHST,
     };
     use std::sync::mpsc;
     use std::time::Duration;
@@ -377,8 +372,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
 
         let btpa = BTPAHeader::decode([
-            (2001u16 >> 8) as u8, (2001u16 & 0xFF) as u8,
-            (5000u16 >> 8) as u8, (5000u16 & 0xFF) as u8,
+            (2001u16 >> 8) as u8,
+            (2001u16 & 0xFF) as u8,
+            (5000u16 >> 8) as u8,
+            (5000u16 & 0xFF) as u8,
         ]);
         let mut payload = btpa.encode().to_vec();
         payload.extend_from_slice(&[0xCC, 0xDD]);

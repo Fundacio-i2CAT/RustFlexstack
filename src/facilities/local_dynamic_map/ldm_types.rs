@@ -388,8 +388,14 @@ mod tests {
 
     #[test]
     fn add_data_provider_result_variants() {
-        assert_eq!(AddDataProviderResult::Succeed, AddDataProviderResult::Succeed);
-        assert_ne!(AddDataProviderResult::Succeed, AddDataProviderResult::Failed);
+        assert_eq!(
+            AddDataProviderResult::Succeed,
+            AddDataProviderResult::Succeed
+        );
+        assert_ne!(
+            AddDataProviderResult::Succeed,
+            AddDataProviderResult::Failed
+        );
     }
 
     #[test]
@@ -429,10 +435,7 @@ mod tests {
     #[test]
     fn ordering_direction_eq() {
         assert_eq!(OrderingDirection::Ascending, OrderingDirection::Ascending);
-        assert_ne!(
-            OrderingDirection::Ascending,
-            OrderingDirection::Descending
-        );
+        assert_ne!(OrderingDirection::Ascending, OrderingDirection::Descending);
     }
 
     #[test]

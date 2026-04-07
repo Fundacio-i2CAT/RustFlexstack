@@ -313,11 +313,11 @@ mod tests {
         let lpv = LongPositionVector {
             gn_addr: addr,
             tst,
-            latitude: 415520000,       // 41.552°
-            longitude: 21340000,        // 2.134°
+            latitude: 415520000, // 41.552°
+            longitude: 21340000, // 2.134°
             pai: true,
-            s: 1000,                    // 10.00 m/s
-            h: 900,                     // 90.0°
+            s: 1000, // 10.00 m/s
+            h: 900,  // 90.0°
         };
         let encoded = lpv.encode();
         assert_eq!(encoded.len(), 24);
@@ -358,7 +358,11 @@ mod tests {
 
     #[test]
     fn spv_encode_decode_roundtrip() {
-        let addr = GNAddress::new(M::GnMulticast, ST::Bus, MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]));
+        let addr = GNAddress::new(
+            M::GnMulticast,
+            ST::Bus,
+            MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]),
+        );
         let tst = Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000);
         let spv = ShortPositionVector {
             gn_address: addr,

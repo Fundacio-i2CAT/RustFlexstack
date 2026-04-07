@@ -100,10 +100,7 @@ impl CertificateLibrary {
     }
 
     /// Retrieve an AT by HashedId8.
-    pub fn get_authorization_ticket_by_hashedid8(
-        &self,
-        h: &[u8; 8],
-    ) -> Option<&Certificate> {
+    pub fn get_authorization_ticket_by_hashedid8(&self, h: &[u8; 8]) -> Option<&Certificate> {
         self.known_authorization_tickets.get(h)
     }
 
@@ -129,7 +126,8 @@ impl CertificateLibrary {
                 let with_issuer = Certificate::from_asn(temp.inner.clone(), Some(issuer));
                 if with_issuer.verify(backend) {
                     let h2 = with_issuer.as_hashedid8();
-                    self.known_authorization_tickets.insert(h2, with_issuer.clone());
+                    self.known_authorization_tickets
+                        .insert(h2, with_issuer.clone());
                     return Some(with_issuer);
                 }
             }
@@ -140,8 +138,7 @@ impl CertificateLibrary {
             let aa_temp = &certs[1];
             if let Some(issuer_h) = aa_temp.get_issuer_hashedid8() {
                 if let Some(root) = self.known_root_certificates.get(&issuer_h).cloned() {
-                    let aa_with_issuer =
-                        Certificate::from_asn(aa_temp.inner.clone(), Some(root));
+                    let aa_with_issuer = Certificate::from_asn(aa_temp.inner.clone(), Some(root));
                     if aa_with_issuer.verify(backend) {
                         let aa_h = aa_with_issuer.as_hashedid8();
                         self.known_authorization_authorities
@@ -193,14 +190,14 @@ mod tests {
     use crate::security::certificate::OwnCertificate;
     use crate::security::ecdsa_backend::EcdsaBackend;
     use crate::security::security_asn::ieee1609_dot2::{
-        CertificateId, PsidGroupPermissions, PsidSsp, SequenceOfPsidGroupPermissions,
-        SequenceOfPsidSsp, SubjectPermissions, VerificationKeyIndicator,
-        SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
-        SequenceOfCertRequestExtensions, EndEntityType,
+        CertificateId, EndEntityType, PsidGroupPermissions, PsidSsp, SequenceOfAppExtensions,
+        SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions,
+        SequenceOfPsidGroupPermissions, SequenceOfPsidSsp, SubjectPermissions,
+        VerificationKeyIndicator,
     };
     use crate::security::security_asn::ieee1609_dot2_base_types::{
-        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, Psid,
-        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod, HashedId3,
+        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, HashedId3, Psid,
+        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod,
     };
     use rasn::prelude::*;
 
@@ -219,9 +216,8 @@ mod tests {
             )]
             .into(),
         );
-        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
-            vec![0u8; 32].into(),
-        ));
+        let pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate::new(
             CertificateId::none(()),
             HashedId3(FixedOctetString::from([0u8; 3])),
@@ -246,9 +242,8 @@ mod tests {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
         let app_perms =
             SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)].into());
-        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
-            vec![0u8; 32].into(),
-        ));
+        let pk =
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate::new(
             CertificateId::none(()),
             HashedId3(FixedOctetString::from([0u8; 3])),
@@ -269,9 +264,7 @@ mod tests {
         )
     }
 
-    fn make_chain(
-        backend: &mut EcdsaBackend,
-    ) -> (OwnCertificate, OwnCertificate, OwnCertificate) {
+    fn make_chain(backend: &mut EcdsaBackend) -> (OwnCertificate, OwnCertificate, OwnCertificate) {
         let root = OwnCertificate::initialize_self_signed(backend, make_root_tbs());
         let aa = OwnCertificate::initialize_issued(backend, make_root_tbs(), &root);
         let at = OwnCertificate::initialize_issued(backend, make_at_tbs(), &aa);
@@ -394,8 +387,7 @@ mod tests {
         let mut backend = EcdsaBackend::new();
         let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
         let aa = OwnCertificate::initialize_issued(&mut backend, make_root_tbs(), &root);
-        let mut lib =
-            CertificateLibrary::new(&backend, vec![root.cert.clone()], vec![], vec![]);
+        let mut lib = CertificateLibrary::new(&backend, vec![root.cert.clone()], vec![], vec![]);
         lib.add_authorization_authority(&backend, aa.cert.clone());
         lib.add_authorization_authority(&backend, aa.cert.clone());
         assert_eq!(lib.known_authorization_authorities.len(), 1);

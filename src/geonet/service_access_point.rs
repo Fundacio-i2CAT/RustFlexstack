@@ -397,24 +397,40 @@ mod tests {
     #[test]
     fn header_sub_type_topo_broadcast() {
         let shb = HeaderSubType::decode(&HeaderType::Tsb, 0);
-        assert!(matches!(shb, HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop)));
+        assert!(matches!(
+            shb,
+            HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop)
+        ));
         let mhb = HeaderSubType::decode(&HeaderType::Tsb, 1);
-        assert!(matches!(mhb, HeaderSubType::TopoBroadcast(TopoBroadcastHST::MultiHop)));
+        assert!(matches!(
+            mhb,
+            HeaderSubType::TopoBroadcast(TopoBroadcastHST::MultiHop)
+        ));
     }
 
     #[test]
     fn header_sub_type_location_service() {
         let req = HeaderSubType::decode(&HeaderType::Ls, 0);
-        assert!(matches!(req, HeaderSubType::LocationService(LocationServiceHST::LsRequest)));
+        assert!(matches!(
+            req,
+            HeaderSubType::LocationService(LocationServiceHST::LsRequest)
+        ));
         let rep = HeaderSubType::decode(&HeaderType::Ls, 1);
-        assert!(matches!(rep, HeaderSubType::LocationService(LocationServiceHST::LsReply)));
+        assert!(matches!(
+            rep,
+            HeaderSubType::LocationService(LocationServiceHST::LsReply)
+        ));
     }
 
     // ── TrafficClass ──────────────────────────────────────────────────
 
     #[test]
     fn traffic_class_encode_decode() {
-        let tc = TrafficClass { scf: true, channel_offload: false, tc_id: 10 };
+        let tc = TrafficClass {
+            scf: true,
+            channel_offload: false,
+            tc_id: 10,
+        };
         let encoded = tc.encode();
         let decoded = TrafficClass::decode(encoded);
         assert_eq!(tc, decoded);

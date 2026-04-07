@@ -199,18 +199,10 @@ fn build_cam(
     );
     let vehicle_width = VehicleWidth(vd.vehicle_width.clamp(1, 62));
 
-    let longitudinal_acceleration = AccelerationComponent::new(
-        AccelerationValue(161),
-        AccelerationConfidence(102),
-    );
-    let curvature = Curvature::new(
-        CurvatureValue(1023),
-        CurvatureConfidence::unavailable,
-    );
-    let yaw_rate = YawRate::new(
-        YawRateValue(32767),
-        YawRateConfidence::unavailable,
-    );
+    let longitudinal_acceleration =
+        AccelerationComponent::new(AccelerationValue(161), AccelerationConfidence(102));
+    let curvature = Curvature::new(CurvatureValue(1023), CurvatureConfidence::unavailable);
+    let yaw_rate = YawRate::new(YawRateValue(32767), YawRateConfidence::unavailable);
 
     let hf = BasicVehicleContainerHighFrequency::new(
         heading,
@@ -299,9 +291,8 @@ impl CAMTransmissionManagement {
             let mut current_fix: Option<GpsFix> = None;
 
             // Annex B.2.4 step 1 — non-clock-synchronised start (random initial delay)
-            let initial_delay = Duration::from_millis(
-                rand::thread_rng().gen_range(0..T_CHECK_CAM_GEN_MS),
-            );
+            let initial_delay =
+                Duration::from_millis(rand::thread_rng().gen_range(0..T_CHECK_CAM_GEN_MS));
             thread::sleep(initial_delay);
 
             loop {
@@ -556,11 +547,7 @@ fn build_lf_container(
     )
 }
 
-fn build_path_points(
-    current_fix: &GpsFix,
-    history: &[PathEntry],
-    now_ms: u64,
-) -> Vec<PathPoint> {
+fn build_path_points(current_fix: &GpsFix, history: &[PathEntry], now_ms: u64) -> Vec<PathPoint> {
     let mut result = Vec::new();
     for entry in history.iter().rev() {
         let delta_lat = ((entry.lat - current_fix.latitude) * 1e7).round() as i32;
@@ -647,8 +634,10 @@ fn generate_and_send(
     path_history: &mut Vec<PathEntry>,
 ) {
     let include_lf = should_include_lf(*cam_count, *last_lf_time, now);
-    let include_special = should_include_special_vehicle(vd.vehicle_role, *cam_count, *last_special_time, now);
-    let include_vlf = should_include_vlf(*cam_count, *last_vlf_time, now, include_lf, include_special);
+    let include_special =
+        should_include_special_vehicle(vd.vehicle_role, *cam_count, *last_special_time, now);
+    let include_vlf =
+        should_include_vlf(*cam_count, *last_vlf_time, now, include_lf, include_special);
     let include_tw = should_include_two_wheeler(vd.station_type);
 
     // Approximate now_ms for path history delta-time calculations

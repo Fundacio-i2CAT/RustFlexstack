@@ -21,13 +21,12 @@ use rustflexstack::security::certificate::{encode_certificate, OwnCertificate};
 use rustflexstack::security::ecdsa_backend::EcdsaBackend;
 use rustflexstack::security::security_asn::ieee1609_dot2::{
     CertificateId, EndEntityType, PsidGroupPermissions, SequenceOfAppExtensions,
-    SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions,
-    SequenceOfPsidGroupPermissions, SubjectPermissions, ToBeSignedCertificate,
-    VerificationKeyIndicator,
+    SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions, SequenceOfPsidGroupPermissions,
+    SubjectPermissions, ToBeSignedCertificate, VerificationKeyIndicator,
 };
 use rustflexstack::security::security_asn::ieee1609_dot2_base_types::{
-    CrlSeries, Duration, HashedId3, Hostname, Psid, PsidSsp, PsidSspRange,
-    SequenceOfPsidSsp, SequenceOfPsidSspRange, Time32, Uint16, Uint32, ValidityPeriod,
+    CrlSeries, Duration, HashedId3, Hostname, Psid, PsidSsp, PsidSspRange, SequenceOfPsidSsp,
+    SequenceOfPsidSspRange, Time32, Uint16, Uint32, ValidityPeriod,
 };
 
 // ITS-AID values
@@ -128,10 +127,7 @@ fn main() {
         SequenceOfCertRequestExtensions(Default::default()),
     );
     let root_ca = OwnCertificate::initialize_self_signed(&mut backend, root_tbs);
-    println!(
-        "Root CA  HashedId8: {:02x?}",
-        root_ca.as_hashedid8()
-    );
+    println!("Root CA  HashedId8: {:02x?}", root_ca.as_hashedid8());
 
     // ─── Authorization Authority ─────────────────────────────────────────
     let aa_tbs = ToBeSignedCertificate::new(
@@ -162,10 +158,7 @@ fn main() {
         SequenceOfCertRequestExtensions(Default::default()),
     );
     let aa = OwnCertificate::initialize_issued(&mut backend, aa_tbs, &root_ca);
-    println!(
-        "AA       HashedId8: {:02x?}",
-        aa.as_hashedid8()
-    );
+    println!("AA       HashedId8: {:02x?}", aa.as_hashedid8());
 
     // ─── Authorization Tickets ───────────────────────────────────────────
     let at_names = ["AT1", "AT2"];
@@ -196,11 +189,7 @@ fn main() {
             SequenceOfCertRequestExtensions(Default::default()),
         );
         let at = OwnCertificate::initialize_issued(&mut backend, at_tbs, &aa);
-        println!(
-            "{:<8} HashedId8: {:02x?}",
-            name,
-            at.as_hashedid8()
-        );
+        println!("{:<8} HashedId8: {:02x?}", name, at.as_hashedid8());
         at_certs.push((name, at));
     }
 

@@ -13,9 +13,7 @@
 //!   - VRU Low-Frequency Container included on first VAM, then every ≥ 2 000 ms (clause 6.2).
 //!   - Security profile: VRU_AWARENESS_MESSAGE, ITS-AID: 638.
 
-use super::vam_bindings::etsi_its_cdd::{
-    VruProfileAndSubprofile, VruSubProfilePedestrian,
-};
+use super::vam_bindings::etsi_its_cdd::{VruProfileAndSubprofile, VruSubProfilePedestrian};
 use super::vam_bindings::vam_pdu_descriptions::VruLowFrequencyContainer;
 use super::vam_coder::{
     generation_delta_time_now, vam_header, AccelerationConfidence, Altitude, AltitudeConfidence,
@@ -105,11 +103,7 @@ impl Default for DeviceData {
 // ─── VAM builder ──────────────────────────────────────────────────────────────
 
 /// Build a complete [`Vam`] from a GPS fix and static device data.
-fn build_vam(
-    fix: &GpsFix,
-    dd: &DeviceData,
-    lf: Option<VruLowFrequencyContainer>,
-) -> Vam {
+fn build_vam(fix: &GpsFix, dd: &DeviceData, lf: Option<VruLowFrequencyContainer>) -> Vam {
     let gen_dt = generation_delta_time_now();
 
     // ── BasicContainer ────────────────────────────────────────────────────────
@@ -131,10 +125,7 @@ fn build_vam(
 
     // ── VruHighFrequencyContainer ─────────────────────────────────────────────
     let heading_raw = ((fix.heading_deg * 10.0).round() as u16).clamp(0, 3600);
-    let heading = Wgs84Angle::new(
-        Wgs84AngleValue(heading_raw),
-        Wgs84AngleConfidence(127),
-    );
+    let heading = Wgs84Angle::new(Wgs84AngleValue(heading_raw), Wgs84AngleConfidence(127));
 
     let speed = Speed::new(
         SpeedValue(((fix.speed_mps * 100.0).round() as u16).min(16_382)),
@@ -150,7 +141,17 @@ fn build_vam(
         heading,
         speed,
         longitudinal_acceleration,
-        None, None, None, None, None, None, None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
     );
 
     // ── Assemble VAM ──────────────────────────────────────────────────────────
@@ -290,8 +291,7 @@ impl VAMTransmissionManagement {
                     // First VAM after activation — send immediately
                     should_send = true;
                 } else {
-                    let elapsed_ms =
-                        now.duration_since(last_vam_time.unwrap()).as_millis() as u64;
+                    let elapsed_ms = now.duration_since(last_vam_time.unwrap()).as_millis() as u64;
 
                     // Condition 1: elapsed ≥ T_GenVamMax
                     if elapsed_ms >= T_GEN_VAM_MAX_MS {
@@ -373,10 +373,7 @@ impl VAMTransmissionManagement {
                         };
                         btp_handle.send_btp_data_request(req);
 
-                        eprintln!(
-                            "[VAM TX] Sent VAM: station={}",
-                            device_data.station_id,
-                        );
+                        eprintln!("[VAM TX] Sent VAM: station={}", device_data.station_id,);
 
                         // Update state
                         last_vam_time = Some(now);

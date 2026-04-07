@@ -102,7 +102,9 @@ impl CAMReceptionManagement {
                             break;
                         }
                     }
-                    Err(e) => eprintln!("[CAM RX] Decode error (Annex B.3.3.1 — discarding): {}", e),
+                    Err(e) => {
+                        eprintln!("[CAM RX] Decode error (Annex B.3.3.1 — discarding): {}", e)
+                    }
                 }
             }
             eprintln!("[CAM RX] Thread exiting");

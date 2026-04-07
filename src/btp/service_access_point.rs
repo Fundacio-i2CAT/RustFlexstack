@@ -126,9 +126,7 @@ impl BTPDataIndication {
 
     /// Construct a BTPDataIndication from a GNDataIndication.
     /// Strips the first 4 bytes (BTP header) from the payload.
-    pub fn initialize_with_gn_data_indication(
-        gn_data_indication: &GNDataIndication,
-    ) -> Self {
+    pub fn initialize_with_gn_data_indication(gn_data_indication: &GNDataIndication) -> Self {
         let payload = if gn_data_indication.data.len() > 4 {
             gn_data_indication.data[4..].to_vec()
         } else {
@@ -172,11 +170,11 @@ impl BTPDataIndication {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geonet::position_vector::LongPositionVector;
     use crate::geonet::service_access_point::{
         CommonNH, GNDataIndication, HeaderSubType, HeaderType, PacketTransportType,
         TopoBroadcastHST, TrafficClass,
     };
-    use crate::geonet::position_vector::LongPositionVector;
 
     #[test]
     fn btp_data_request_default() {

@@ -3,8 +3,7 @@
 
 use super::mib::Mib;
 use super::service_access_point::{
-    CommonNH, GNDataRequest, HeaderSubType, HeaderType, TrafficClass,
-    UnspecifiedHST,
+    CommonNH, GNDataRequest, HeaderSubType, HeaderType, TrafficClass, UnspecifiedHST,
 };
 use std::cmp::PartialEq;
 

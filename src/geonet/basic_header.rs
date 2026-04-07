@@ -297,8 +297,7 @@ mod tests {
     #[test]
     fn basic_header_set_nh() {
         let mib = Mib::new();
-        let bh = BasicHeader::initialize_with_mib(&mib)
-            .set_nh(BasicNH::SecuredPacket);
+        let bh = BasicHeader::initialize_with_mib(&mib).set_nh(BasicNH::SecuredPacket);
         assert_eq!(bh.nh.encode(), 2);
     }
 

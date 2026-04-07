@@ -95,8 +95,16 @@ fn build_security_stack(at_index: usize) -> SignService {
     let mut backend = EcdsaBackend::new();
     let key_id = backend.import_signing_key(&key_bytes);
 
-    let own_cert = if at_index == 1 { at1.clone() } else { at2.clone() };
-    let peer_cert = if at_index == 1 { at2.clone() } else { at1.clone() };
+    let own_cert = if at_index == 1 {
+        at1.clone()
+    } else {
+        at2.clone()
+    };
+    let peer_cert = if at_index == 1 {
+        at2.clone()
+    } else {
+        at1.clone()
+    };
 
     // ── Build certificate library ────────────────────────────────────────
     let cert_library = CertificateLibrary::new(
@@ -281,11 +289,7 @@ fn main() {
                     let (confirm, _events) = {
                         let mut svc = sign_svc_rx.lock().unwrap();
                         let svc = &mut *svc;
-                        let result = verify_message(
-                            &request,
-                            &svc.backend,
-                            &mut svc.cert_library,
-                        );
+                        let result = verify_message(&request, &svc.backend, &mut svc.cert_library);
                         // Process VerifyEvents for P2PCD
                         for event in &result.1 {
                             match event {
@@ -320,10 +324,7 @@ fn main() {
                             .collect();
                         gn_h_rx.send_incoming_packet(plain_packet);
                     } else {
-                        eprintln!(
-                            "[SEC RX] Verification failed: {:?}",
-                            confirm.report
-                        );
+                        eprintln!("[SEC RX] Verification failed: {:?}", confirm.report);
                     }
                 }
                 _ => {

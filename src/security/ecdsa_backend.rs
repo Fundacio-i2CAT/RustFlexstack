@@ -9,18 +9,16 @@
 //! and signed messages without conversion.
 
 use p256::ecdsa::signature::Signer;
-use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::ecdsa::signature::Verifier;
+use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+use crate::security::security_asn::ieee1609_dot2_base_types::PublicVerificationKey;
+use crate::security::security_asn::ieee1609_dot2_base_types::Signature as Ieee1609Signature;
 use crate::security::security_asn::ieee1609_dot2_base_types::{
     EccP256CurvePoint, EccP256CurvePointUncompressedP256, EcdsaP256Signature,
 };
-use crate::security::security_asn::ieee1609_dot2_base_types::{
-    PublicVerificationKey,
-};
-use crate::security::security_asn::ieee1609_dot2_base_types::Signature as Ieee1609Signature;
 
 /// ECDSA backend managing NIST P-256 key pairs.
 pub struct EcdsaBackend {

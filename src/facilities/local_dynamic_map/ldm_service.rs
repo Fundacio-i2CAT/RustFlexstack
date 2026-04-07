@@ -735,13 +735,15 @@ mod tests {
         assert_eq!(resp.result, SubscribeDataObjectsResult::Successful);
         let sub_id = resp.subscription_id.unwrap();
 
-        let unsub_resp =
-            svc.unsubscribe_data_consumer(UnsubscribeDataConsumerReq { subscription_id: sub_id });
+        let unsub_resp = svc.unsubscribe_data_consumer(UnsubscribeDataConsumerReq {
+            subscription_id: sub_id,
+        });
         assert_eq!(unsub_resp.ack, UnsubscribeDataConsumerAck::Succeed);
 
         // Unsubscribe again should fail
-        let unsub_resp =
-            svc.unsubscribe_data_consumer(UnsubscribeDataConsumerReq { subscription_id: sub_id });
+        let unsub_resp = svc.unsubscribe_data_consumer(UnsubscribeDataConsumerReq {
+            subscription_id: sub_id,
+        });
         assert_eq!(unsub_resp.ack, UnsubscribeDataConsumerAck::Failed);
     }
 

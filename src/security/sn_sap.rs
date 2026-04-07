@@ -78,14 +78,20 @@ mod tests {
     fn security_profile_values() {
         assert_eq!(SecurityProfile::NoSecurity as u8, 0);
         assert_eq!(SecurityProfile::CooperativeAwarenessMessage as u8, 1);
-        assert_eq!(SecurityProfile::DecentralizedEnvironmentalNotificationMessage as u8, 2);
+        assert_eq!(
+            SecurityProfile::DecentralizedEnvironmentalNotificationMessage as u8,
+            2
+        );
         assert_eq!(SecurityProfile::VruAwarenessMessage as u8, 3);
     }
 
     #[test]
     fn security_profile_equality() {
         assert_eq!(SecurityProfile::NoSecurity, SecurityProfile::NoSecurity);
-        assert_ne!(SecurityProfile::NoSecurity, SecurityProfile::CooperativeAwarenessMessage);
+        assert_ne!(
+            SecurityProfile::NoSecurity,
+            SecurityProfile::CooperativeAwarenessMessage
+        );
     }
 
     #[test]

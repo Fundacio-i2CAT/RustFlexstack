@@ -643,14 +643,13 @@ impl Router {
 
     /// Process security header — verify and dispatch.
     fn process_security_header(&mut self, packet: &[u8], basic_header: &BasicHeader) {
-        let (backend, cert_library) =
-            match (&self.verify_backend, &mut self.verify_cert_library) {
-                (Some(b), Some(cl)) => (b, cl),
-                _ => {
-                    eprintln!("[GN] Secured packet received but no verify service configured");
-                    return;
-                }
-            };
+        let (backend, cert_library) = match (&self.verify_backend, &mut self.verify_cert_library) {
+            (Some(b), Some(cl)) => (b, cl),
+            _ => {
+                eprintln!("[GN] Secured packet received but no verify service configured");
+                return;
+            }
+        };
 
         let verify_request = SNVerifyRequest {
             message: packet.to_vec(),
@@ -696,8 +695,7 @@ impl Router {
                 None
             }
             HeaderType::Tsb => {
-                if let HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop) =
-                    common_header.hst
+                if let HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop) = common_header.hst
                 {
                     self.gn_data_indicate_shb(payload, &common_header, basic_header)
                 } else if let HeaderSubType::TopoBroadcast(TopoBroadcastHST::MultiHop) =
@@ -871,10 +869,7 @@ impl Router {
         }
 
         // §B.2: PDR enforcement
-        if let Some(entry) = self
-            .location_table
-            .get_entry_ref(&ext.so_pv.gn_addr)
-        {
+        if let Some(entry) = self.location_table.get_entry_ref(&ext.so_pv.gn_addr) {
             if entry.pdr > self.mib.itsGnMaxPacketDataRate as f64 * 1000.0 {
                 return indication;
             }
@@ -959,10 +954,7 @@ impl Router {
         }
 
         // §B.2 PDR enforcement
-        if let Some(entry) = self
-            .location_table
-            .get_entry_ref(&ext.so_pv.gn_addr)
-        {
+        if let Some(entry) = self.location_table.get_entry_ref(&ext.so_pv.gn_addr) {
             if entry.pdr > self.mib.itsGnMaxPacketDataRate as f64 * 1000.0 {
                 return None;
             }
@@ -1032,10 +1024,7 @@ impl Router {
         };
 
         // §B.2 PDR enforcement
-        if let Some(entry) = self
-            .location_table
-            .get_entry_ref(&ext.so_pv.gn_addr)
-        {
+        if let Some(entry) = self.location_table.get_entry_ref(&ext.so_pv.gn_addr) {
             if entry.pdr > self.mib.itsGnMaxPacketDataRate as f64 * 1000.0 {
                 return Some(indication);
             }
@@ -1105,10 +1094,7 @@ impl Router {
 
         // Forwarder operations
         // §B.2 PDR
-        if let Some(entry) = self
-            .location_table
-            .get_entry_ref(&ext.so_pv.gn_addr)
-        {
+        if let Some(entry) = self.location_table.get_entry_ref(&ext.so_pv.gn_addr) {
             if entry.pdr > self.mib.itsGnMaxPacketDataRate as f64 * 1000.0 {
                 return None;
             }
@@ -1116,10 +1102,7 @@ impl Router {
 
         // Update DE PV from LocT if DE is a neighbour with newer PV
         let mut fwd_ext = ext.clone();
-        if let Some(de_entry) = self
-            .location_table
-            .get_entry_ref(&ext.de_pv.gn_address)
-        {
+        if let Some(de_entry) = self.location_table.get_entry_ref(&ext.de_pv.gn_address) {
             if de_entry.is_neighbour && de_entry.position_vector.tst > ext.de_pv.tst {
                 let de_lpv = &de_entry.position_vector;
                 fwd_ext = fwd_ext.with_de_pv(ShortPositionVector {
@@ -1216,12 +1199,11 @@ impl Router {
                 longitude: so_lpv.longitude,
             };
 
-            let reply_basic =
-                BasicHeader::initialize_with_mib_request_and_rhl(
-                    &self.mib,
-                    None,
-                    self.mib.itsGnDefaultHopLimit,
-                );
+            let reply_basic = BasicHeader::initialize_with_mib_request_and_rhl(
+                &self.mib,
+                None,
+                self.mib.itsGnDefaultHopLimit,
+            );
             let reply_common = CommonHeader {
                 nh: CommonNH::Any,
                 reserved: 0,
@@ -1238,8 +1220,7 @@ impl Router {
                 reserved2: 0,
             };
             let sn = self.get_sequence_number();
-            let reply_ext =
-                LSReplyExtendedHeader::initialize(sn, self.ego_position_vector, de_pv);
+            let reply_ext = LSReplyExtendedHeader::initialize(sn, self.ego_position_vector, de_pv);
 
             let reply_packet: Vec<u8> = reply_basic
                 .encode()
@@ -1313,15 +1294,16 @@ impl Router {
         } else {
             // Forwarder: forward like GUC forwarder
             // §B.2 PDR enforcement
-            if let Some(entry) = self.location_table.get_entry_ref(&ls_reply.so_pv.gn_addr)
-            {
+            if let Some(entry) = self.location_table.get_entry_ref(&ls_reply.so_pv.gn_addr) {
                 if entry.pdr > self.mib.itsGnMaxPacketDataRate as f64 * 1000.0 {
                     return;
                 }
             }
 
             let mut fwd_reply = ls_reply.clone();
-            if let Some(de_entry) = self.location_table.get_entry_ref(&ls_reply.de_pv.gn_address)
+            if let Some(de_entry) = self
+                .location_table
+                .get_entry_ref(&ls_reply.de_pv.gn_address)
             {
                 if de_entry.is_neighbour && de_entry.position_vector.tst > ls_reply.de_pv.tst {
                     let de_lpv = &de_entry.position_vector;
@@ -1473,10 +1455,8 @@ impl Router {
                 data: vec![],
                 area,
             };
-            let algorithm = self.gn_forwarding_algorithm_selection(
-                &pseudo_request,
-                Some(&gbc_ext.so_pv.gn_addr),
-            );
+            let algorithm = self
+                .gn_forwarding_algorithm_selection(&pseudo_request, Some(&gbc_ext.so_pv.gn_addr));
 
             if algorithm == GNForwardingAlgorithmResponse::AreaForwarding {
                 if self.mib.itsGnAreaForwardingAlgorithm == AreaForwardingAlgorithm::Cbf {
@@ -1631,23 +1611,22 @@ impl Router {
         }
 
         // Compute timeout
-        let timeout_ms = if let Some(se_entry) =
-            self.location_table.get_entry_ref(&gbc_ext.so_pv.gn_addr)
-        {
-            if se_entry.position_vector.pai && self.ego_position_vector.pai {
-                let dist = Self::distance_m(
-                    se_entry.position_vector.latitude as i32,
-                    se_entry.position_vector.longitude as i32,
-                    self.ego_position_vector.latitude as i32,
-                    self.ego_position_vector.longitude as i32,
-                );
-                self.cbf_compute_timeout_ms(dist)
+        let timeout_ms =
+            if let Some(se_entry) = self.location_table.get_entry_ref(&gbc_ext.so_pv.gn_addr) {
+                if se_entry.position_vector.pai && self.ego_position_vector.pai {
+                    let dist = Self::distance_m(
+                        se_entry.position_vector.latitude as i32,
+                        se_entry.position_vector.longitude as i32,
+                        self.ego_position_vector.latitude as i32,
+                        self.ego_position_vector.longitude as i32,
+                    );
+                    self.cbf_compute_timeout_ms(dist)
+                } else {
+                    self.mib.itsGnCbfMaxTime as f64
+                }
             } else {
                 self.mib.itsGnCbfMaxTime as f64
-            }
-        } else {
-            self.mib.itsGnCbfMaxTime as f64
-        };
+            };
 
         let full_packet: Vec<u8> = basic_header
             .encode()
