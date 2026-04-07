@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn denm_coder_default() {
-        let _coder = DenmCoder::default();
+        let _coder = DenmCoder;
     }
 
     #[test]

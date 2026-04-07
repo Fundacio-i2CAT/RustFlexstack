@@ -472,18 +472,16 @@ impl Router {
                 .collect()
         };
 
-        if algorithm == GNForwardingAlgorithmResponse::AreaForwarding {
+        if algorithm == GNForwardingAlgorithmResponse::AreaForwarding
+            || (algorithm == GNForwardingAlgorithmResponse::NonAreaForwarding
+                && self.gn_greedy_forwarding(
+                    request.area.latitude as i32,
+                    request.area.longitude as i32,
+                    &request.traffic_class,
+                ))
+        {
             let packet = build_packet(&actual_basic);
             return self.send_to_link_layer(packet);
-        } else if algorithm == GNForwardingAlgorithmResponse::NonAreaForwarding {
-            if self.gn_greedy_forwarding(
-                request.area.latitude as i32,
-                request.area.longitude as i32,
-                &request.traffic_class,
-            ) {
-                let packet = build_packet(&actual_basic);
-                return self.send_to_link_layer(packet);
-            }
         }
 
         GNDataConfirm {
@@ -667,7 +665,7 @@ impl Router {
         }
 
         // Dispatch plain_message as Common Header + payload
-        let plain_basic = basic_header.clone().set_nh(BasicNH::CommonHeader);
+        let plain_basic = (*basic_header).set_nh(BasicNH::CommonHeader);
         self.process_common_header(&confirm.plain_message, &plain_basic);
     }
 
@@ -818,7 +816,7 @@ impl Router {
         };
 
         let area_hst = match &common_header.hst {
-            HeaderSubType::GeoBroadcast(h) => h.clone(),
+            HeaderSubType::GeoBroadcast(h) => *h,
             _ => return None,
         };
 
@@ -908,7 +906,7 @@ impl Router {
         };
 
         let area_hst = match &common_header.hst {
-            HeaderSubType::GeoAnycast(h) => h.clone(),
+            HeaderSubType::GeoAnycast(h) => *h,
             _ => return None,
         };
 
@@ -960,7 +958,7 @@ impl Router {
             }
         }
 
-        let fwd_basic = basic_header.clone().set_rhl(new_rhl);
+        let fwd_basic = (*basic_header).set_rhl(new_rhl);
 
         if self.location_table.get_neighbours().is_empty() && common_header.tc.scf {
             return None;
@@ -1032,19 +1030,18 @@ impl Router {
 
         // Forward
         let new_rhl = basic_header.rhl.saturating_sub(1);
-        if new_rhl > 0 {
-            if !(self.location_table.get_neighbours().is_empty() && common_header.tc.scf) {
-                let fwd_basic = basic_header.clone().set_rhl(new_rhl);
-                let fwd_packet: Vec<u8> = fwd_basic
-                    .encode()
-                    .iter()
-                    .copied()
-                    .chain(common_header.encode().iter().copied())
-                    .chain(ext.encode().iter().copied())
-                    .chain(payload.iter().copied())
-                    .collect();
-                let _ = self.link_layer_tx.send(fwd_packet);
-            }
+        if new_rhl > 0 && !(self.location_table.get_neighbours().is_empty() && common_header.tc.scf)
+        {
+            let fwd_basic = (*basic_header).set_rhl(new_rhl);
+            let fwd_packet: Vec<u8> = fwd_basic
+                .encode()
+                .iter()
+                .copied()
+                .chain(common_header.encode().iter().copied())
+                .chain(ext.encode().iter().copied())
+                .chain(payload.iter().copied())
+                .collect();
+            let _ = self.link_layer_tx.send(fwd_packet);
         }
 
         Some(indication)
@@ -1115,25 +1112,24 @@ impl Router {
         }
 
         let new_rhl = basic_header.rhl.saturating_sub(1);
-        if new_rhl > 0 {
-            if !(self.location_table.get_neighbours().is_empty() && common_header.tc.scf) {
-                if self.gn_greedy_forwarding(
-                    fwd_ext.de_pv.latitude as i32,
-                    fwd_ext.de_pv.longitude as i32,
-                    &common_header.tc,
-                ) {
-                    let fwd_basic = basic_header.clone().set_rhl(new_rhl);
-                    let fwd_packet: Vec<u8> = fwd_basic
-                        .encode()
-                        .iter()
-                        .copied()
-                        .chain(common_header.encode().iter().copied())
-                        .chain(fwd_ext.encode().iter().copied())
-                        .chain(payload.iter().copied())
-                        .collect();
-                    let _ = self.link_layer_tx.send(fwd_packet);
-                }
-            }
+        if new_rhl > 0
+            && !(self.location_table.get_neighbours().is_empty() && common_header.tc.scf)
+            && self.gn_greedy_forwarding(
+                fwd_ext.de_pv.latitude as i32,
+                fwd_ext.de_pv.longitude as i32,
+                &common_header.tc,
+            )
+        {
+            let fwd_basic = (*basic_header).set_rhl(new_rhl);
+            let fwd_packet: Vec<u8> = fwd_basic
+                .encode()
+                .iter()
+                .copied()
+                .chain(common_header.encode().iter().copied())
+                .chain(fwd_ext.encode().iter().copied())
+                .chain(payload.iter().copied())
+                .collect();
+            let _ = self.link_layer_tx.send(fwd_packet);
         }
 
         None
@@ -1240,7 +1236,7 @@ impl Router {
             }
             let new_rhl = basic_header.rhl.saturating_sub(1);
             if new_rhl > 0 {
-                let fwd_basic = basic_header.clone().set_rhl(new_rhl);
+                let fwd_basic = (*basic_header).set_rhl(new_rhl);
                 let fwd_packet: Vec<u8> = fwd_basic
                     .encode()
                     .iter()
@@ -1323,7 +1319,7 @@ impl Router {
 
             let new_rhl = basic_header.rhl.saturating_sub(1);
             if new_rhl > 0 {
-                let fwd_basic = basic_header.clone().set_rhl(new_rhl);
+                let fwd_basic = (*basic_header).set_rhl(new_rhl);
                 let fwd_packet: Vec<u8> = fwd_basic
                     .encode()
                     .iter()
@@ -1345,10 +1341,7 @@ impl Router {
         if let Some(entry) = self.location_table.get_entry_ref(sought_addr) {
             if entry.ls_pending {
                 if let Some(req) = buffered_request {
-                    self.ls_packet_buffers
-                        .entry(key)
-                        .or_insert_with(Vec::new)
-                        .push(req);
+                    self.ls_packet_buffers.entry(key).or_default().push(req);
                 }
                 return;
             }
@@ -1420,7 +1413,7 @@ impl Router {
         gbc_ext: &GBCExtendedHeader,
         payload: &[u8],
     ) -> GNDataConfirm {
-        let mut fwd_basic = basic_header.clone();
+        let mut fwd_basic = *basic_header;
         fwd_basic.rhl = basic_header.rhl.saturating_sub(1);
 
         if fwd_basic.rhl == 0 {
@@ -1474,22 +1467,22 @@ impl Router {
                     .chain(payload.iter().copied())
                     .collect();
                 return self.send_to_link_layer(fwd_packet);
-            } else if algorithm == GNForwardingAlgorithmResponse::NonAreaForwarding {
-                if self.gn_greedy_forwarding(
+            } else if algorithm == GNForwardingAlgorithmResponse::NonAreaForwarding
+                && self.gn_greedy_forwarding(
                     gbc_ext.latitude as i32,
                     gbc_ext.longitude as i32,
                     &common_header.tc,
-                ) {
-                    let fwd_packet: Vec<u8> = fwd_basic
-                        .encode()
-                        .iter()
-                        .copied()
-                        .chain(common_header.encode().iter().copied())
-                        .chain(gbc_ext.encode().iter().copied())
-                        .chain(payload.iter().copied())
-                        .collect();
-                    return self.send_to_link_layer(fwd_packet);
-                }
+                )
+            {
+                let fwd_packet: Vec<u8> = fwd_basic
+                    .encode()
+                    .iter()
+                    .copied()
+                    .chain(common_header.encode().iter().copied())
+                    .chain(gbc_ext.encode().iter().copied())
+                    .chain(payload.iter().copied())
+                    .collect();
+                return self.send_to_link_layer(fwd_packet);
             }
         }
 
@@ -1605,7 +1598,7 @@ impl Router {
     ) -> bool {
         let cbf_key = (gbc_ext.so_pv.gn_addr.encode_to_int(), gbc_ext.sn);
 
-        if let Some(_) = self.cbf_buffer.remove(&cbf_key) {
+        if self.cbf_buffer.remove(&cbf_key).is_some() {
             // Duplicate while buffering — suppress
             return false;
         }

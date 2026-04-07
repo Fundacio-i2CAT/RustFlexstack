@@ -51,7 +51,7 @@ impl CamSignerState {
             self.last_full_cert_time = now;
             self.requested_own_certificate = false;
             let asn_cert: AsnCertificate = cert.cert.inner.0.clone();
-            SignerIdentifier::certificate(SequenceOfCertificate(vec![asn_cert].into()))
+            SignerIdentifier::certificate(SequenceOfCertificate(vec![asn_cert]))
         } else {
             let h = cert.as_hashedid8();
             SignerIdentifier::digest(HashedId8(FixedOctetString::from(h)))
@@ -94,12 +94,11 @@ impl SignService {
 
     /// Find the own certificate that covers the given ITS-AID.
     fn get_present_at(&self, its_aid: u64) -> Option<&OwnCertificate> {
-        for cert in self.cert_library.own_certificates.values() {
-            if cert.get_list_of_its_aid().contains(&its_aid) {
-                return Some(cert);
-            }
-        }
-        None
+        self.cert_library
+            .own_certificates
+            .values()
+            .find(|&cert| cert.get_list_of_its_aid().contains(&its_aid))
+            .map(|v| v as _)
     }
 
     // ── Helper: build the Ieee1609Dot2Data envelope ──────────────────────
@@ -175,7 +174,7 @@ impl SignService {
             .expect("DENM requires generation_location");
 
         let asn_cert: AsnCertificate = at.cert.inner.0.clone();
-        let signer = SignerIdentifier::certificate(SequenceOfCertificate(vec![asn_cert].into()));
+        let signer = SignerIdentifier::certificate(SequenceOfCertificate(vec![asn_cert]));
 
         let header_info = HeaderInfo::new(
             Psid(Integer::from(request.its_aid as i64)),
@@ -222,7 +221,7 @@ impl SignService {
                 .collect();
             Some(
                 crate::security::security_asn::ieee1609_dot2_base_types::SequenceOfHashedId3(
-                    hashes.into(),
+                    hashes,
                 ),
             )
         } else {
@@ -326,19 +325,16 @@ mod tests {
 
     fn make_root_tbs() -> ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
-        let perms = SequenceOfPsidGroupPermissions(
-            vec![PsidGroupPermissions::new(
-                SubjectPermissions::all(()),
-                Integer::from(1),
-                Integer::from(0),
-                {
-                    let mut bits = FixedBitString::<8>::default();
-                    bits.set(0, true);
-                    EndEntityType(bits)
-                },
-            )]
-            .into(),
-        );
+        let perms = SequenceOfPsidGroupPermissions(vec![PsidGroupPermissions::new(
+            SubjectPermissions::all(()),
+            Integer::from(1),
+            Integer::from(0),
+            {
+                let mut bits = FixedBitString::<8>::default();
+                bits.set(0, true);
+                EndEntityType(bits)
+            },
+        )]);
         let pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
@@ -355,16 +351,15 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 
     fn make_at_tbs(its_aid: i64) -> ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
-        let app_perms =
-            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)].into());
+        let app_perms = SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)]);
         let pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
@@ -381,9 +376,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 

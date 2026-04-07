@@ -142,7 +142,7 @@ impl RawLinkLayer {
                 libc::socket(
                     libc::AF_PACKET,
                     libc::SOCK_RAW,
-                    (ETH_P_GEONET as u16).to_be() as libc::c_int,
+                    ETH_P_GEONET.to_be() as libc::c_int,
                 )
             };
             if sock < 0 {
@@ -172,7 +172,7 @@ impl RawLinkLayer {
             // Bind to the specific interface so we don't receive from all NICs.
             let sll = libc::sockaddr_ll {
                 sll_family: libc::AF_PACKET as u16,
-                sll_protocol: (ETH_P_GEONET as u16).to_be(),
+                sll_protocol: ETH_P_GEONET.to_be(),
                 sll_ifindex: if_index as i32,
                 sll_hatype: 0,
                 sll_pkttype: 0,
@@ -253,8 +253,10 @@ impl RawLinkLayer {
                     return;
                 }
             };
-            let mut config = Config::default();
-            config.write_timeout = None;
+            let config = Config {
+                write_timeout: None,
+                ..Config::default()
+            };
             let (mut tx, _rx) = match datalink::channel(&interface, config) {
                 Ok(Channel::Ethernet(t, r)) => (t, r),
                 Ok(_) => {

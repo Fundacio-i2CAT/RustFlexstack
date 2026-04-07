@@ -27,9 +27,9 @@ impl CommonHeader {
             reserved: 0,
             ht: request.packet_transport_type.header_type.clone(),
             hst: request.packet_transport_type.header_sub_type.clone(),
-            tc: request.traffic_class.clone(),
+            tc: request.traffic_class,
             flags: (mib.itsGnIsMobile.encode()) << 7,
-            pl: request.length.clone(),
+            pl: request.length,
             mhl: request.max_hop_limit,
             reserved2: 0,
         }

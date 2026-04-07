@@ -66,19 +66,17 @@ pub fn verify_message(
     let psid = u64::try_from(&signed_data.tbs_data.header_info.psid.0).unwrap_or(0);
 
     // §7.1.2: DENMs must use 'certificate' signer
-    if psid == 37 {
-        if !matches!(signer, SignerIdentifier::certificate(_)) {
-            return (
-                SNVerifyConfirm {
-                    report: ReportVerify::UnsupportedSignerIdentifierType,
-                    certificate_id: vec![],
-                    its_aid: psid,
-                    permissions: vec![],
-                    plain_message: vec![],
-                },
-                events,
-            );
-        }
+    if psid == 37 && !matches!(signer, SignerIdentifier::certificate(_)) {
+        return (
+            SNVerifyConfirm {
+                report: ReportVerify::UnsupportedSignerIdentifierType,
+                certificate_id: vec![],
+                its_aid: psid,
+                permissions: vec![],
+                plain_message: vec![],
+            },
+            events,
+        );
     }
 
     // Resolve the authorization ticket from the signer
@@ -337,7 +335,7 @@ pub fn verify_message(
     if let Some(ref cert_asn) = signed_data.tbs_data.header_info.requested_certificate {
         use crate::security::security_asn::etsi_ts103097_module::EtsiTs103097Certificate;
         let c = Certificate::from_asn(EtsiTs103097Certificate(cert_asn.clone()), None);
-        events.push(VerifyEvent::ReceivedCaCertificate(c));
+        events.push(VerifyEvent::ReceivedCaCertificate(Box::new(c)));
     }
 
     (
@@ -358,7 +356,7 @@ pub fn verify_message(
 pub enum VerifyEvent {
     UnknownAt([u8; 8]),
     InlineP2pcdRequest(Vec<[u8; 3]>),
-    ReceivedCaCertificate(Certificate),
+    ReceivedCaCertificate(Box<Certificate>),
 }
 
 #[cfg(test)]
@@ -383,19 +381,16 @@ mod tests {
 
     fn make_root_tbs() -> ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
-        let perms = SequenceOfPsidGroupPermissions(
-            vec![PsidGroupPermissions::new(
-                SubjectPermissions::all(()),
-                Integer::from(1),
-                Integer::from(0),
-                {
-                    let mut bits = FixedBitString::<8>::default();
-                    bits.set(0, true);
-                    EndEntityType(bits)
-                },
-            )]
-            .into(),
-        );
+        let perms = SequenceOfPsidGroupPermissions(vec![PsidGroupPermissions::new(
+            SubjectPermissions::all(()),
+            Integer::from(1),
+            Integer::from(0),
+            {
+                let mut bits = FixedBitString::<8>::default();
+                bits.set(0, true);
+                EndEntityType(bits)
+            },
+        )]);
         let pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
@@ -412,16 +407,15 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 
     fn make_at_tbs(its_aid: i64) -> ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
-        let app_perms =
-            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)].into());
+        let app_perms = SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)]);
         let pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         ToBeSignedCertificate::new(
@@ -438,9 +432,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 

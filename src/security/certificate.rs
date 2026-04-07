@@ -505,19 +505,16 @@ mod tests {
 
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
 
-        let perms = SequenceOfPsidGroupPermissions(
-            vec![PsidGroupPermissions::new(
-                SubjectPermissions::all(()),
-                Integer::from(1),
-                Integer::from(0),
-                {
-                    let mut bits = FixedBitString::<8>::default();
-                    bits.set(0, true);
-                    EndEntityType(bits)
-                },
-            )]
-            .into(),
-        );
+        let perms = SequenceOfPsidGroupPermissions(vec![PsidGroupPermissions::new(
+            SubjectPermissions::all(()),
+            Integer::from(1),
+            Integer::from(0),
+            {
+                let mut bits = FixedBitString::<8>::default();
+                bits.set(0, true);
+                EndEntityType(bits)
+            },
+        )]);
 
         let placeholder_pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
@@ -536,9 +533,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(placeholder_pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 
@@ -554,8 +551,7 @@ mod tests {
 
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
 
-        let app_perms =
-            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)].into());
+        let app_perms = SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)]);
 
         let placeholder_pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
@@ -574,9 +570,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(placeholder_pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 

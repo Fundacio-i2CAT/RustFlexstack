@@ -113,6 +113,7 @@ impl LdmStore {
     // ── Write operations ──────────────────────────────────────────────────
 
     /// Insert a new record and return its assigned ID.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert(
         &mut self,
         application_id: u32,
@@ -144,6 +145,7 @@ impl LdmStore {
     /// Replace an existing record's payload and metadata.
     ///
     /// Returns `false` when `id` is not found.
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         id: u64,

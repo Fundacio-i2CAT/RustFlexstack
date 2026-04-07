@@ -32,6 +32,12 @@ pub struct BTPDataRequest {
     pub data: Vec<u8>,
 }
 
+impl Default for BTPDataRequest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BTPDataRequest {
     pub fn new() -> Self {
         BTPDataRequest {
@@ -90,6 +96,12 @@ pub struct BTPDataIndication {
     pub gn_remaining_packet_lifetime: Option<f64>,
     pub length: u16,
     pub data: Vec<u8>,
+}
+
+impl Default for BTPDataIndication {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BTPDataIndication {

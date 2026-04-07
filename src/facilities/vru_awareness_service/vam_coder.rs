@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn vam_coder_default() {
-        let _coder = VamCoder::default();
+        let _coder = VamCoder;
     }
 
     #[test]

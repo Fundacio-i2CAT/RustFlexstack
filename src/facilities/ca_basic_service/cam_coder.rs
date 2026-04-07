@@ -113,7 +113,7 @@ mod tests {
     fn generation_delta_time_now_nonzero() {
         let gdt = generation_delta_time_now();
         // Should be non-zero since we're well after ITS epoch
-        assert!(gdt.0 > 0 || gdt.0 == 0); // always true, but exercises code path
+        let _ = gdt; // verify it was created successfully
     }
 
     #[test]
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn cam_coder_default() {
-        let _coder = CamCoder::default();
+        let _coder = CamCoder;
     }
 
     #[test]

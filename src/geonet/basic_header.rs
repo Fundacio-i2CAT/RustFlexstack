@@ -67,25 +67,25 @@ pub struct LT {
 impl LT {
     pub fn start_in_milliseconds(value: u32) -> Self {
         if value >= 100000 {
-            return LT {
+            LT {
                 multiplier: (value / 100000) as u8,
                 base: LTBase::OneHundredSeconds,
-            };
+            }
         } else if value >= 10000 {
-            return LT {
+            LT {
                 multiplier: (value / 10000) as u8,
                 base: LTBase::TenSeconds,
-            };
+            }
         } else if value >= 1000 {
-            return LT {
+            LT {
                 multiplier: (value / 1000) as u8,
                 base: LTBase::OneSecond,
-            };
+            }
         } else if value >= 50 {
-            return LT {
+            LT {
                 multiplier: (value / 50) as u8,
                 base: LTBase::FiftyMilliseconds,
-            };
+            }
         } else {
             panic!("Invalid LT Value");
         }
@@ -139,11 +139,11 @@ impl BasicHeader {
 
     pub fn initialize_with_mib(mib: &Mib) -> Self {
         BasicHeader {
-            version: mib.itsGnProtocolVersion.clone(),
+            version: mib.itsGnProtocolVersion,
             nh: BasicNH::CommonHeader,
-            rhl: mib.itsGnDefaultHopLimit.clone(),
+            rhl: mib.itsGnDefaultHopLimit,
             reserved: 0,
-            lt: LT::start_in_seconds(mib.itsGnDefaultPacketLifetime.clone()),
+            lt: LT::start_in_seconds(mib.itsGnDefaultPacketLifetime),
         }
     }
 

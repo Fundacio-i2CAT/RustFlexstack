@@ -86,10 +86,10 @@ fn main() {
     let gn_gps_rx = loc_svc.subscribe();
 
     // ── Spawn GeoNetworking router ────────────────────────────────────────────
-    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone(), None, None, None);
+    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib, None, None, None);
 
     // ── Spawn BTP router ──────────────────────────────────────────────────────
-    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib.clone());
+    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib);
 
     // ── Wire RawLinkLayer ─────────────────────────────────────────────────────
     let (ll_to_gn_tx, ll_to_gn_rx) = mpsc::channel::<Vec<u8>>();
@@ -176,7 +176,7 @@ fn main() {
         heading_deg: 90.0,
         pai: true,
     };
-    loc_svc.publish(gps_fix.clone());
+    loc_svc.publish(gps_fix);
 
     // ── Trigger DENM: Road Hazard (accident) at current position ──────────────
     //
@@ -199,6 +199,6 @@ fn main() {
     println!("Publishing GPS fixes @ 1 Hz — Ctrl+C to stop\n");
     loop {
         thread::sleep(Duration::from_secs(1));
-        loc_svc.publish(gps_fix.clone());
+        loc_svc.publish(gps_fix);
     }
 }

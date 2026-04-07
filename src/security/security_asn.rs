@@ -3,7 +3,8 @@
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_base_types {
     extern crate alloc;
@@ -96,7 +97,8 @@ pub mod etsi_ts102941_base_types {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_messages_ca {
     extern crate alloc;
@@ -204,7 +206,8 @@ pub mod etsi_ts102941_messages_ca {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_messages_itss_optional_privacy {
     extern crate alloc;
@@ -411,7 +414,8 @@ pub mod etsi_ts102941_messages_itss_optional_privacy {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_trust_lists {
     extern crate alloc;
@@ -636,7 +640,8 @@ pub mod etsi_ts102941_trust_lists {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_types_authorization {
     extern crate alloc;
@@ -810,7 +815,8 @@ pub mod etsi_ts102941_types_authorization {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_types_authorization_validation {
     extern crate alloc;
@@ -895,7 +901,8 @@ pub mod etsi_ts102941_types_authorization_validation {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_types_ca_management {
     extern crate alloc;
@@ -935,7 +942,8 @@ pub mod etsi_ts102941_types_ca_management {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_types_enrolment {
     extern crate alloc;
@@ -1031,7 +1039,8 @@ pub mod etsi_ts102941_types_enrolment {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts102941_types_link_certificate {
     extern crate alloc;
@@ -1073,7 +1082,8 @@ pub mod etsi_ts102941_types_link_certificate {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts103097_extension_module {
     extern crate alloc;
@@ -1147,7 +1157,8 @@ pub mod etsi_ts103097_extension_module {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod etsi_ts103097_module {
     extern crate alloc;
@@ -1180,7 +1191,8 @@ pub mod etsi_ts103097_module {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2 {
     extern crate alloc;
@@ -2891,7 +2903,8 @@ pub mod ieee1609_dot2 {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_base_types {
     extern crate alloc;
@@ -4498,7 +4511,8 @@ pub mod ieee1609_dot2_base_types {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_crl {
     extern crate alloc;
@@ -4529,7 +4543,8 @@ pub mod ieee1609_dot2_crl {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_crl_base_types {
     extern crate alloc;
@@ -5163,7 +5178,8 @@ pub mod ieee1609_dot2_crl_base_types {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_aca_ee_interface {
     extern crate alloc;
@@ -5257,7 +5273,8 @@ pub mod ieee1609_dot2_dot1_aca_ee_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_aca_la_interface {
     extern crate alloc;
@@ -5279,7 +5296,8 @@ pub mod ieee1609_dot2_dot1_aca_la_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_aca_ma_interface {
     extern crate alloc;
@@ -5301,7 +5319,8 @@ pub mod ieee1609_dot2_dot1_aca_ma_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_aca_ra_interface {
     extern crate alloc;
@@ -5614,7 +5633,8 @@ pub mod ieee1609_dot2_dot1_aca_ra_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_acpc {
     extern crate alloc;
@@ -5902,7 +5922,8 @@ pub mod ieee1609_dot2_dot1_acpc {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_cam_ra_interface {
     extern crate alloc;
@@ -6004,7 +6025,8 @@ pub mod ieee1609_dot2_dot1_cam_ra_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_cert_management {
     extern crate alloc;
@@ -6493,7 +6515,8 @@ pub mod ieee1609_dot2_dot1_cert_management {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_eca_ee_interface {
     extern crate alloc;
@@ -6671,7 +6694,8 @@ pub mod ieee1609_dot2_dot1_eca_ee_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_ee_ma_interface {
     extern crate alloc;
@@ -6693,7 +6717,8 @@ pub mod ieee1609_dot2_dot1_ee_ma_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_ee_ra_interface {
     extern crate alloc;
@@ -7058,7 +7083,8 @@ pub mod ieee1609_dot2_dot1_ee_ra_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_la_ma_interface {
     extern crate alloc;
@@ -7080,7 +7106,8 @@ pub mod ieee1609_dot2_dot1_la_ma_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_la_ra_interface {
     extern crate alloc;
@@ -7102,7 +7129,8 @@ pub mod ieee1609_dot2_dot1_la_ra_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_ma_ra_interface {
     extern crate alloc;
@@ -7124,7 +7152,8 @@ pub mod ieee1609_dot2_dot1_ma_ra_interface {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
 pub mod ieee1609_dot2_dot1_protocol {
     extern crate alloc;

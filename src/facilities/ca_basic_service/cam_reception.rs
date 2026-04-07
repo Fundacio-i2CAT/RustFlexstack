@@ -40,7 +40,7 @@ impl CAMReceptionManagement {
     /// * `coder`      — shared [`CamCoder`] instance for UPER decoding.
     /// * `cam_tx`     — sender into which decoded [`Cam`] PDUs are pushed.
     /// * `ldm`        — optional LDM handle; when `Some`, each decoded CAM is
-    ///                  inserted into the LDM before forwarding.
+    ///   inserted into the LDM before forwarding.
     ///
     /// The caller should hold the corresponding `Receiver<Cam>` — typically
     /// returned from [`CooperativeAwarenessBasicService::new`].
@@ -91,8 +91,8 @@ impl CAMReceptionManagement {
                                 timestamp_its: now_its_ms(),
                                 lat_etsi: lat,
                                 lon_etsi: lon,
-                                altitude_cm: (alt / 10) as i32, // AltitudeValue in 0.01 m → cm
-                                time_validity_s: 1,             // CAM validity: 1 s
+                                altitude_cm: (alt / 10), // AltitudeValue in 0.01 m → cm
+                                time_validity_s: 1,      // CAM validity: 1 s
                                 data_object: ItsDataObject::Cam(Box::new(cam.clone())),
                             });
                         }

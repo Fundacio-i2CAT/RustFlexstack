@@ -280,35 +280,33 @@ impl VAMTransmissionManagement {
                 }
 
                 let fix = match current_fix {
-                    Some(ref f) => f.clone(),
+                    Some(ref f) => *f,
                     None => continue,
                 };
 
                 let now = Instant::now();
                 let mut should_send = false;
 
-                if last_vam_time.is_none() {
-                    // First VAM after activation — send immediately
-                    should_send = true;
-                } else {
-                    let elapsed_ms = now.duration_since(last_vam_time.unwrap()).as_millis() as u64;
+                if let Some(last_time) = last_vam_time {
+                    let elapsed_ms = now.duration_since(last_time).as_millis() as u64;
 
                     // Condition 1: elapsed ≥ T_GenVamMax
-                    if elapsed_ms >= T_GEN_VAM_MAX_MS {
-                        should_send = true;
-                    }
                     // Conditions 2-4: dynamics changed AND elapsed ≥ T_GenVam_DCC
-                    else if elapsed_ms >= T_GEN_VAM_DCC_MS
-                        && check_triggers(
-                            &fix,
-                            last_vam_lat,
-                            last_vam_lon,
-                            last_vam_speed,
-                            last_vam_heading,
-                        )
+                    if elapsed_ms >= T_GEN_VAM_MAX_MS
+                        || (elapsed_ms >= T_GEN_VAM_DCC_MS
+                            && check_triggers(
+                                &fix,
+                                last_vam_lat,
+                                last_vam_lon,
+                                last_vam_speed,
+                                last_vam_heading,
+                            ))
                     {
                         should_send = true;
                     }
+                } else {
+                    // First VAM after activation — send immediately
+                    should_send = true;
                 }
 
                 if !should_send {

@@ -213,6 +213,12 @@ pub struct Mib {
     pub itsGnDefaultTrafficClass: u8,
 }
 
+impl Default for Mib {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Mib {
     pub fn new() -> Self {
         {

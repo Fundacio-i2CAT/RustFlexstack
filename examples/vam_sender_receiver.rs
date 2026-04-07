@@ -83,10 +83,10 @@ fn main() {
     let vru_gps_rx = loc_svc.subscribe(); // → VAM transmission
 
     // ── Spawn GeoNetworking router ────────────────────────────────────────────
-    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone(), None, None, None);
+    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib, None, None, None);
 
     // ── Spawn BTP router ──────────────────────────────────────────────────────
-    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib.clone());
+    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib);
 
     // ── Wire RawLinkLayer ─────────────────────────────────────────────────────
     let (ll_to_gn_tx, ll_to_gn_rx) = mpsc::channel::<Vec<u8>>();

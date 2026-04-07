@@ -86,8 +86,8 @@ fn main() {
     let station_id = u32::from_be_bytes([mac[2], mac[3], mac[4], mac[5]]);
 
     // ── Routers + link layer ──────────────────────────────────────────────────
-    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone(), None, None, None);
-    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib.clone());
+    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib, None, None, None);
+    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib);
 
     let (ll_to_gn_tx, ll_to_gn_rx) = mpsc::channel::<Vec<u8>>();
     RawLinkLayer::new(ll_to_gn_tx, gn_to_ll_rx, &iface, mac).start();

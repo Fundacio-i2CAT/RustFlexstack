@@ -60,7 +60,7 @@ fn app_permissions(psids: &[u64]) -> SequenceOfPsidSsp {
         .iter()
         .map(|&p| PsidSsp::new(Psid(Integer::from(p as i128)), None))
         .collect();
-    SequenceOfPsidSsp(items.into())
+    SequenceOfPsidSsp(items)
 }
 
 /// Helper: build a `SequenceOfPsidGroupPermissions` with
@@ -74,12 +74,12 @@ fn cert_issue_permissions_explicit(
         .map(|&p| PsidSspRange::new(Psid(Integer::from(p as i128)), None))
         .collect();
     let perm = PsidGroupPermissions::new(
-        SubjectPermissions::explicit(SequenceOfPsidSspRange(ranges.into())),
+        SubjectPermissions::explicit(SequenceOfPsidSspRange(ranges)),
         Integer::from(min_chain_length),
         Integer::from(0i128),
         default_ee_type(),
     );
-    SequenceOfPsidGroupPermissions(vec![perm].into())
+    SequenceOfPsidGroupPermissions(vec![perm])
 }
 
 /// Helper: build a `SequenceOfPsidGroupPermissions` with
@@ -91,7 +91,7 @@ fn cert_issue_permissions_all(min_chain_length: i128) -> SequenceOfPsidGroupPerm
         Integer::from(0i128),
         default_ee_type(),
     );
-    SequenceOfPsidGroupPermissions(vec![perm].into())
+    SequenceOfPsidGroupPermissions(vec![perm])
 }
 
 fn main() {
@@ -102,7 +102,7 @@ fn main() {
 
     // ─── Root CA ─────────────────────────────────────────────────────────
     let root_tbs = ToBeSignedCertificate::new(
-        CertificateId::name(Hostname("RootCA".to_string().into())),
+        CertificateId::name(Hostname("RootCA".to_string())),
         HashedId3(FixedOctetString::from([0u8; 3])),
         CrlSeries(Uint16(0)),
         ValidityPeriod::new(its_time32_now(), Duration::years(Uint16(20))),
@@ -131,7 +131,7 @@ fn main() {
 
     // ─── Authorization Authority ─────────────────────────────────────────
     let aa_tbs = ToBeSignedCertificate::new(
-        CertificateId::name(Hostname("AA".to_string().into())),
+        CertificateId::name(Hostname("AA".to_string())),
         HashedId3(FixedOctetString::from([0u8; 3])),
         CrlSeries(Uint16(0)),
         ValidityPeriod::new(its_time32_now(), Duration::years(Uint16(10))),

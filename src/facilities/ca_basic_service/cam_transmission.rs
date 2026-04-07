@@ -315,7 +315,7 @@ impl CAMTransmissionManagement {
 
                 // Timer tick — evaluate CAM conditions (Annex B.2.4 step 2)
                 let fix = match current_fix {
-                    Some(ref f) => f.clone(),
+                    Some(ref f) => *f,
                     None => continue,
                 };
 

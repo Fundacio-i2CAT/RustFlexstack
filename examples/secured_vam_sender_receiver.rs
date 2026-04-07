@@ -193,8 +193,8 @@ fn main() {
     let vru_gps_rx = loc_svc.subscribe();
 
     // ── Spawn GN router and BTP router ───────────────────────────────────
-    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib.clone(), None, None, None);
-    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib.clone());
+    let (gn_handle, gn_to_ll_rx, gn_to_btp_rx) = GNRouter::spawn(mib, None, None, None);
+    let (btp_handle, btp_to_gn_rx) = BTPRouter::spawn(mib);
 
     // ── Wire RawLinkLayer ────────────────────────────────────────────────
     let (ll_to_gn_tx, ll_to_gn_rx) = mpsc::channel::<Vec<u8>>();
@@ -291,7 +291,7 @@ fn main() {
                                     svc.notify_inline_p2pcd_request(h3s);
                                 }
                                 VerifyEvent::ReceivedCaCertificate(cert) => {
-                                    svc.notify_received_ca_certificate(cert.clone());
+                                    svc.notify_received_ca_certificate(cert.as_ref().clone());
                                 }
                             }
                         }

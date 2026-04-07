@@ -56,9 +56,9 @@ impl LocationTableEntry {
     /// Update the stored LPV only if strictly newer (§C.2).
     /// When the stored TST is zero (initial entry), accepts unconditionally.
     pub fn update_position_vector(&mut self, position_vector: &LongPositionVector) {
-        if self.position_vector.tst == Tst::set_in_normal_timestamp_milliseconds(0) {
-            self.position_vector = *position_vector;
-        } else if position_vector.tst > self.position_vector.tst {
+        if self.position_vector.tst == Tst::set_in_normal_timestamp_milliseconds(0)
+            || position_vector.tst > self.position_vector.tst
+        {
             self.position_vector = *position_vector;
         }
     }

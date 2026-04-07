@@ -43,11 +43,11 @@ impl GBCExtendedHeader {
             so_pv: LongPositionVector::decode([
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             ]),
-            latitude: request.area.latitude.clone(),
-            longitude: request.area.longitude.clone(),
-            a: request.area.a.clone(),
-            b: request.area.b.clone(),
-            angle: request.area.angle.clone(),
+            latitude: request.area.latitude,
+            longitude: request.area.longitude,
+            a: request.area.a,
+            b: request.area.b,
+            angle: request.area.angle,
             reserved2: 0,
         }
     }

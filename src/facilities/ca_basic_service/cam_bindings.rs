@@ -6,7 +6,8 @@
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::doc_overindented_list_items
 )]
 pub mod cam_pdu_descriptions {
     extern crate alloc;
@@ -868,7 +869,8 @@ pub mod cam_pdu_descriptions {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::doc_overindented_list_items
 )]
 pub mod etsi_its_cdd {
     extern crate alloc;

@@ -12,8 +12,8 @@ pub enum M {
 impl M {
     pub fn encode_to_address(&self) -> u64 {
         match self {
-            M::GnUnicast => (0 << 7) << 8 * 7,
-            M::GnMulticast => (1 << 7) << 8 * 7,
+            M::GnUnicast => (0 << 7) << (8 * 7),
+            M::GnMulticast => (1 << 7) << (8 * 7),
         }
     }
 
@@ -47,19 +47,19 @@ pub enum ST {
 impl ST {
     pub fn encode_to_address(&self) -> u64 {
         match self {
-            ST::Unknown => (0 << 2) << 8 * 7,
-            ST::Pedestrian => (1 << 2) << 8 * 7,
-            ST::Cyclist => (2 << 2) << 8 * 7,
-            ST::Moped => (3 << 2) << 8 * 7,
-            ST::Motorcycle => (4 << 2) << 8 * 7,
-            ST::PassengerCar => (5 << 2) << 8 * 7,
-            ST::Bus => (6 << 2) << 8 * 7,
-            ST::LightTruck => (7 << 2) << 8 * 7,
-            ST::HeavyTruck => (8 << 2) << 8 * 7,
-            ST::Trailer => (9 << 2) << 8 * 7,
-            ST::SpecialVehicle => (10 << 2) << 8 * 7,
-            ST::Tram => (11 << 2) << 8 * 7,
-            ST::RoadSideUnit => (12 << 2) << 8 * 7,
+            ST::Unknown => (0 << 2) << (8 * 7),
+            ST::Pedestrian => (1 << 2) << (8 * 7),
+            ST::Cyclist => (2 << 2) << (8 * 7),
+            ST::Moped => (3 << 2) << (8 * 7),
+            ST::Motorcycle => (4 << 2) << (8 * 7),
+            ST::PassengerCar => (5 << 2) << (8 * 7),
+            ST::Bus => (6 << 2) << (8 * 7),
+            ST::LightTruck => (7 << 2) << (8 * 7),
+            ST::HeavyTruck => (8 << 2) << (8 * 7),
+            ST::Trailer => (9 << 2) << (8 * 7),
+            ST::SpecialVehicle => (10 << 2) << (8 * 7),
+            ST::Tram => (11 << 2) << (8 * 7),
+            ST::RoadSideUnit => (12 << 2) << (8 * 7),
         }
     }
 
@@ -106,8 +106,8 @@ impl MID {
 
     pub fn decode_from_address(address: u64) -> Self {
         let mut mid: [u8; 6] = [0; 6];
-        for i in 0..6 {
-            mid[i] = (address >> (8 * (5 - i))) as u8;
+        for (i, byte) in mid.iter_mut().enumerate() {
+            *byte = (address >> (8 * (5 - i))) as u8;
         }
         MID { mid }
     }

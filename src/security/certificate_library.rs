@@ -203,19 +203,16 @@ mod tests {
 
     fn make_root_tbs() -> crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
-        let perms = SequenceOfPsidGroupPermissions(
-            vec![PsidGroupPermissions::new(
-                SubjectPermissions::all(()),
-                Integer::from(1),
-                Integer::from(0),
-                {
-                    let mut bits = FixedBitString::<8>::default();
-                    bits.set(0, true);
-                    EndEntityType(bits)
-                },
-            )]
-            .into(),
-        );
+        let perms = SequenceOfPsidGroupPermissions(vec![PsidGroupPermissions::new(
+            SubjectPermissions::all(()),
+            Integer::from(1),
+            Integer::from(0),
+            {
+                let mut bits = FixedBitString::<8>::default();
+                bits.set(0, true);
+                EndEntityType(bits)
+            },
+        )]);
         let pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate::new(
@@ -232,16 +229,15 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 
     fn make_at_tbs() -> crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
-        let app_perms =
-            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)].into());
+        let app_perms = SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)]);
         let pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
         crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate::new(
@@ -258,9 +254,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![].into()),
-            SequenceOfCertIssueExtensions(vec![].into()),
-            SequenceOfCertRequestExtensions(vec![].into()),
+            SequenceOfAppExtensions(vec![]),
+            SequenceOfCertIssueExtensions(vec![]),
+            SequenceOfCertRequestExtensions(vec![]),
         )
     }
 
@@ -370,7 +366,7 @@ mod tests {
             vec![aa.cert.clone()],
             vec![at.cert.clone()],
         );
-        let result = lib.verify_sequence_of_certificates(&[at.cert.clone()], &backend);
+        let result = lib.verify_sequence_of_certificates(std::slice::from_ref(&at.cert), &backend);
         assert!(result.is_some());
     }
 

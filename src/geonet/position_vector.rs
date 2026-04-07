@@ -37,8 +37,8 @@ impl Tst {
 
     pub fn decode(bytes: &[u8]) -> Self {
         let mut msec: u32 = 0;
-        for i in 0..4 {
-            msec |= (bytes[i] as u32) << (8 * (3 - i));
+        for (i, &byte) in bytes.iter().enumerate().take(4) {
+            msec |= (byte as u32) << (8 * (3 - i));
         }
         Tst { msec }
     }

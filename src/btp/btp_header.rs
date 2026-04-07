@@ -28,6 +28,12 @@ pub struct BTPAHeader {
     source_port: u16,
 }
 
+impl Default for BTPAHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BTPAHeader {
     pub fn new() -> Self {
         BTPAHeader {
@@ -86,6 +92,12 @@ pub struct BTPBHeader {
     pub destination_port: u16,
     /// Extra port-info field (typically 0 for standard applications).
     pub destination_port_info: u16,
+}
+
+impl Default for BTPBHeader {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BTPBHeader {
