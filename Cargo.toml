@@ -1,6 +1,6 @@
 [package]
 name = "rustflexstack"
-version = "0.1.1"
+version = "0.2.1"
 edition = "2021"
 description = "ETSI C-ITS GeoNetworking and BTP protocol stack in Rust"
 license = "AGPL-3.0-only"
@@ -28,10 +28,34 @@ name = "cam_sender_receiver"
 path = "examples/cam_sender_receiver.rs"
 
 [[example]]
+name = "denm_sender_receiver"
+path = "examples/denm_sender_receiver.rs"
+
+[[example]]
+name = "vam_sender_receiver"
+path = "examples/vam_sender_receiver.rs"
+
+[[example]]
 name = "generate_certificate_chain"
 path = "examples/generate_certificate_chain.rs"
 
 [[example]]
 name = "secured_cam_sender_receiver"
 path = "examples/secured_cam_sender_receiver.rs"
+
+[[example]]
+name = "secured_vam_sender_receiver"
+path = "examples/secured_vam_sender_receiver.rs"
+
+[[example]]
+name = "bench_cam_tx"
+path = "examples/bench_cam_tx.rs"
+
+[[example]]
+name = "bench_cam_rx"
+path = "examples/bench_cam_rx.rs"
+
+[[example]]
+name = "bench_congestion"
+path = "examples/bench_congestion.rs"
 

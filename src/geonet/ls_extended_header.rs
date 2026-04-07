@@ -118,3 +118,82 @@ impl LSReplyExtendedHeader {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
+    use crate::geonet::position_vector::{LongPositionVector, ShortPositionVector, Tst};
+
+    fn make_lpv() -> LongPositionVector {
+        LongPositionVector {
+            gn_addr: GNAddress::new(M::GnUnicast, ST::PassengerCar, MID::new([1, 2, 3, 4, 5, 6])),
+            tst: Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000),
+            latitude: 415520000,
+            longitude: 21340000,
+            pai: true,
+            s: 500,
+            h: 900,
+        }
+    }
+
+    fn make_spv() -> ShortPositionVector {
+        ShortPositionVector {
+            gn_address: GNAddress::new(M::GnUnicast, ST::Bus, MID::new([6, 5, 4, 3, 2, 1])),
+            tst: Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000),
+            latitude: 415530000,
+            longitude: 21350000,
+        }
+    }
+
+    // ── LS Request ────────────────────────────────────────────────────
+
+    #[test]
+    fn ls_request_encode_decode_roundtrip() {
+        let req_addr = GNAddress::new(M::GnUnicast, ST::HeavyTruck, MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]));
+        let header = LSRequestExtendedHeader::initialize(55, make_lpv(), req_addr);
+        let encoded = header.encode();
+        assert_eq!(encoded.len(), 36);
+        let decoded = LSRequestExtendedHeader::decode(&encoded);
+        assert_eq!(header, decoded);
+    }
+
+    #[test]
+    fn ls_request_fields() {
+        let req_addr = GNAddress::new(M::GnMulticast, ST::Tram, MID::new([1, 1, 1, 1, 1, 1]));
+        let header = LSRequestExtendedHeader::initialize(100, make_lpv(), req_addr);
+        assert_eq!(header.sn, 100);
+        assert_eq!(header.reserved, 0);
+        assert_eq!(header.request_gn_addr, req_addr);
+    }
+
+    #[test]
+    #[should_panic(expected = "LS Request Extended Header too short")]
+    fn ls_request_decode_too_short() {
+        LSRequestExtendedHeader::decode(&[0u8; 10]);
+    }
+
+    // ── LS Reply ─────────────────────────────────────────────────────
+
+    #[test]
+    fn ls_reply_encode_decode_roundtrip() {
+        let header = LSReplyExtendedHeader::initialize(200, make_lpv(), make_spv());
+        let encoded = header.encode();
+        assert_eq!(encoded.len(), 48);
+        let decoded = LSReplyExtendedHeader::decode(&encoded);
+        assert_eq!(header, decoded);
+    }
+
+    #[test]
+    fn ls_reply_fields() {
+        let header = LSReplyExtendedHeader::initialize(123, make_lpv(), make_spv());
+        assert_eq!(header.sn, 123);
+        assert_eq!(header.reserved, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "LS Reply Extended Header too short")]
+    fn ls_reply_decode_too_short() {
+        LSReplyExtendedHeader::decode(&[0u8; 20]);
+    }
+}

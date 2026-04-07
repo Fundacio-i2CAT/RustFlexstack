@@ -764,7 +764,7 @@ dependencies = [
 
 [[package]]
 name = "rustflexstack"
-version = "0.1.1"
+version = "0.2.1"
 dependencies = [
  "ecdsa",
  "elliptic-curve",

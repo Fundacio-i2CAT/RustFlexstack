@@ -145,3 +145,114 @@ impl Default for EcdsaBackend {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_new_empty() {
+        let backend = EcdsaBackend::new();
+        assert_eq!(backend.next_id, 0);
+        assert!(backend.keys.is_empty());
+    }
+
+    #[test]
+    fn backend_default() {
+        let backend = EcdsaBackend::default();
+        assert_eq!(backend.next_id, 0);
+    }
+
+    #[test]
+    fn create_key_returns_sequential_ids() {
+        let mut backend = EcdsaBackend::new();
+        assert_eq!(backend.create_key(), 0);
+        assert_eq!(backend.create_key(), 1);
+        assert_eq!(backend.create_key(), 2);
+    }
+
+    #[test]
+    fn get_public_key_uncompressed_p256() {
+        let mut backend = EcdsaBackend::new();
+        let id = backend.create_key();
+        let pk = backend.get_public_key(id);
+        match pk {
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::uncompressedP256(u)) => {
+                assert_eq!(u.x.as_ref().len(), 32);
+                assert_eq!(u.y.as_ref().len(), 32);
+            }
+            _ => panic!("Expected uncompressedP256"),
+        }
+    }
+
+    #[test]
+    fn sign_and_verify() {
+        let mut backend = EcdsaBackend::new();
+        let id = backend.create_key();
+        let data = b"Hello, ETSI C-ITS!";
+        let signature = backend.sign(data, id);
+        let pk = backend.get_public_key(id);
+        assert!(backend.verify_with_pk(data, &signature, &pk));
+    }
+
+    #[test]
+    fn sign_wrong_data_fails_verification() {
+        let mut backend = EcdsaBackend::new();
+        let id = backend.create_key();
+        let signature = backend.sign(b"correct data", id);
+        let pk = backend.get_public_key(id);
+        assert!(!backend.verify_with_pk(b"wrong data", &signature, &pk));
+    }
+
+    #[test]
+    fn sign_wrong_key_fails_verification() {
+        let mut backend = EcdsaBackend::new();
+        let id1 = backend.create_key();
+        let id2 = backend.create_key();
+        let data = b"test data";
+        let signature = backend.sign(data, id1);
+        let pk2 = backend.get_public_key(id2);
+        assert!(!backend.verify_with_pk(data, &signature, &pk2));
+    }
+
+    #[test]
+    fn export_import_key_roundtrip() {
+        let mut backend = EcdsaBackend::new();
+        let id = backend.create_key();
+        let exported = backend.export_signing_key(id);
+        assert_eq!(exported.len(), 32);
+
+        let mut backend2 = EcdsaBackend::new();
+        let id2 = backend2.import_signing_key(&exported);
+
+        // Sign with original, verify with imported (same key)
+        let data = b"roundtrip test";
+        let sig = backend.sign(data, id);
+        let pk = backend2.get_public_key(id2);
+        assert!(backend2.verify_with_pk(data, &sig, &pk));
+    }
+
+    #[test]
+    fn hash_to_hashedid8_deterministic() {
+        let data = b"certificate bytes";
+        let h1 = EcdsaBackend::hash_to_hashedid8(data);
+        let h2 = EcdsaBackend::hash_to_hashedid8(data);
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 8);
+    }
+
+    #[test]
+    fn hash_to_hashedid8_different_input() {
+        let h1 = EcdsaBackend::hash_to_hashedid8(b"input1");
+        let h2 = EcdsaBackend::hash_to_hashedid8(b"input2");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn hash_to_hashedid8_is_last_8_bytes_of_sha256() {
+        let data = b"test";
+        let digest = Sha256::digest(data);
+        let expected: [u8; 8] = digest[24..32].try_into().unwrap();
+        assert_eq!(EcdsaBackend::hash_to_hashedid8(data), expected);
+    }
+}

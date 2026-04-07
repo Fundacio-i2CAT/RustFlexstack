@@ -176,11 +176,11 @@ impl LocationTable {
 
     /// Remove expired entries (§8.1.3).
     pub fn refresh_table(&mut self) {
-        let current_time = Tst::set_in_normal_timestamp_seconds(
+        let current_time = Tst::set_in_normal_timestamp_milliseconds(
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .expect("Time went backwards")
-                .as_secs(),
+                .as_millis() as u64,
         );
         let lifetime_ms = (self.mib.itsGnLifetimeLocTE as u32) * 1000;
         self.entries
@@ -344,5 +344,295 @@ impl LocationTable {
 
     pub fn get_neighbours(&self) -> Vec<&LocationTableEntry> {
         self.entries.values().filter(|e| e.is_neighbour).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
+    use crate::geonet::position_vector::{LongPositionVector, Tst};
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }
+
+    fn make_mib() -> Mib {
+        Mib::new()
+    }
+
+    fn make_lpv(mid: [u8; 6], msec: u64) -> LongPositionVector {
+        LongPositionVector {
+            gn_addr: GNAddress::new(M::GnUnicast, ST::PassengerCar, MID::new(mid)),
+            tst: Tst::set_in_normal_timestamp_milliseconds(msec),
+            latitude: 415520000,
+            longitude: 21340000,
+            pai: true,
+            s: 500,
+            h: 900,
+        }
+    }
+
+    // ── LocationTableEntry ────────────────────────────────────────────
+
+    #[test]
+    fn entry_new_defaults() {
+        let entry = LocationTableEntry::new(make_mib());
+        assert!(!entry.is_neighbour);
+        assert!(!entry.ls_pending);
+        assert!(entry.dpl_deque.is_empty());
+        assert_eq!(entry.pdr, 0.0);
+    }
+
+    #[test]
+    fn entry_update_position_vector_accepts_newer() {
+        let mut entry = LocationTableEntry::new(make_mib());
+        let pv1 = make_lpv([1, 2, 3, 4, 5, 6], 1_717_200_000_000);
+        let pv2 = make_lpv([1, 2, 3, 4, 5, 6], 1_717_200_001_000);
+
+        entry.update_position_vector(&pv1);
+        assert_eq!(entry.position_vector.tst, pv1.tst);
+
+        entry.update_position_vector(&pv2);
+        assert_eq!(entry.position_vector.tst, pv2.tst);
+    }
+
+    #[test]
+    fn entry_update_position_vector_rejects_older() {
+        let mut entry = LocationTableEntry::new(make_mib());
+        let pv_new = make_lpv([1, 2, 3, 4, 5, 6], 1_717_200_001_000);
+        let pv_old = make_lpv([1, 2, 3, 4, 5, 6], 1_717_200_000_000);
+
+        entry.update_position_vector(&pv_new);
+        entry.update_position_vector(&pv_old);
+        // Should still be pv_new
+        assert_eq!(entry.position_vector.tst, pv_new.tst);
+    }
+
+    #[test]
+    fn entry_check_duplicate_sn_not_duplicate() {
+        let mut entry = LocationTableEntry::new(make_mib());
+        assert!(!entry.check_duplicate_sn(1));
+        assert!(!entry.check_duplicate_sn(2));
+        assert!(!entry.check_duplicate_sn(3));
+    }
+
+    #[test]
+    fn entry_check_duplicate_sn_is_duplicate() {
+        let mut entry = LocationTableEntry::new(make_mib());
+        assert!(!entry.check_duplicate_sn(42));
+        assert!(entry.check_duplicate_sn(42));
+    }
+
+    #[test]
+    fn entry_dpl_ring_buffer_eviction() {
+        let mib = make_mib();
+        let max_len = mib.itsGnDPLLength as usize;
+        let mut entry = LocationTableEntry::new(mib);
+
+        // Fill the DPL
+        for i in 0..max_len {
+            assert!(!entry.check_duplicate_sn(i as u16));
+        }
+        assert_eq!(entry.dpl_deque.len(), max_len);
+
+        // Add one more — oldest (0) should be evicted
+        assert!(!entry.check_duplicate_sn(100));
+        assert_eq!(entry.dpl_deque.len(), max_len);
+        // SN 0 should no longer be marked as duplicate
+        assert!(!entry.check_duplicate_sn(0));
+    }
+
+    #[test]
+    fn entry_shb_packet_marks_neighbour() {
+        let mut entry = LocationTableEntry::new(make_mib());
+        let pv = make_lpv([1, 2, 3, 4, 5, 6], 1_717_200_000_000);
+        entry.update_with_shb_packet(&pv, 100);
+        assert!(entry.is_neighbour);
+    }
+
+    #[test]
+    fn entry_gbc_packet_not_neighbour() {
+        let mut entry = LocationTableEntry::new(make_mib());
+        let gbc = GBCExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], 1_717_200_000_000),
+            latitude: 0,
+            longitude: 0,
+            a: 0,
+            b: 0,
+            angle: 0,
+            reserved2: 0,
+        };
+        let dup = entry.update_with_gbc_packet(&gbc, 100);
+        assert!(!dup);
+        assert!(!entry.is_neighbour);
+    }
+
+    #[test]
+    fn entry_gbc_packet_duplicate() {
+        let mut entry = LocationTableEntry::new(make_mib());
+        let gbc = GBCExtendedHeader {
+            sn: 42,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], 1_717_200_000_000),
+            latitude: 0,
+            longitude: 0,
+            a: 0,
+            b: 0,
+            angle: 0,
+            reserved2: 0,
+        };
+        assert!(!entry.update_with_gbc_packet(&gbc, 100));
+        assert!(entry.update_with_gbc_packet(&gbc, 100));
+    }
+
+    // ── LocationTable ─────────────────────────────────────────────────
+
+    #[test]
+    fn table_new_empty() {
+        let table = LocationTable::new(make_mib());
+        assert!(table.entries.is_empty());
+    }
+
+    #[test]
+    fn table_new_shb_creates_entry() {
+        let mut table = LocationTable::new(make_mib());
+        let pv = make_lpv([1, 2, 3, 4, 5, 6], now_ms());
+        table.new_shb_packet(&pv, &[0u8; 10]);
+        assert_eq!(table.entries.len(), 1);
+        let entry = table.get_entry_ref(&pv.gn_addr).unwrap();
+        assert!(entry.is_neighbour);
+    }
+
+    #[test]
+    fn table_new_gbc_creates_entry() {
+        let mut table = LocationTable::new(make_mib());
+        let gbc = GBCExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], now_ms()),
+            latitude: 0,
+            longitude: 0,
+            a: 0,
+            b: 0,
+            angle: 0,
+            reserved2: 0,
+        };
+        let dup = table.new_gbc_packet(&gbc, &[0u8; 10]);
+        assert!(!dup);
+        assert_eq!(table.entries.len(), 1);
+    }
+
+    #[test]
+    fn table_new_gbc_duplicate() {
+        let mut table = LocationTable::new(make_mib());
+        let gbc = GBCExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], now_ms()),
+            latitude: 0,
+            longitude: 0,
+            a: 0,
+            b: 0,
+            angle: 0,
+            reserved2: 0,
+        };
+        assert!(!table.new_gbc_packet(&gbc, &[0u8; 10]));
+        assert!(table.new_gbc_packet(&gbc, &[0u8; 10]));
+    }
+
+    #[test]
+    fn table_new_tsb_creates_entry() {
+        let mut table = LocationTable::new(make_mib());
+        let tsb = TSBExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], now_ms()),
+        };
+        let dup = table.new_tsb_packet(&tsb, &[0u8; 10]);
+        assert!(!dup);
+        assert_eq!(table.entries.len(), 1);
+    }
+
+    #[test]
+    fn table_new_guc_creates_entry() {
+        let mut table = LocationTable::new(make_mib());
+        let guc = GUCExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], now_ms()),
+            de_pv: crate::geonet::position_vector::ShortPositionVector::decode([0u8; 20]),
+        };
+        let dup = table.new_guc_packet(&guc, &[0u8; 10]);
+        assert!(!dup);
+        assert_eq!(table.entries.len(), 1);
+    }
+
+    #[test]
+    fn table_new_ls_request_creates_entry() {
+        let mut table = LocationTable::new(make_mib());
+        let addr = GNAddress::new(M::GnUnicast, ST::Bus, MID::new([0xAA; 6]));
+        let ls = LSRequestExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], now_ms()),
+            request_gn_addr: addr,
+        };
+        let dup = table.new_ls_request_packet(&ls, &[0u8; 10]);
+        assert!(!dup);
+        assert_eq!(table.entries.len(), 1);
+    }
+
+    #[test]
+    fn table_new_ls_reply_creates_entry() {
+        let mut table = LocationTable::new(make_mib());
+        let ls = LSReplyExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([1, 2, 3, 4, 5, 6], now_ms()),
+            de_pv: crate::geonet::position_vector::ShortPositionVector::decode([0u8; 20]),
+        };
+        let dup = table.new_ls_reply_packet(&ls, &[0u8; 10]);
+        assert!(!dup);
+    }
+
+    #[test]
+    fn table_get_neighbours() {
+        let mut table = LocationTable::new(make_mib());
+        // Add SHB (neighbour) and GBC (not neighbour)
+        let pv1 = make_lpv([1, 2, 3, 4, 5, 6], now_ms());
+        table.new_shb_packet(&pv1, &[0u8; 10]);
+
+        let gbc = GBCExtendedHeader {
+            sn: 1,
+            reserved: 0,
+            so_pv: make_lpv([6, 5, 4, 3, 2, 1], now_ms()),
+            latitude: 0,
+            longitude: 0,
+            a: 0,
+            b: 0,
+            angle: 0,
+            reserved2: 0,
+        };
+        table.new_gbc_packet(&gbc, &[0u8; 10]);
+
+        let neighbours = table.get_neighbours();
+        assert_eq!(neighbours.len(), 1);
+    }
+
+    #[test]
+    fn table_ensure_entry() {
+        let mut table = LocationTable::new(make_mib());
+        let addr = GNAddress::new(M::GnUnicast, ST::PassengerCar, MID::new([1; 6]));
+        let _entry = table.ensure_entry(&addr);
+        assert_eq!(table.entries.len(), 1);
+        // Calling again doesn't create a second entry
+        let _entry2 = table.ensure_entry(&addr);
+        assert_eq!(table.entries.len(), 1);
     }
 }

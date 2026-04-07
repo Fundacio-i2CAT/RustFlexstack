@@ -48,7 +48,7 @@ impl Sub for Tst {
     type Output = u32;
 
     fn sub(self, other: Self) -> u32 {
-        self.msec - other.msec
+        self.msec.wrapping_sub(other.msec)
     }
 }
 
@@ -231,5 +231,151 @@ impl PartialEq for ShortPositionVector {
             && self.tst == other.tst
             && self.latitude == other.latitude
             && self.longitude == other.longitude
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
+
+    // ── Tst ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn tst_from_unix_ms() {
+        // 2024-06-01T00:00:00 UTC ≈ 1 717 200 000 000 ms
+        let unix_ms: u64 = 1_717_200_000_000;
+        let tst = Tst::set_in_normal_timestamp_milliseconds(unix_ms);
+        let expected = ((unix_ms - 1_072_911_600_000) & 0xFFFF_FFFF) as u32;
+        assert_eq!(tst.msec, expected);
+    }
+
+    #[test]
+    fn tst_zero_before_epoch() {
+        // Before TAI offset → should be 0
+        let tst = Tst::set_in_normal_timestamp_milliseconds(0);
+        assert_eq!(tst.msec, 0);
+    }
+
+    #[test]
+    fn tst_encode_decode_roundtrip() {
+        let tst = Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000);
+        let bytes = tst.encode();
+        let decoded = Tst::decode(&bytes);
+        assert_eq!(tst, decoded);
+    }
+
+    #[test]
+    fn tst_subtraction() {
+        let a = Tst { msec: 5000 };
+        let b = Tst { msec: 3000 };
+        assert_eq!(a - b, 2000);
+    }
+
+    #[test]
+    fn tst_addition() {
+        let a = Tst { msec: 1000 };
+        let b = Tst { msec: 2000 };
+        let c = a + b;
+        assert_eq!(c.msec, 3000);
+    }
+
+    #[test]
+    fn tst_equality() {
+        let a = Tst { msec: 42 };
+        let b = Tst { msec: 42 };
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn tst_ordering_simple() {
+        let a = Tst { msec: 100 };
+        let b = Tst { msec: 200 };
+        assert!(a < b);
+        assert!(b > a);
+    }
+
+    #[test]
+    fn tst_ordering_wraparound() {
+        // RFC 1982: if b - a > HALF, then a > b (wraparound)
+        let a = Tst { msec: 0xFFFF_FFFF };
+        let b = Tst { msec: 1 };
+        // a is "before" b in the wraparound sense
+        assert!(a < b);
+    }
+
+    // ── LongPositionVector ─────────────────────────────────────────────
+
+    #[test]
+    fn lpv_encode_decode_roundtrip() {
+        let addr = GNAddress::new(M::GnUnicast, ST::PassengerCar, MID::new([1, 2, 3, 4, 5, 6]));
+        let tst = Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000);
+        let lpv = LongPositionVector {
+            gn_addr: addr,
+            tst,
+            latitude: 415520000,       // 41.552°
+            longitude: 21340000,        // 2.134°
+            pai: true,
+            s: 1000,                    // 10.00 m/s
+            h: 900,                     // 90.0°
+        };
+        let encoded = lpv.encode();
+        assert_eq!(encoded.len(), 24);
+        let decoded = LongPositionVector::decode(encoded);
+        assert_eq!(lpv, decoded);
+    }
+
+    #[test]
+    fn lpv_pai_flag() {
+        let mut lpv = LongPositionVector::decode([0u8; 24]);
+        lpv.pai = true;
+        let encoded = lpv.encode();
+        assert_eq!(encoded[20] >> 7, 1);
+
+        lpv.pai = false;
+        let encoded = lpv.encode();
+        assert_eq!(encoded[20] >> 7, 0);
+    }
+
+    #[test]
+    fn lpv_speed_15bit() {
+        let mut lpv = LongPositionVector::decode([0u8; 24]);
+        lpv.s = 0x7FFF; // max 15-bit
+        lpv.pai = false;
+        let encoded = lpv.encode();
+        let decoded = LongPositionVector::decode(encoded);
+        assert_eq!(decoded.s, 0x7FFF);
+    }
+
+    #[test]
+    fn lpv_equality() {
+        let a = LongPositionVector::decode([0u8; 24]);
+        let b = LongPositionVector::decode([0u8; 24]);
+        assert_eq!(a, b);
+    }
+
+    // ── ShortPositionVector ────────────────────────────────────────────
+
+    #[test]
+    fn spv_encode_decode_roundtrip() {
+        let addr = GNAddress::new(M::GnMulticast, ST::Bus, MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]));
+        let tst = Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000);
+        let spv = ShortPositionVector {
+            gn_address: addr,
+            tst,
+            latitude: 415520000,
+            longitude: 21340000,
+        };
+        let encoded = spv.encode();
+        assert_eq!(encoded.len(), 20);
+        let decoded = ShortPositionVector::decode(encoded);
+        assert_eq!(spv, decoded);
+    }
+
+    #[test]
+    fn spv_equality() {
+        let a = ShortPositionVector::decode([0u8; 20]);
+        let b = ShortPositionVector::decode([0u8; 20]);
+        assert_eq!(a, b);
     }
 }

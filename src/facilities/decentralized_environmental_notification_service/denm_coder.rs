@@ -85,3 +85,41 @@ impl DenmCoder {
         rasn::uper::decode::<Denm>(bytes).map_err(|e| format!("DENM UPER decode error: {e}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timestamp_its_now_positive() {
+        let ts = timestamp_its_now();
+        assert!(ts.0 > 0);
+    }
+
+    #[test]
+    fn denm_header_fields() {
+        let hdr = denm_header(99);
+        assert_eq!(hdr.protocol_version.0, 2);
+        assert_eq!(hdr.message_id.0, 1);
+        assert_eq!(hdr.station_id.0, 99);
+    }
+
+    #[test]
+    fn denm_coder_new() {
+        let coder = DenmCoder::new();
+        let coder2 = coder.clone();
+        let _ = format!("{:?}", coder2);
+    }
+
+    #[test]
+    fn denm_coder_default() {
+        let _coder = DenmCoder::default();
+    }
+
+    #[test]
+    fn denm_coder_decode_invalid_bytes() {
+        let coder = DenmCoder::new();
+        let result = coder.decode(&[0xFF, 0xFF]);
+        assert!(result.is_err());
+    }
+}

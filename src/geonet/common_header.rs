@@ -96,3 +96,130 @@ impl PartialEq for CommonHeader {
             && self.reserved2 == other.reserved2
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geonet::mib::Mib;
+    use crate::geonet::service_access_point::{
+        CommonNH, GNDataRequest, HeaderSubType, HeaderType, PacketTransportType,
+        TopoBroadcastHST, GeoBroadcastHST, TrafficClass, Area, CommunicationProfile,
+    };
+    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
+    use crate::security::sn_sap::SecurityProfile;
+
+    fn make_gn_request() -> GNDataRequest {
+        GNDataRequest {
+            upper_protocol_entity: CommonNH::BtpB,
+            packet_transport_type: PacketTransportType {
+                header_type: HeaderType::Tsb,
+                header_sub_type: HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop),
+            },
+            communication_profile: CommunicationProfile::Unspecified,
+            traffic_class: TrafficClass {
+                scf: true,
+                channel_offload: false,
+                tc_id: 2,
+            },
+            security_profile: SecurityProfile::NoSecurity,
+            its_aid: 36,
+            security_permissions: vec![],
+            max_hop_limit: 1,
+            max_packet_lifetime: None,
+            destination: None,
+            length: 100,
+            data: vec![0u8; 100],
+            area: Area {
+                latitude: 0,
+                longitude: 0,
+                a: 0,
+                b: 0,
+                angle: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn common_header_encode_decode_roundtrip() {
+        let mib = Mib::new();
+        let req = make_gn_request();
+        let ch = CommonHeader::initialize_with_request(&req, &mib);
+        let encoded = ch.encode();
+        let decoded = CommonHeader::decode(encoded);
+        assert_eq!(ch, decoded);
+    }
+
+    #[test]
+    fn common_header_fields() {
+        let mib = Mib::new();
+        let req = make_gn_request();
+        let ch = CommonHeader::initialize_with_request(&req, &mib);
+        assert_eq!(ch.nh, CommonNH::BtpB);
+        assert_eq!(ch.ht, HeaderType::Tsb);
+        assert_eq!(ch.pl, 100);
+        assert_eq!(ch.mhl, 1);
+        assert!(ch.tc.scf);
+        assert!(!ch.tc.channel_offload);
+        assert_eq!(ch.tc.tc_id, 2);
+    }
+
+    #[test]
+    fn common_header_beacon() {
+        let mib = Mib::new();
+        let ch = CommonHeader::initialize_beacon(&mib);
+        assert_eq!(ch.nh, CommonNH::Any);
+        assert_eq!(ch.ht, HeaderType::Beacon);
+        assert_eq!(ch.pl, 0);
+        assert_eq!(ch.mhl, 1);
+    }
+
+    #[test]
+    fn common_header_nh_byte() {
+        let mib = Mib::new();
+        let req = make_gn_request();
+        let ch = CommonHeader::initialize_with_request(&req, &mib);
+        let bytes = ch.encode();
+        // NH is upper nibble of byte 0: BtpB = 2 → 0x2X
+        assert_eq!(bytes[0] >> 4, 2);
+    }
+
+    #[test]
+    fn common_header_payload_length_encoding() {
+        let mib = Mib::new();
+        let mut req = make_gn_request();
+        req.length = 1024;
+        let ch = CommonHeader::initialize_with_request(&req, &mib);
+        let bytes = ch.encode();
+        let pl_decoded = (bytes[4] as u16) << 8 | bytes[5] as u16;
+        assert_eq!(pl_decoded, 1024);
+    }
+
+    #[test]
+    fn traffic_class_encode_decode() {
+        let tc = TrafficClass {
+            scf: true,
+            channel_offload: true,
+            tc_id: 0x3F,
+        };
+        let encoded = tc.encode();
+        assert_eq!(encoded, 0xFF);
+        let decoded = TrafficClass::decode(encoded);
+        assert!(decoded.scf);
+        assert!(decoded.channel_offload);
+        assert_eq!(decoded.tc_id, 0x3F);
+    }
+
+    #[test]
+    fn traffic_class_all_false() {
+        let tc = TrafficClass {
+            scf: false,
+            channel_offload: false,
+            tc_id: 0,
+        };
+        assert_eq!(tc.encode(), 0);
+        let decoded = TrafficClass::decode(0);
+        assert!(!decoded.scf);
+        assert!(!decoded.channel_offload);
+        assert_eq!(decoded.tc_id, 0);
+    }
+}

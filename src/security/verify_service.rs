@@ -344,3 +344,264 @@ pub enum VerifyEvent {
     InlineP2pcdRequest(Vec<[u8; 3]>),
     ReceivedCaCertificate(Certificate),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::certificate::OwnCertificate;
+    use crate::security::certificate_library::CertificateLibrary;
+    use crate::security::ecdsa_backend::EcdsaBackend;
+    use crate::security::security_asn::ieee1609_dot2::{
+        CertificateId, PsidGroupPermissions, PsidSsp, SequenceOfPsidGroupPermissions,
+        SequenceOfPsidSsp, SubjectPermissions, ToBeSignedCertificate, VerificationKeyIndicator,
+        SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
+        SequenceOfCertRequestExtensions, EndEntityType,
+    };
+    use crate::security::security_asn::ieee1609_dot2_base_types::{
+        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, Psid,
+        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod, HashedId3,
+    };
+    use crate::security::sign_service::SignService;
+    use crate::security::sn_sap::{GenerationLocation, SNSignRequest, SNVerifyRequest};
+
+    fn make_root_tbs() -> ToBeSignedCertificate {
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
+        let perms = SequenceOfPsidGroupPermissions(
+            vec![PsidGroupPermissions::new(
+                SubjectPermissions::all(()),
+                Integer::from(1),
+                Integer::from(0),
+                {
+                    let mut bits = FixedBitString::<8>::default();
+                    bits.set(0, true);
+                    EndEntityType(bits)
+                },
+            )]
+            .into(),
+        );
+        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
+            vec![0u8; 32].into(),
+        ));
+        ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            None,
+            Some(perms),
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    fn make_at_tbs(its_aid: i64) -> ToBeSignedCertificate {
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
+        let app_perms =
+            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)].into());
+        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
+            vec![0u8; 32].into(),
+        ));
+        ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            Some(app_perms),
+            None,
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    fn sign_cam_message(svc: &mut SignService) -> Vec<u8> {
+        let req = SNSignRequest {
+            tbs_message: vec![0xCA, 0xFE],
+            its_aid: 36,
+            permissions: vec![],
+            generation_location: None,
+        };
+        svc.sign_request(&req).sec_message
+    }
+
+    fn sign_denm_message(svc: &mut SignService) -> Vec<u8> {
+        let req = SNSignRequest {
+            tbs_message: vec![0xDE, 0x01],
+            its_aid: 37,
+            permissions: vec![],
+            generation_location: Some(GenerationLocation {
+                latitude: 415520000,
+                longitude: 21340000,
+                elevation: 0xF000,
+            }),
+        };
+        svc.sign_request(&req).sec_message
+    }
+
+    fn setup() -> (EcdsaBackend, CertificateLibrary, SignService) {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let aa = OwnCertificate::initialize_issued(&mut backend, make_root_tbs(), &root);
+        let at_cam = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(36), &aa);
+        let at_denm = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(37), &aa);
+
+        let lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![],
+        );
+        let mut svc = SignService::new(backend, lib);
+        svc.add_own_certificate(at_cam);
+        svc.add_own_certificate(at_denm);
+
+        // Build verify library from certs stored in sign service
+        let verify_lib = CertificateLibrary::new(
+            &svc.backend,
+            svc.cert_library
+                .known_root_certificates
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_authorities
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_tickets
+                .values()
+                .cloned()
+                .collect(),
+        );
+
+        (
+            EcdsaBackend::new(),
+            verify_lib,
+            svc,
+        )
+    }
+
+    #[test]
+    fn verify_cam_signed_message() {
+        let (_, _, mut svc) = setup();
+        let sec_msg = sign_cam_message(&mut svc);
+
+        // Verify using sign service's own backend and cert library
+        let req = SNVerifyRequest {
+            message: sec_msg,
+        };
+        let mut verify_lib = CertificateLibrary::new(
+            &svc.backend,
+            svc.cert_library
+                .known_root_certificates
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_authorities
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_tickets
+                .values()
+                .cloned()
+                .collect(),
+        );
+        let (confirm, _events) = verify_message(&req, &svc.backend, &mut verify_lib);
+        assert_eq!(confirm.report, ReportVerify::Success);
+        assert_eq!(confirm.its_aid, 36);
+        assert_eq!(confirm.plain_message, vec![0xCA, 0xFE]);
+    }
+
+    #[test]
+    fn verify_denm_signed_message() {
+        let (_, _, mut svc) = setup();
+        let sec_msg = sign_denm_message(&mut svc);
+
+        let req = SNVerifyRequest {
+            message: sec_msg,
+        };
+        let mut verify_lib = CertificateLibrary::new(
+            &svc.backend,
+            svc.cert_library
+                .known_root_certificates
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_authorities
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_tickets
+                .values()
+                .cloned()
+                .collect(),
+        );
+        let (confirm, _events) = verify_message(&req, &svc.backend, &mut verify_lib);
+        assert_eq!(confirm.report, ReportVerify::Success);
+        assert_eq!(confirm.its_aid, 37);
+    }
+
+    #[test]
+    fn verify_tampered_message_fails() {
+        let (_, _, mut svc) = setup();
+        let mut sec_msg = sign_cam_message(&mut svc);
+
+        // Tamper with the message
+        if let Some(b) = sec_msg.last_mut() {
+            *b ^= 0xFF;
+        }
+
+        let req = SNVerifyRequest {
+            message: sec_msg,
+        };
+        let mut verify_lib = CertificateLibrary::new(
+            &svc.backend,
+            svc.cert_library
+                .known_root_certificates
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_authorities
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_tickets
+                .values()
+                .cloned()
+                .collect(),
+        );
+        let (confirm, _) = verify_message(&req, &svc.backend, &mut verify_lib);
+        assert_ne!(confirm.report, ReportVerify::Success);
+    }
+
+    #[test]
+    fn verify_event_variants() {
+        let ev1 = VerifyEvent::UnknownAt([1; 8]);
+        let ev2 = VerifyEvent::InlineP2pcdRequest(vec![[1, 2, 3]]);
+        // Just ensure they can be constructed and formatted
+        assert!(format!("{:?}", ev1).contains("UnknownAt"));
+        assert!(format!("{:?}", ev2).contains("InlineP2pcdRequest"));
+    }
+}

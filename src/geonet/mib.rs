@@ -3,7 +3,7 @@
 
 use super::gn_address::{GNAddress, M, MID, ST};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LocalGnAddrConfMethod {
     Auto,
     Managed,
@@ -29,7 +29,7 @@ impl LocalGnAddrConfMethod {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GnIsMobile {
     Stationary,
     Mobile,
@@ -52,7 +52,7 @@ impl GnIsMobile {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GnIfType {
     Unspecified,
     ItsG5,
@@ -78,7 +78,7 @@ impl GnIfType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GnSecurity {
     Disabled,
     Enabled,
@@ -101,7 +101,7 @@ impl GnSecurity {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SnDecapResultHandling {
     Strict,
     NonStrict,
@@ -124,7 +124,7 @@ impl SnDecapResultHandling {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NonAreaForwardingAlgorithm {
     Unspecified,
     Greedy,
@@ -147,7 +147,7 @@ impl NonAreaForwardingAlgorithm {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AreaForwardingAlgorithm {
     Unspecified,
     Simple,
@@ -173,7 +173,8 @@ impl AreaForwardingAlgorithm {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[allow(non_snake_case)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mib {
     pub itsGnLocalGnAddr: GNAddress,
     pub itsGnLocalGnAddrConfMethod: LocalGnAddrConfMethod,
@@ -257,5 +258,127 @@ impl Mib {
                 itsGnDefaultTrafficClass: 0,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mib_default_values() {
+        let mib = Mib::new();
+        assert_eq!(mib.itsGnProtocolVersion, 1);
+        assert_eq!(mib.itsGnDefaultHopLimit, 10);
+        assert_eq!(mib.itsGnMaxSduSize, 1398);
+        assert_eq!(mib.itsGnDefaultPacketLifetime, 60);
+        assert_eq!(mib.itsGnMaxPacketLifetime, 600);
+        assert_eq!(mib.itsGnBeaconServiceRetransmitTimer, 3000);
+        assert!(matches!(mib.itsGnIsMobile, GnIsMobile::Mobile));
+        assert!(matches!(mib.itsGnSecurity, GnSecurity::Disabled));
+        assert!(matches!(
+            mib.itsGnNonAreaForwardingAlgorithm,
+            NonAreaForwardingAlgorithm::Greedy
+        ));
+        assert!(matches!(
+            mib.itsGnAreaForwardingAlgorithm,
+            AreaForwardingAlgorithm::Cbf
+        ));
+    }
+
+    #[test]
+    fn mib_copy() {
+        let mib1 = Mib::new();
+        let mib2 = mib1;
+        assert_eq!(mib1, mib2);
+    }
+
+    #[test]
+    fn local_gn_addr_conf_method_roundtrip() {
+        for val in 0..3u8 {
+            assert_eq!(LocalGnAddrConfMethod::decode(val).encode(), val);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid LocalGnAddrConfMethod Value")]
+    fn local_gn_addr_conf_method_invalid() {
+        LocalGnAddrConfMethod::decode(99);
+    }
+
+    #[test]
+    fn gn_is_mobile_roundtrip() {
+        assert_eq!(GnIsMobile::Stationary.encode(), 0);
+        assert_eq!(GnIsMobile::Mobile.encode(), 1);
+        assert_eq!(GnIsMobile::decode(0).encode(), 0);
+        assert_eq!(GnIsMobile::decode(1).encode(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid GnIsMobile Value")]
+    fn gn_is_mobile_invalid() {
+        GnIsMobile::decode(99);
+    }
+
+    #[test]
+    fn gn_if_type_roundtrip() {
+        for val in 0..3u8 {
+            assert_eq!(GnIfType::decode(val).encode(), val);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid GnIfType Value")]
+    fn gn_if_type_invalid() {
+        GnIfType::decode(99);
+    }
+
+    #[test]
+    fn gn_security_roundtrip() {
+        assert_eq!(GnSecurity::Disabled.encode(), 0);
+        assert_eq!(GnSecurity::Enabled.encode(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid GnSecurity Value")]
+    fn gn_security_invalid() {
+        GnSecurity::decode(99);
+    }
+
+    #[test]
+    fn sn_decap_result_handling_roundtrip() {
+        assert_eq!(SnDecapResultHandling::Strict.encode(), 0);
+        assert_eq!(SnDecapResultHandling::NonStrict.encode(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid SnDecapResultHandling Value")]
+    fn sn_decap_result_handling_invalid() {
+        SnDecapResultHandling::decode(99);
+    }
+
+    #[test]
+    fn non_area_forwarding_algorithm_roundtrip() {
+        assert_eq!(NonAreaForwardingAlgorithm::Unspecified.encode(), 0);
+        assert_eq!(NonAreaForwardingAlgorithm::Greedy.encode(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid NonAreaForwardingAlgorithm Value")]
+    fn non_area_forwarding_algorithm_invalid() {
+        NonAreaForwardingAlgorithm::decode(99);
+    }
+
+    #[test]
+    fn area_forwarding_algorithm_roundtrip() {
+        for val in 0..3u8 {
+            assert_eq!(AreaForwardingAlgorithm::decode(val).encode(), val);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid AreaForwardingAlgorithm Value")]
+    fn area_forwarding_algorithm_invalid() {
+        AreaForwardingAlgorithm::decode(99);
     }
 }

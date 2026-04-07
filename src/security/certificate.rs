@@ -506,3 +506,229 @@ impl OwnCertificate {
         OwnCertificate { cert, key_id }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::ecdsa_backend::EcdsaBackend;
+    use rasn::prelude::*;
+
+    fn make_root_tbs() -> ToBeSignedCertificate {
+        use crate::security::security_asn::ieee1609_dot2::{
+            CertificateId, PsidGroupPermissions, SequenceOfPsidGroupPermissions,
+            SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
+            SequenceOfCertRequestExtensions, EndEntityType,
+        };
+        use crate::security::security_asn::ieee1609_dot2_base_types::{
+            CrlSeries, Duration as AsnDuration, ValidityPeriod,
+            Time32, Uint16, Uint32, HashedId3,
+        };
+
+        let validity = ValidityPeriod::new(
+            Time32(Uint32(0)),
+            AsnDuration::years(Uint16(30)),
+        );
+
+        let perms = SequenceOfPsidGroupPermissions(
+            vec![PsidGroupPermissions::new(
+                SubjectPermissions::all(()),
+                Integer::from(1),
+                Integer::from(0),
+                {
+                    let mut bits = FixedBitString::<8>::default();
+                    bits.set(0, true);
+                    EndEntityType(bits)
+                },
+            )]
+            .into(),
+        );
+
+        let placeholder_pk = PublicVerificationKey::ecdsaNistP256(
+            EccP256CurvePoint::x_only(vec![0u8; 32].into()),
+        );
+
+        ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            None,
+            Some(perms),
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(placeholder_pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    fn make_at_tbs() -> ToBeSignedCertificate {
+        use crate::security::security_asn::ieee1609_dot2::{
+            CertificateId, PsidSsp, SequenceOfPsidSsp,
+            SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
+            SequenceOfCertRequestExtensions,
+        };
+        use crate::security::security_asn::ieee1609_dot2_base_types::{
+            CrlSeries, Duration as AsnDuration, Psid, ValidityPeriod,
+            Time32, Uint16, Uint32, HashedId3,
+        };
+
+        let validity = ValidityPeriod::new(
+            Time32(Uint32(0)),
+            AsnDuration::years(Uint16(1)),
+        );
+
+        let app_perms = SequenceOfPsidSsp(
+            vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)]
+                .into(),
+        );
+
+        let placeholder_pk = PublicVerificationKey::ecdsaNistP256(
+            EccP256CurvePoint::x_only(vec![0u8; 32].into()),
+        );
+
+        ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            Some(app_perms),
+            None,
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(placeholder_pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    #[test]
+    fn own_certificate_self_signed_roundtrip() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        assert!(own.verify(&backend));
+        assert!(own.cert.is_self_signed());
+        assert!(!own.cert.is_issued());
+    }
+
+    #[test]
+    fn own_certificate_issued_roundtrip() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let at = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(), &root);
+        assert!(at.verify(&backend));
+        assert!(at.cert.is_issued());
+        assert!(!at.cert.is_self_signed());
+    }
+
+    #[test]
+    fn certificate_hashedid8_and_hashedid3() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let h8 = own.as_hashedid8();
+        let h3 = own.cert.as_hashedid3();
+        assert_eq!(h3, [h8[5], h8[6], h8[7]]);
+    }
+
+    #[test]
+    fn certificate_encode_decode_roundtrip() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let encoded = own.cert.encode().to_vec();
+        let decoded = Certificate::from_bytes(&encoded, None);
+        assert_eq!(decoded.as_hashedid8(), own.as_hashedid8());
+    }
+
+    #[test]
+    fn certificate_from_asn_and_from_bytes_same_hash() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let bytes = own.cert.encode().to_vec();
+        let c1 = Certificate::from_bytes(&bytes, None);
+        let c2 = Certificate::from_asn(own.cert.inner.clone(), None);
+        assert_eq!(c1.as_hashedid8(), c2.as_hashedid8());
+    }
+
+    #[test]
+    fn certificate_check_corresponding_issuer() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let at = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(), &root);
+        assert!(at.cert.check_corresponding_issuer(&root.cert));
+    }
+
+    #[test]
+    fn certificate_signature_is_nist_p256() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        assert!(own.cert.signature_is_nist_p256());
+        assert!(own.cert.verification_key_is_nist_p256());
+    }
+
+    #[test]
+    fn certificate_has_all_permissions() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        assert!(root.cert.has_all_permissions());
+    }
+
+    #[test]
+    fn certificate_get_list_of_its_aid() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let at = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(), &root);
+        let aids = at.get_list_of_its_aid();
+        assert!(aids.contains(&36));
+    }
+
+    #[test]
+    fn certificate_sign_message() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let sig = own.sign_message(&backend, b"test data");
+        let pk = backend.get_public_key(own.key_id);
+        assert!(backend.verify_with_pk(b"test data", &sig, &pk));
+    }
+
+    #[test]
+    fn certificate_verify_type_explicit() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        assert_eq!(own.cert.base().r_type, CertificateType::explicit);
+    }
+
+    #[test]
+    fn certificate_at_is_authorization_ticket() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let at = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(), &root);
+        assert!(at.cert.is_authorization_ticket());
+    }
+
+    #[test]
+    fn certificate_self_signed_get_issuer_hashedid8_none() {
+        let mut backend = EcdsaBackend::new();
+        let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        assert!(own.cert.get_issuer_hashedid8().is_none());
+    }
+
+    #[test]
+    fn certificate_issued_get_issuer_hashedid8_some() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let at = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(), &root);
+        let issuer_h8 = at.cert.get_issuer_hashedid8();
+        assert!(issuer_h8.is_some());
+        assert_eq!(issuer_h8.unwrap(), root.as_hashedid8());
+    }
+}

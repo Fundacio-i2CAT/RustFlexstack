@@ -369,3 +369,137 @@ pub struct UnsubscribeDataConsumerReq {
 pub struct UnsubscribeDataConsumerResp {
     pub ack: UnsubscribeDataConsumerAck,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_data_provider_result_eq() {
+        assert_eq!(
+            RegisterDataProviderResult::Accepted,
+            RegisterDataProviderResult::Accepted
+        );
+        assert_ne!(
+            RegisterDataProviderResult::Accepted,
+            RegisterDataProviderResult::Rejected
+        );
+    }
+
+    #[test]
+    fn add_data_provider_result_variants() {
+        assert_eq!(AddDataProviderResult::Succeed, AddDataProviderResult::Succeed);
+        assert_ne!(AddDataProviderResult::Succeed, AddDataProviderResult::Failed);
+    }
+
+    #[test]
+    fn update_data_provider_result_variants() {
+        assert_eq!(
+            UpdateDataProviderResult::Succeed,
+            UpdateDataProviderResult::Succeed
+        );
+        assert_ne!(
+            UpdateDataProviderResult::Succeed,
+            UpdateDataProviderResult::UnknownId
+        );
+        assert_ne!(
+            UpdateDataProviderResult::Succeed,
+            UpdateDataProviderResult::InconsistentType
+        );
+    }
+
+    #[test]
+    fn comparison_operator_eq() {
+        assert_eq!(ComparisonOperator::Equal, ComparisonOperator::Equal);
+        assert_ne!(ComparisonOperator::Equal, ComparisonOperator::NotEqual);
+    }
+
+    #[test]
+    fn logical_operator_eq() {
+        assert_eq!(LogicalOperator::And, LogicalOperator::And);
+        assert_ne!(LogicalOperator::And, LogicalOperator::Or);
+    }
+
+    #[test]
+    fn filter_attribute_eq() {
+        assert_eq!(FilterAttribute::StationType, FilterAttribute::StationType);
+        assert_ne!(FilterAttribute::StationType, FilterAttribute::StationId);
+    }
+
+    #[test]
+    fn ordering_direction_eq() {
+        assert_eq!(OrderingDirection::Ascending, OrderingDirection::Ascending);
+        assert_ne!(
+            OrderingDirection::Ascending,
+            OrderingDirection::Descending
+        );
+    }
+
+    #[test]
+    fn filter_statement_construction() {
+        let stmt = FilterStatement {
+            attribute: FilterAttribute::Speed,
+            operator: ComparisonOperator::GreaterThan,
+            ref_value: 100,
+        };
+        assert_eq!(stmt.attribute, FilterAttribute::Speed);
+    }
+
+    #[test]
+    fn filter_single_statement() {
+        let f = Filter {
+            stmt1: FilterStatement {
+                attribute: FilterAttribute::Latitude,
+                operator: ComparisonOperator::GreaterThanOrEqual,
+                ref_value: 415000000,
+            },
+            logical: None,
+            stmt2: None,
+        };
+        assert!(f.logical.is_none());
+        assert!(f.stmt2.is_none());
+    }
+
+    #[test]
+    fn filter_compound() {
+        let f = Filter {
+            stmt1: FilterStatement {
+                attribute: FilterAttribute::Latitude,
+                operator: ComparisonOperator::GreaterThanOrEqual,
+                ref_value: 415000000,
+            },
+            logical: Some(LogicalOperator::And),
+            stmt2: Some(FilterStatement {
+                attribute: FilterAttribute::Longitude,
+                operator: ComparisonOperator::LessThan,
+                ref_value: 30000000,
+            }),
+        };
+        assert!(f.logical.is_some());
+        assert!(f.stmt2.is_some());
+    }
+
+    #[test]
+    fn subscribe_data_objects_result_variants() {
+        assert_eq!(
+            SubscribeDataObjectsResult::Successful,
+            SubscribeDataObjectsResult::Successful
+        );
+        assert_ne!(
+            SubscribeDataObjectsResult::Successful,
+            SubscribeDataObjectsResult::InvalidItsAid
+        );
+    }
+
+    #[test]
+    fn requested_data_objects_result_variants() {
+        assert_eq!(
+            RequestedDataObjectsResult::Succeed,
+            RequestedDataObjectsResult::Succeed
+        );
+        assert_ne!(
+            RequestedDataObjectsResult::Succeed,
+            RequestedDataObjectsResult::InvalidFilter
+        );
+    }
+}

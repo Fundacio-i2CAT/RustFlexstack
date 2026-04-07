@@ -39,6 +39,10 @@ All dependencies are managed by Cargo and declared in `Cargo.toml`:
 | `rand` | 0.8 | Random number generation |
 | `libc` | 0.2 | POSIX system bindings |
 | `rasn` | 0.26 | ASN.1 encoding/decoding (for CAM, DENM, VAM) |
+| `sha2` | 0.10 | SHA-256 hashing (certificate digests) |
+| `p256` | 0.13 | ECDSA P-256 signing and verification |
+| `ecdsa` | 0.16 | ECDSA algorithm traits and operations |
+| `elliptic-curve` | 0.13 | Elliptic-curve primitives (SEC1 encoding) |
 
 ## Build tools
 
@@ -60,6 +64,29 @@ To build and run examples:
 cargo run --example cam_sender_receiver
 cargo run --example denm_sender_receiver
 cargo run --example vam_sender_receiver
+```
+
+### Secured examples
+
+The secured examples require an ECDSA certificate chain. Generate it first,
+then run two instances (one per Authorization Ticket):
+
+```
+cargo run --example generate_certificate_chain
+
+# Terminal 1:
+sudo cargo run --example secured_cam_sender_receiver -- --at 1
+# Terminal 2:
+sudo cargo run --example secured_cam_sender_receiver -- --at 2
+```
+
+The same pattern applies to the secured VAM example:
+
+```
+# Terminal 1:
+sudo cargo run --example secured_vam_sender_receiver -- --at 1
+# Terminal 2:
+sudo cargo run --example secured_vam_sender_receiver -- --at 2
 ```
 
 ### Cross-compilation for aarch64
@@ -147,5 +174,9 @@ Attributions of Third Party Components of this work:
 - `rand` Version 0.8 - Imported Rust crate - https://github.com/rust-random/rand - MIT / Apache-2.0 license
 - `libc` Version 0.2 - Imported Rust crate - https://github.com/rust-lang/libc - MIT / Apache-2.0 license
 - `rasn` Version 0.26 - Imported Rust crate - https://github.com/XAMPPRocky/rasn - MIT license
+- `sha2` Version 0.10 - Imported Rust crate - https://github.com/RustCrypto/hashes - MIT / Apache-2.0 license
+- `p256` Version 0.13 - Imported Rust crate - https://github.com/RustCrypto/elliptic-curves - MIT / Apache-2.0 license
+- `ecdsa` Version 0.16 - Imported Rust crate - https://github.com/RustCrypto/signatures - MIT / Apache-2.0 license
+- `elliptic-curve` Version 0.13 - Imported Rust crate - https://github.com/RustCrypto/traits - MIT / Apache-2.0 license
 
 

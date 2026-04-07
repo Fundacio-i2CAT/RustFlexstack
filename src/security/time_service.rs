@@ -31,3 +31,39 @@ pub fn timestamp_its_microseconds() -> u64 {
     let its_secs = now.as_secs() - ITS_EPOCH + ELAPSED_SECONDS;
     its_secs * 1_000_000 + u64::from(now.subsec_micros())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unix_time_secs_positive() {
+        let t = unix_time_secs();
+        // Should be well past the ITS epoch
+        assert!(t > ITS_EPOCH as f64);
+    }
+
+    #[test]
+    fn timestamp_its_microseconds_positive() {
+        let t = timestamp_its_microseconds();
+        assert!(t > 0);
+    }
+
+    #[test]
+    fn timestamp_its_microseconds_monotonic() {
+        let t1 = timestamp_its_microseconds();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let t2 = timestamp_its_microseconds();
+        assert!(t2 > t1);
+    }
+
+    #[test]
+    fn its_epoch_constant() {
+        assert_eq!(ITS_EPOCH, 1_072_915_200);
+    }
+
+    #[test]
+    fn elapsed_seconds_constant() {
+        assert_eq!(ELAPSED_SECONDS, 5);
+    }
+}

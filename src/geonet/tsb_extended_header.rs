@@ -49,3 +49,45 @@ impl TSBExtendedHeader {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geonet::position_vector::{LongPositionVector, Tst};
+    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
+
+    fn make_tsb() -> TSBExtendedHeader {
+        let so_pv = LongPositionVector {
+            gn_addr: GNAddress::new(M::GnUnicast, ST::Motorcycle, MID::new([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])),
+            tst: Tst::set_in_normal_timestamp_milliseconds(1_717_200_000_000),
+            latitude: 415520000,
+            longitude: 21340000,
+            pai: true,
+            s: 300,
+            h: 450,
+        };
+        TSBExtendedHeader::initialize_with_sequence_number_ego_pv(77, so_pv)
+    }
+
+    #[test]
+    fn tsb_encode_decode_roundtrip() {
+        let header = make_tsb();
+        let encoded = header.encode();
+        assert_eq!(encoded.len(), 28);
+        let decoded = TSBExtendedHeader::decode(&encoded);
+        assert_eq!(header, decoded);
+    }
+
+    #[test]
+    fn tsb_sequence_number() {
+        let header = make_tsb();
+        assert_eq!(header.sn, 77);
+        assert_eq!(header.reserved, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "TSB Extended Header too short")]
+    fn tsb_decode_too_short() {
+        TSBExtendedHeader::decode(&[0u8; 5]);
+    }
+}

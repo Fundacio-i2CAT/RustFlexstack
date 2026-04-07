@@ -1797,3 +1797,249 @@ fn clone_request(r: &GNDataRequest) -> GNDataRequest {
         area: r.area,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geonet::gn_address::{GNAddress, M, MID, ST};
+    use crate::geonet::position_vector::LongPositionVector;
+    use std::sync::mpsc;
+
+    fn make_mib() -> Mib {
+        Mib::new()
+    }
+
+    fn make_router() -> (Router, Receiver<Vec<u8>>, Receiver<GNDataIndication>) {
+        let (ll_tx, ll_rx) = mpsc::channel();
+        let (btp_tx, btp_rx) = mpsc::channel();
+        let mib = make_mib();
+        let router = Router::new(mib, ll_tx, btp_tx, None, None, None);
+        (router, ll_rx, btp_rx)
+    }
+
+    fn make_shb_request(data: Vec<u8>) -> GNDataRequest {
+        GNDataRequest {
+            upper_protocol_entity: CommonNH::BtpB,
+            packet_transport_type: PacketTransportType {
+                header_type: HeaderType::Tsb,
+                header_sub_type: HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop),
+            },
+            communication_profile: CommunicationProfile::Unspecified,
+            traffic_class: TrafficClass {
+                scf: false,
+                channel_offload: false,
+                tc_id: 0,
+            },
+            security_profile: SecurityProfile::NoSecurity,
+            its_aid: 36,
+            security_permissions: vec![],
+            max_hop_limit: 1,
+            max_packet_lifetime: None,
+            destination: None,
+            length: data.len() as u16,
+            data,
+            area: Area {
+                latitude: 0,
+                longitude: 0,
+                a: 0,
+                b: 0,
+                angle: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn router_new_defaults() {
+        let (router, _ll, _btp) = make_router();
+        assert_eq!(router.sequence_number, 0);
+        assert!(router.location_table.entries.is_empty());
+        assert!(!router.beacon_reset);
+    }
+
+    #[test]
+    fn router_get_sequence_number_increments() {
+        let (mut router, _ll, _btp) = make_router();
+        assert_eq!(router.get_sequence_number(), 1);
+        assert_eq!(router.get_sequence_number(), 2);
+        assert_eq!(router.get_sequence_number(), 3);
+    }
+
+    #[test]
+    fn router_sequence_number_wraps() {
+        let (mut router, _ll, _btp) = make_router();
+        router.sequence_number = u16::MAX;
+        assert_eq!(router.get_sequence_number(), 0);
+    }
+
+    #[test]
+    fn router_duplicate_address_detection() {
+        let (router, _ll, _btp) = make_router();
+        let own_addr = router.mib.itsGnLocalGnAddr;
+        assert!(router.duplicate_address_detection(own_addr));
+        let other = GNAddress::new(M::GnUnicast, ST::Bus, MID::new([0xAA; 6]));
+        assert!(!router.duplicate_address_detection(other));
+    }
+
+    #[test]
+    fn router_refresh_ego_position_vector() {
+        let (mut router, _ll, _btp) = make_router();
+        let pv = LongPositionVector {
+            gn_addr: router.gn_address,
+            tst: Tst::set_in_normal_timestamp_milliseconds(99999),
+            latitude: 415520000,
+            longitude: 21340000,
+            pai: true,
+            s: 1000,
+            h: 900,
+        };
+        router.refresh_ego_position_vector(pv);
+        assert_eq!(router.ego_position_vector.latitude, 415520000);
+        assert_eq!(router.ego_position_vector.longitude, 21340000);
+        assert!(router.ego_position_vector.pai);
+        assert_eq!(router.ego_position_vector.s, 1000);
+        assert_eq!(router.ego_position_vector.h, 900);
+    }
+
+    #[test]
+    fn router_send_beacon() {
+        let (router, ll_rx, _btp) = make_router();
+        let confirm = router.gn_data_request_beacon();
+        assert_eq!(confirm.result_code, ResultCode::Accepted);
+        let packet = ll_rx.recv().unwrap();
+        // BasicHeader (4) + CommonHeader (8) + LPV (24) = 36 bytes
+        assert_eq!(packet.len(), 36);
+    }
+
+    #[test]
+    fn router_send_shb() {
+        let (mut router, ll_rx, _btp) = make_router();
+        let request = make_shb_request(vec![0xCA, 0xFE]);
+        let confirm = router.gn_data_request(request);
+        assert_eq!(confirm.result_code, ResultCode::Accepted);
+        let packet = ll_rx.recv().unwrap();
+        // BasicHeader(4) + CommonHeader(8) + LPV(24) + MediaDep(4) + payload(2) = 42
+        assert_eq!(packet.len(), 42);
+        assert!(router.beacon_reset);
+    }
+
+    #[test]
+    fn router_compute_area_size_circle() {
+        let area = Area {
+            latitude: 0,
+            longitude: 0,
+            a: 100,
+            b: 0,
+            angle: 0,
+        };
+        let size = Router::compute_area_size_m2_gb(&GeoBroadcastHST::GeoBroadcastCircle, &area);
+        let expected = std::f64::consts::PI * 100.0 * 100.0;
+        assert!((size - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn router_compute_area_size_ellipse() {
+        let area = Area {
+            latitude: 0,
+            longitude: 0,
+            a: 100,
+            b: 50,
+            angle: 0,
+        };
+        let size = Router::compute_area_size_m2_gb(&GeoBroadcastHST::GeoBroadcastEllipse, &area);
+        let expected = std::f64::consts::PI * 100.0 * 50.0;
+        assert!((size - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn router_compute_area_size_rectangle() {
+        let area = Area {
+            latitude: 0,
+            longitude: 0,
+            a: 100,
+            b: 50,
+            angle: 0,
+        };
+        let size = Router::compute_area_size_m2_gb(&GeoBroadcastHST::GeoBroadcastRectangle, &area);
+        assert!((size - 20000.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn router_calculate_distance_same_point() {
+        let (x, y) = Router::calculate_distance((41.552, 2.134), (41.552, 2.134));
+        assert!(x.abs() < 0.01);
+        assert!(y.abs() < 0.01);
+    }
+
+    #[test]
+    fn router_distance_m_nonzero() {
+        let d = Router::distance_m(415520000, 21340000, 415530000, 21340000);
+        // ~1.1 m difference (0.001 degree lat)
+        assert!(d > 0.0);
+    }
+
+    #[test]
+    fn router_cbf_timeout_at_max_range() {
+        let (router, _ll, _btp) = make_router();
+        let dist = router.mib.itsGnDefaultMaxCommunicationRange as f64;
+        let timeout = router.cbf_compute_timeout_ms(dist);
+        assert!((timeout - router.mib.itsGnCbfMinTime as f64).abs() < 0.01);
+    }
+
+    #[test]
+    fn router_cbf_timeout_at_zero_range() {
+        let (router, _ll, _btp) = make_router();
+        let timeout = router.cbf_compute_timeout_ms(0.0);
+        assert!((timeout - router.mib.itsGnCbfMaxTime as f64).abs() < 0.01);
+    }
+
+    #[test]
+    fn router_forwarding_algorithm_response_encode() {
+        assert_eq!(GNForwardingAlgorithmResponse::AreaForwarding.encode(), 1);
+        assert_eq!(GNForwardingAlgorithmResponse::NonAreaForwarding.encode(), 2);
+        assert_eq!(GNForwardingAlgorithmResponse::Discarted.encode(), 3);
+    }
+
+    #[test]
+    fn router_spawn_and_shutdown() {
+        let mib = make_mib();
+        let (handle, _ll_rx, _btp_rx) = Router::spawn(mib, None, None, None);
+        handle.shutdown();
+    }
+
+    #[test]
+    fn router_handle_send_incoming_packet() {
+        let mib = make_mib();
+        let (handle, _ll_rx, _btp_rx) = Router::spawn(mib, None, None, None);
+        // Send a short/invalid packet — router should not crash
+        handle.send_incoming_packet(vec![0u8; 4]);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        handle.shutdown();
+    }
+
+    #[test]
+    fn router_handle_update_position_vector() {
+        let mib = make_mib();
+        let (handle, _ll_rx, _btp_rx) = Router::spawn(mib, None, None, None);
+        let pv = LongPositionVector {
+            gn_addr: mib.itsGnLocalGnAddr,
+            tst: Tst::set_in_normal_timestamp_milliseconds(99999),
+            latitude: 415520000,
+            longitude: 21340000,
+            pai: true,
+            s: 500,
+            h: 900,
+        };
+        handle.update_position_vector(pv);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        handle.shutdown();
+    }
+
+    #[test]
+    fn clone_request_roundtrip() {
+        let req = make_shb_request(vec![1, 2, 3]);
+        let cloned = clone_request(&req);
+        assert_eq!(cloned.data, req.data);
+        assert_eq!(cloned.its_aid, req.its_aid);
+        assert_eq!(cloned.max_hop_limit, req.max_hop_limit);
+    }
+}

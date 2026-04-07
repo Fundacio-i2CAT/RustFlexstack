@@ -463,3 +463,304 @@ fn record_to_entry(record: &StoredRecord) -> DataObjectEntry {
         data_object,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::facilities::local_dynamic_map::ldm_storage::ItsDataObject;
+    use crate::facilities::local_dynamic_map::ldm_types::*;
+    use std::sync::mpsc;
+
+    fn make_service() -> Arc<LdmService> {
+        let store = Arc::new(RwLock::new(LdmStore::new()));
+        LdmService::new(store)
+    }
+
+    fn unknown_data(aid: u32) -> ItsDataObject {
+        ItsDataObject::Unknown {
+            its_aid: aid,
+            raw: vec![0xAA],
+        }
+    }
+
+    #[test]
+    fn register_and_deregister_provider() {
+        let svc = make_service();
+        let resp = svc.register_data_provider(RegisterDataProviderReq { application_id: 36 });
+        assert_eq!(resp.result, RegisterDataProviderResult::Accepted);
+
+        let resp = svc.deregister_data_provider(DeregisterDataProviderReq { application_id: 36 });
+        assert_eq!(resp.ack, DeregisterDataProviderAck::Accepted);
+
+        // Deregister again should be rejected
+        let resp = svc.deregister_data_provider(DeregisterDataProviderReq { application_id: 36 });
+        assert_eq!(resp.ack, DeregisterDataProviderAck::Rejected);
+    }
+
+    #[test]
+    fn register_and_deregister_consumer() {
+        let svc = make_service();
+        let resp = svc.register_data_consumer(RegisterDataConsumerReq { application_id: 36 });
+        assert_eq!(resp.result, RegisterDataConsumerResult::Accepted);
+
+        let resp = svc.deregister_data_consumer(DeregisterDataConsumerReq { application_id: 36 });
+        assert_eq!(resp.ack, DeregisterDataConsumerAck::Succeed);
+
+        let resp = svc.deregister_data_consumer(DeregisterDataConsumerReq { application_id: 36 });
+        assert_eq!(resp.ack, DeregisterDataConsumerAck::Failed);
+    }
+
+    #[test]
+    fn add_provider_data() {
+        let svc = make_service();
+        let resp = svc.add_provider_data(AddDataProviderReq {
+            application_id: 36,
+            timestamp_its: 1_000_000,
+            time_validity_s: 3600,
+            lat_etsi: 415520000,
+            lon_etsi: 21340000,
+            altitude_cm: 12000,
+            data_object: unknown_data(36),
+        });
+        assert_eq!(resp.result, AddDataProviderResult::Succeed);
+        assert!(resp.record_id.is_some());
+    }
+
+    #[test]
+    fn update_provider_data_existing() {
+        let svc = make_service();
+        let add_resp = svc.add_provider_data(AddDataProviderReq {
+            application_id: 36,
+            timestamp_its: 1_000_000,
+            time_validity_s: 3600,
+            lat_etsi: 0,
+            lon_etsi: 0,
+            altitude_cm: 0,
+            data_object: unknown_data(36),
+        });
+        let id = add_resp.record_id.unwrap();
+
+        let upd_resp = svc.update_provider_data(UpdateDataProviderReq {
+            record_id: id,
+            timestamp_its: 2_000_000,
+            time_validity_s: 7200,
+            lat_etsi: 100,
+            lon_etsi: 200,
+            altitude_cm: 300,
+            data_object: unknown_data(36),
+        });
+        assert_eq!(upd_resp.result, UpdateDataProviderResult::Succeed);
+    }
+
+    #[test]
+    fn update_provider_data_nonexistent() {
+        let svc = make_service();
+        let resp = svc.update_provider_data(UpdateDataProviderReq {
+            record_id: 999,
+            timestamp_its: 0,
+            time_validity_s: 0,
+            lat_etsi: 0,
+            lon_etsi: 0,
+            altitude_cm: 0,
+            data_object: unknown_data(0),
+        });
+        assert_eq!(resp.result, UpdateDataProviderResult::UnknownId);
+    }
+
+    #[test]
+    fn delete_provider_data() {
+        let svc = make_service();
+        let add_resp = svc.add_provider_data(AddDataProviderReq {
+            application_id: 36,
+            timestamp_its: now_its_ms(),
+            time_validity_s: 3600,
+            lat_etsi: 0,
+            lon_etsi: 0,
+            altitude_cm: 0,
+            data_object: unknown_data(36),
+        });
+        let id = add_resp.record_id.unwrap();
+
+        let del_resp = svc.delete_provider_data(DeleteDataProviderReq { record_id: id });
+        assert_eq!(del_resp.result, DeleteDataProviderResult::Succeed);
+
+        let del_resp = svc.delete_provider_data(DeleteDataProviderReq { record_id: id });
+        assert_eq!(del_resp.result, DeleteDataProviderResult::Failed);
+    }
+
+    #[test]
+    fn request_data_objects_no_filter() {
+        let svc = make_service();
+        svc.add_provider_data(AddDataProviderReq {
+            application_id: 36,
+            timestamp_its: now_its_ms(),
+            time_validity_s: 3600,
+            lat_etsi: 415520000,
+            lon_etsi: 21340000,
+            altitude_cm: 12000,
+            data_object: unknown_data(36),
+        });
+        svc.add_provider_data(AddDataProviderReq {
+            application_id: 37,
+            timestamp_its: now_its_ms(),
+            time_validity_s: 3600,
+            lat_etsi: 0,
+            lon_etsi: 0,
+            altitude_cm: 0,
+            data_object: unknown_data(37),
+        });
+
+        let resp = svc.request_data_objects(RequestDataObjectsReq {
+            application_id: 36,
+            data_object_types: vec![],
+            filter: None,
+            order: None,
+            max_results: None,
+        });
+        assert_eq!(resp.result, RequestedDataObjectsResult::Succeed);
+        assert_eq!(resp.data_objects.len(), 2);
+    }
+
+    #[test]
+    fn request_data_objects_with_type_filter() {
+        let svc = make_service();
+        svc.add_provider_data(AddDataProviderReq {
+            application_id: 36,
+            timestamp_its: now_its_ms(),
+            time_validity_s: 3600,
+            lat_etsi: 0,
+            lon_etsi: 0,
+            altitude_cm: 0,
+            data_object: unknown_data(36),
+        });
+        svc.add_provider_data(AddDataProviderReq {
+            application_id: 37,
+            timestamp_its: now_its_ms(),
+            time_validity_s: 3600,
+            lat_etsi: 0,
+            lon_etsi: 0,
+            altitude_cm: 0,
+            data_object: unknown_data(37),
+        });
+
+        let resp = svc.request_data_objects(RequestDataObjectsReq {
+            application_id: 36,
+            data_object_types: vec![36],
+            filter: None,
+            order: None,
+            max_results: None,
+        });
+        assert_eq!(resp.data_objects.len(), 1);
+    }
+
+    #[test]
+    fn request_data_objects_with_filter() {
+        let svc = make_service();
+        svc.add_provider_data(AddDataProviderReq {
+            application_id: 36,
+            timestamp_its: now_its_ms(),
+            time_validity_s: 3600,
+            lat_etsi: 415520000,
+            lon_etsi: 21340000,
+            altitude_cm: 0,
+            data_object: unknown_data(36),
+        });
+        svc.add_provider_data(AddDataProviderReq {
+            application_id: 36,
+            timestamp_its: now_its_ms(),
+            time_validity_s: 3600,
+            lat_etsi: 400000000,
+            lon_etsi: 21340000,
+            altitude_cm: 0,
+            data_object: unknown_data(36),
+        });
+
+        let resp = svc.request_data_objects(RequestDataObjectsReq {
+            application_id: 36,
+            data_object_types: vec![],
+            filter: Some(Filter {
+                stmt1: FilterStatement {
+                    attribute: FilterAttribute::Latitude,
+                    operator: ComparisonOperator::GreaterThan,
+                    ref_value: 410000000,
+                },
+                logical: None,
+                stmt2: None,
+            }),
+            order: None,
+            max_results: None,
+        });
+        assert_eq!(resp.data_objects.len(), 1);
+    }
+
+    #[test]
+    fn request_data_objects_max_results() {
+        let svc = make_service();
+        for _ in 0..5 {
+            svc.add_provider_data(AddDataProviderReq {
+                application_id: 36,
+                timestamp_its: now_its_ms(),
+                time_validity_s: 3600,
+                lat_etsi: 0,
+                lon_etsi: 0,
+                altitude_cm: 0,
+                data_object: unknown_data(36),
+            });
+        }
+
+        let resp = svc.request_data_objects(RequestDataObjectsReq {
+            application_id: 36,
+            data_object_types: vec![],
+            filter: None,
+            order: None,
+            max_results: Some(3),
+        });
+        assert_eq!(resp.data_objects.len(), 3);
+    }
+
+    #[test]
+    fn subscribe_and_unsubscribe() {
+        let svc = make_service();
+        let (tx, _rx) = mpsc::channel();
+        let resp = svc.subscribe_data_consumer(
+            SubscribeDataObjectsReq {
+                application_id: 36,
+                data_object_types: vec![],
+                filter: None,
+                notify_interval_ms: 1000,
+                max_results: None,
+            },
+            tx,
+        );
+        assert_eq!(resp.result, SubscribeDataObjectsResult::Successful);
+        let sub_id = resp.subscription_id.unwrap();
+
+        let unsub_resp =
+            svc.unsubscribe_data_consumer(UnsubscribeDataConsumerReq { subscription_id: sub_id });
+        assert_eq!(unsub_resp.ack, UnsubscribeDataConsumerAck::Succeed);
+
+        // Unsubscribe again should fail
+        let unsub_resp =
+            svc.unsubscribe_data_consumer(UnsubscribeDataConsumerReq { subscription_id: sub_id });
+        assert_eq!(unsub_resp.ack, UnsubscribeDataConsumerAck::Failed);
+    }
+
+    #[test]
+    fn fire_subscriptions_prunes_dead() {
+        let svc = make_service();
+        let (tx, rx) = mpsc::channel();
+        svc.subscribe_data_consumer(
+            SubscribeDataObjectsReq {
+                application_id: 36,
+                data_object_types: vec![],
+                filter: None,
+                notify_interval_ms: 0, // fire immediately
+                max_results: None,
+            },
+            tx,
+        );
+        drop(rx); // drop receiver
+        svc.fire_subscriptions(); // should prune
+        assert_eq!(svc.subscriptions.lock().unwrap().len(), 0);
+    }
+}

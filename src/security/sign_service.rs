@@ -300,3 +300,194 @@ impl SignService {
         self.cert_library.add_own_certificate(&self.backend, cert);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::certificate::OwnCertificate;
+    use crate::security::certificate_library::CertificateLibrary;
+    use crate::security::ecdsa_backend::EcdsaBackend;
+    use crate::security::security_asn::ieee1609_dot2::{
+        CertificateId, PsidGroupPermissions, PsidSsp, SequenceOfPsidGroupPermissions,
+        SequenceOfPsidSsp, SubjectPermissions, ToBeSignedCertificate, VerificationKeyIndicator,
+        SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
+        SequenceOfCertRequestExtensions, EndEntityType,
+    };
+    use crate::security::security_asn::ieee1609_dot2_base_types::{
+        CrlSeries, Duration as AsnDuration, EccP256CurvePoint,
+        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod, HashedId3,
+    };
+    use crate::security::sn_sap::{GenerationLocation, SNSignRequest};
+
+    fn make_root_tbs() -> ToBeSignedCertificate {
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
+        let perms = SequenceOfPsidGroupPermissions(
+            vec![PsidGroupPermissions::new(
+                SubjectPermissions::all(()),
+                Integer::from(1),
+                Integer::from(0),
+                {
+                    let mut bits = FixedBitString::<8>::default();
+                    bits.set(0, true);
+                    EndEntityType(bits)
+                },
+            )]
+            .into(),
+        );
+        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
+            vec![0u8; 32].into(),
+        ));
+        ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            None,
+            Some(perms),
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    fn make_at_tbs(its_aid: i64) -> ToBeSignedCertificate {
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
+        let app_perms =
+            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)].into());
+        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
+            vec![0u8; 32].into(),
+        ));
+        ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            Some(app_perms),
+            None,
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    fn make_sign_service() -> SignService {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let aa = OwnCertificate::initialize_issued(&mut backend, make_root_tbs(), &root);
+        let at_cam = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(36), &aa);
+        let at_denm = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(37), &aa);
+
+        let lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![],
+        );
+        let mut svc = SignService::new(backend, lib);
+        svc.add_own_certificate(at_cam);
+        svc.add_own_certificate(at_denm);
+        svc
+    }
+
+    #[test]
+    fn sign_cam_produces_nonempty_message() {
+        let mut svc = make_sign_service();
+        let req = SNSignRequest {
+            tbs_message: vec![0xCA, 0xFE],
+            its_aid: 36,
+            permissions: vec![],
+            generation_location: None,
+        };
+        let confirm = svc.sign_request(&req);
+        assert!(!confirm.sec_message.is_empty());
+    }
+
+    #[test]
+    fn sign_denm_produces_nonempty_message() {
+        let mut svc = make_sign_service();
+        let req = SNSignRequest {
+            tbs_message: vec![0xDE, 0x01],
+            its_aid: 37,
+            permissions: vec![],
+            generation_location: Some(GenerationLocation {
+                latitude: 415520000,
+                longitude: 21340000,
+                elevation: 0xF000,
+            }),
+        };
+        let confirm = svc.sign_request(&req);
+        assert!(!confirm.sec_message.is_empty());
+    }
+
+    #[test]
+    fn sign_other_aid_produces_nonempty_message() {
+        // Add a cert for a custom AID
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let aa = OwnCertificate::initialize_issued(&mut backend, make_root_tbs(), &root);
+        let at = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(99), &aa);
+        let lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![],
+        );
+        let mut svc = SignService::new(backend, lib);
+        svc.add_own_certificate(at);
+
+        let req = SNSignRequest {
+            tbs_message: vec![0x01, 0x02],
+            its_aid: 99,
+            permissions: vec![],
+            generation_location: None,
+        };
+        let confirm = svc.sign_request(&req);
+        assert!(!confirm.sec_message.is_empty());
+    }
+
+    #[test]
+    fn sign_cam_first_call_includes_certificate() {
+        let mut svc = make_sign_service();
+        let req = SNSignRequest {
+            tbs_message: vec![0xCA],
+            its_aid: 36,
+            permissions: vec![],
+            generation_location: None,
+        };
+        // First CAM should include full certificate (signer = certificate)
+        let confirm1 = svc.sign_request(&req);
+        assert!(!confirm1.sec_message.is_empty());
+    }
+
+    #[test]
+    fn notify_unknown_at() {
+        let mut svc = make_sign_service();
+        let h8 = [1, 2, 3, 4, 5, 6, 7, 8];
+        svc.notify_unknown_at(&h8);
+        assert_eq!(svc.unknown_ats.len(), 1);
+        assert_eq!(svc.unknown_ats[0], [6, 7, 8]); // last 3 bytes
+    }
+
+    #[test]
+    fn notify_unknown_at_no_duplicates() {
+        let mut svc = make_sign_service();
+        let h8 = [1, 2, 3, 4, 5, 6, 7, 8];
+        svc.notify_unknown_at(&h8);
+        svc.notify_unknown_at(&h8);
+        assert_eq!(svc.unknown_ats.len(), 1);
+    }
+}

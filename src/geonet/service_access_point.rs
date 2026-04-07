@@ -291,6 +291,7 @@ pub struct GNDataRequest {
     pub area: Area,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum ResultCode {
     Accepted,
     MaximumLengthExceeded,
@@ -315,4 +316,167 @@ pub struct GNDataIndication {
     pub remaining_hop_limit: Option<u8>,
     pub length: u16,
     pub data: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── CommonNH ──────────────────────────────────────────────────────
+
+    #[test]
+    fn common_nh_encode_decode_roundtrip() {
+        for (nh, val) in [
+            (CommonNH::Any, 0u8),
+            (CommonNH::BtpA, 1),
+            (CommonNH::BtpB, 2),
+            (CommonNH::IpV6, 3),
+        ] {
+            assert_eq!(nh.encode(), val);
+            assert_eq!(CommonNH::decode(val), nh);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid Next Header Value")]
+    fn common_nh_decode_invalid() {
+        CommonNH::decode(99);
+    }
+
+    // ── HeaderType ────────────────────────────────────────────────────
+
+    #[test]
+    fn header_type_encode_decode_roundtrip() {
+        for (ht, val) in [
+            (HeaderType::Any, 0u8),
+            (HeaderType::Beacon, 1),
+            (HeaderType::GeoUnicast, 2),
+            (HeaderType::GeoAnycast, 3),
+            (HeaderType::GeoBroadcast, 4),
+            (HeaderType::Tsb, 5),
+            (HeaderType::Ls, 6),
+        ] {
+            assert_eq!(ht.encode(), val);
+            assert_eq!(HeaderType::decode(val), ht);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid Header Type Value")]
+    fn header_type_decode_invalid() {
+        HeaderType::decode(99);
+    }
+
+    // ── HeaderSubType ─────────────────────────────────────────────────
+
+    #[test]
+    fn header_sub_type_unspecified() {
+        let hst = HeaderSubType::decode(&HeaderType::Any, 0);
+        assert_eq!(hst.encode(), 0);
+        assert!(matches!(hst, HeaderSubType::Unspecified(_)));
+    }
+
+    #[test]
+    fn header_sub_type_geo_anycast() {
+        for val in 0..3u8 {
+            let hst = HeaderSubType::decode(&HeaderType::GeoAnycast, val);
+            assert_eq!(hst.encode(), val);
+            assert!(matches!(hst, HeaderSubType::GeoAnycast(_)));
+        }
+    }
+
+    #[test]
+    fn header_sub_type_geo_broadcast() {
+        for val in 0..3u8 {
+            let hst = HeaderSubType::decode(&HeaderType::GeoBroadcast, val);
+            assert_eq!(hst.encode(), val);
+            assert!(matches!(hst, HeaderSubType::GeoBroadcast(_)));
+        }
+    }
+
+    #[test]
+    fn header_sub_type_topo_broadcast() {
+        let shb = HeaderSubType::decode(&HeaderType::Tsb, 0);
+        assert!(matches!(shb, HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop)));
+        let mhb = HeaderSubType::decode(&HeaderType::Tsb, 1);
+        assert!(matches!(mhb, HeaderSubType::TopoBroadcast(TopoBroadcastHST::MultiHop)));
+    }
+
+    #[test]
+    fn header_sub_type_location_service() {
+        let req = HeaderSubType::decode(&HeaderType::Ls, 0);
+        assert!(matches!(req, HeaderSubType::LocationService(LocationServiceHST::LsRequest)));
+        let rep = HeaderSubType::decode(&HeaderType::Ls, 1);
+        assert!(matches!(rep, HeaderSubType::LocationService(LocationServiceHST::LsReply)));
+    }
+
+    // ── TrafficClass ──────────────────────────────────────────────────
+
+    #[test]
+    fn traffic_class_encode_decode() {
+        let tc = TrafficClass { scf: true, channel_offload: false, tc_id: 10 };
+        let encoded = tc.encode();
+        let decoded = TrafficClass::decode(encoded);
+        assert_eq!(tc, decoded);
+    }
+
+    // ── GeoAnycastHST ─────────────────────────────────────────────────
+
+    #[test]
+    fn geo_anycast_hst_roundtrip() {
+        for val in 0..3u8 {
+            assert_eq!(GeoAnycastHST::decode(val).encode(), val);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid GeoAnycast Header Sub Type Value")]
+    fn geo_anycast_hst_invalid() {
+        GeoAnycastHST::decode(99);
+    }
+
+    // ── GeoBroadcastHST ───────────────────────────────────────────────
+
+    #[test]
+    fn geo_broadcast_hst_roundtrip() {
+        for val in 0..3u8 {
+            assert_eq!(GeoBroadcastHST::decode(val).encode(), val);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid GeoBroadcast Header Sub Type Value")]
+    fn geo_broadcast_hst_invalid() {
+        GeoBroadcastHST::decode(99);
+    }
+
+    // ── TopoBroadcastHST ──────────────────────────────────────────────
+
+    #[test]
+    fn topo_broadcast_hst_roundtrip() {
+        assert_eq!(TopoBroadcastHST::SingleHop.encode(), 0);
+        assert_eq!(TopoBroadcastHST::MultiHop.encode(), 1);
+        assert_eq!(TopoBroadcastHST::decode(0).encode(), 0);
+        assert_eq!(TopoBroadcastHST::decode(1).encode(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid TopoBroadcast Header Sub Type Value")]
+    fn topo_broadcast_hst_invalid() {
+        TopoBroadcastHST::decode(99);
+    }
+
+    // ── LocationServiceHST ────────────────────────────────────────────
+
+    #[test]
+    fn location_service_hst_roundtrip() {
+        assert_eq!(LocationServiceHST::LsRequest.encode(), 0);
+        assert_eq!(LocationServiceHST::LsReply.encode(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid LocationService Header Sub Type Value")]
+    fn location_service_hst_invalid() {
+        LocationServiceHST::decode(99);
+    }
 }

@@ -290,3 +290,69 @@ impl RawLinkLayer {
 fn find_interface(name: &str) -> Option<NetworkInterface> {
     datalink::interfaces().into_iter().find(|i| i.name == name)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    #[test]
+    fn build_eth_frame_basic() {
+        let dest = [0xFF; 6];
+        let src = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55];
+        let payload = [0xAA, 0xBB];
+        let frame = build_eth_frame(dest, src, &payload);
+        // 6 dest + 6 src + 2 ethertype + 2 payload = 16
+        assert_eq!(frame.len(), 16);
+        assert_eq!(&frame[0..6], &dest);
+        assert_eq!(&frame[6..12], &src);
+        assert_eq!(&frame[12..14], &ETH_P_GEONET.to_be_bytes());
+        assert_eq!(&frame[14..16], &payload);
+    }
+
+    #[test]
+    fn build_eth_frame_empty_payload() {
+        let frame = build_eth_frame([0; 6], [0; 6], &[]);
+        assert_eq!(frame.len(), 14);
+    }
+
+    #[test]
+    fn is_geonet_frame_valid() {
+        let frame = build_eth_frame([0xFF; 6], [0; 6], &[0xCA, 0xFE]);
+        assert!(is_geonet_frame(&frame));
+    }
+
+    #[test]
+    fn is_geonet_frame_too_short() {
+        assert!(!is_geonet_frame(&[0u8; 13]));
+    }
+
+    #[test]
+    fn is_geonet_frame_wrong_ethertype() {
+        let mut frame = build_eth_frame([0xFF; 6], [0; 6], &[0xCA]);
+        // Overwrite ethertype
+        frame[12] = 0x08;
+        frame[13] = 0x00;
+        assert!(!is_geonet_frame(&frame));
+    }
+
+    #[test]
+    fn raw_link_layer_new() {
+        let (gn_tx, _) = mpsc::channel();
+        let (_, gn_rx) = mpsc::channel();
+        let rll = RawLinkLayer::new(gn_tx, gn_rx, "lo", [0x00; 6]);
+        assert_eq!(rll.iface_name, "lo");
+        assert_eq!(rll.mac_address, [0x00; 6]);
+        assert!(!rll.stop_flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn raw_link_layer_stop_flag_clone() {
+        let (gn_tx, _) = mpsc::channel();
+        let (_, gn_rx) = mpsc::channel();
+        let rll = RawLinkLayer::new(gn_tx, gn_rx, "eth0", [0xAA; 6]);
+        let flag = rll.stop_flag();
+        flag.store(true, Ordering::Relaxed);
+        assert!(rll.stop_flag.load(Ordering::Relaxed));
+    }
+}

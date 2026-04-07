@@ -113,3 +113,51 @@ impl GBCExtendedHeader {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geonet::position_vector::LongPositionVector;
+
+    fn make_gbc() -> GBCExtendedHeader {
+        GBCExtendedHeader {
+            sn: 42,
+            reserved: 0,
+            so_pv: LongPositionVector::decode([0u8; 24]),
+            latitude: 415520000,
+            longitude: 21340000,
+            a: 1000,
+            b: 500,
+            angle: 45,
+            reserved2: 0,
+        }
+    }
+
+    #[test]
+    fn gbc_encode_decode_roundtrip() {
+        let header = make_gbc();
+        let encoded = header.encode();
+        assert_eq!(encoded.len(), 44);
+        let decoded = GBCExtendedHeader::decode(encoded);
+        assert_eq!(header, decoded);
+    }
+
+    #[test]
+    fn gbc_sequence_number() {
+        let header = make_gbc();
+        let encoded = header.encode();
+        let sn = u16::from_be_bytes([encoded[0], encoded[1]]);
+        assert_eq!(sn, 42);
+    }
+
+    #[test]
+    fn gbc_area_fields() {
+        let header = make_gbc();
+        let decoded = GBCExtendedHeader::decode(header.encode());
+        assert_eq!(decoded.latitude, 415520000);
+        assert_eq!(decoded.longitude, 21340000);
+        assert_eq!(decoded.a, 1000);
+        assert_eq!(decoded.b, 500);
+        assert_eq!(decoded.angle, 45);
+    }
+}

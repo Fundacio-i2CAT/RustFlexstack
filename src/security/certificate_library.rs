@@ -186,3 +186,218 @@ impl CertificateLibrary {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::certificate::OwnCertificate;
+    use crate::security::ecdsa_backend::EcdsaBackend;
+    use crate::security::security_asn::ieee1609_dot2::{
+        CertificateId, PsidGroupPermissions, PsidSsp, SequenceOfPsidGroupPermissions,
+        SequenceOfPsidSsp, SubjectPermissions, VerificationKeyIndicator,
+        SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
+        SequenceOfCertRequestExtensions, EndEntityType,
+    };
+    use crate::security::security_asn::ieee1609_dot2_base_types::{
+        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, Psid,
+        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod, HashedId3,
+    };
+    use rasn::prelude::*;
+
+    fn make_root_tbs() -> crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate {
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
+        let perms = SequenceOfPsidGroupPermissions(
+            vec![PsidGroupPermissions::new(
+                SubjectPermissions::all(()),
+                Integer::from(1),
+                Integer::from(0),
+                {
+                    let mut bits = FixedBitString::<8>::default();
+                    bits.set(0, true);
+                    EndEntityType(bits)
+                },
+            )]
+            .into(),
+        );
+        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
+            vec![0u8; 32].into(),
+        ));
+        crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            None,
+            Some(perms),
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    fn make_at_tbs() -> crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate {
+        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
+        let app_perms =
+            SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(36_i64)), None)].into());
+        let pk = PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(
+            vec![0u8; 32].into(),
+        ));
+        crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate::new(
+            CertificateId::none(()),
+            HashedId3(FixedOctetString::from([0u8; 3])),
+            CrlSeries(Uint16(0)),
+            validity,
+            None,
+            None,
+            Some(app_perms),
+            None,
+            None,
+            None,
+            None,
+            VerificationKeyIndicator::verificationKey(pk),
+            None,
+            SequenceOfAppExtensions(vec![].into()),
+            SequenceOfCertIssueExtensions(vec![].into()),
+            SequenceOfCertRequestExtensions(vec![].into()),
+        )
+    }
+
+    fn make_chain(
+        backend: &mut EcdsaBackend,
+    ) -> (OwnCertificate, OwnCertificate, OwnCertificate) {
+        let root = OwnCertificate::initialize_self_signed(backend, make_root_tbs());
+        let aa = OwnCertificate::initialize_issued(backend, make_root_tbs(), &root);
+        let at = OwnCertificate::initialize_issued(backend, make_at_tbs(), &aa);
+        (root, aa, at)
+    }
+
+    #[test]
+    fn library_new_empty() {
+        let backend = EcdsaBackend::new();
+        let lib = CertificateLibrary::new(&backend, vec![], vec![], vec![]);
+        assert!(lib.own_certificates.is_empty());
+        assert!(lib.known_root_certificates.is_empty());
+        assert!(lib.known_authorization_authorities.is_empty());
+        assert!(lib.known_authorization_tickets.is_empty());
+    }
+
+    #[test]
+    fn library_add_root_certificate() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let lib = CertificateLibrary::new(&backend, vec![root.cert.clone()], vec![], vec![]);
+        assert_eq!(lib.known_root_certificates.len(), 1);
+    }
+
+    #[test]
+    fn library_add_aa_and_at() {
+        let mut backend = EcdsaBackend::new();
+        let (root, aa, at) = make_chain(&mut backend);
+        let lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![at.cert.clone()],
+        );
+        assert_eq!(lib.known_root_certificates.len(), 1);
+        assert_eq!(lib.known_authorization_authorities.len(), 1);
+        assert_eq!(lib.known_authorization_tickets.len(), 1);
+    }
+
+    #[test]
+    fn library_get_authorization_ticket_by_hashedid8() {
+        let mut backend = EcdsaBackend::new();
+        let (root, aa, at) = make_chain(&mut backend);
+        let lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![at.cert.clone()],
+        );
+        let h8 = at.as_hashedid8();
+        assert!(lib.get_authorization_ticket_by_hashedid8(&h8).is_some());
+    }
+
+    #[test]
+    fn library_get_ca_certificate_by_hashedid3() {
+        let mut backend = EcdsaBackend::new();
+        let (root, aa, _at) = make_chain(&mut backend);
+        let lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![],
+        );
+        let h3 = aa.cert.as_hashedid3();
+        assert!(lib.get_ca_certificate_by_hashedid3(&h3).is_some());
+    }
+
+    #[test]
+    fn library_get_issuer_certificate() {
+        let mut backend = EcdsaBackend::new();
+        let (root, aa, at) = make_chain(&mut backend);
+        let lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![at.cert.clone()],
+        );
+        let issuer = lib.get_issuer_certificate(&at.cert);
+        assert!(issuer.is_some());
+    }
+
+    #[test]
+    fn library_add_own_certificate() {
+        let mut backend = EcdsaBackend::new();
+        let (root, aa, at) = make_chain(&mut backend);
+        let mut lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![],
+        );
+        lib.add_own_certificate(&backend, at);
+        assert_eq!(lib.own_certificates.len(), 1);
+    }
+
+    #[test]
+    fn library_verify_sequence_single_known_at() {
+        let mut backend = EcdsaBackend::new();
+        let (root, aa, at) = make_chain(&mut backend);
+        let mut lib = CertificateLibrary::new(
+            &backend,
+            vec![root.cert.clone()],
+            vec![aa.cert.clone()],
+            vec![at.cert.clone()],
+        );
+        let result = lib.verify_sequence_of_certificates(&[at.cert.clone()], &backend);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn library_verify_sequence_empty() {
+        let backend = EcdsaBackend::new();
+        let mut lib = CertificateLibrary::new(&backend, vec![], vec![], vec![]);
+        let result = lib.verify_sequence_of_certificates(&[], &backend);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn library_duplicate_aa_not_added_twice() {
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        let aa = OwnCertificate::initialize_issued(&mut backend, make_root_tbs(), &root);
+        let mut lib =
+            CertificateLibrary::new(&backend, vec![root.cert.clone()], vec![], vec![]);
+        lib.add_authorization_authority(&backend, aa.cert.clone());
+        lib.add_authorization_authority(&backend, aa.cert.clone());
+        assert_eq!(lib.known_authorization_authorities.len(), 1);
+    }
+}

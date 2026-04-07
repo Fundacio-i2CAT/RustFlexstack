@@ -234,3 +234,209 @@ impl Default for LdmStore {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn store_new_empty() {
+        let store = LdmStore::new();
+        assert!(store.is_empty());
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn store_default() {
+        let store = LdmStore::default();
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn store_insert_returns_ids() {
+        let mut store = LdmStore::new();
+        let id1 = store.insert(
+            36,
+            1_000_000,
+            60,
+            415520000,
+            21340000,
+            12000,
+            ItsDataObject::Unknown {
+                its_aid: 36,
+                raw: vec![0xCA],
+            },
+        );
+        let id2 = store.insert(
+            37,
+            1_000_001,
+            60,
+            415520000,
+            21340000,
+            12000,
+            ItsDataObject::Unknown {
+                its_aid: 37,
+                raw: vec![0xDE],
+            },
+        );
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn store_update_existing() {
+        let mut store = LdmStore::new();
+        let id = store.insert(
+            36,
+            1_000_000,
+            60,
+            0,
+            0,
+            0,
+            ItsDataObject::Unknown {
+                its_aid: 36,
+                raw: vec![],
+            },
+        );
+        let ok = store.update(
+            id,
+            2_000_000,
+            120,
+            100,
+            200,
+            300,
+            ItsDataObject::Unknown {
+                its_aid: 36,
+                raw: vec![1],
+            },
+        );
+        assert!(ok);
+        let rec = store.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(rec.timestamp_its_ms, 2_000_000);
+        assert_eq!(rec.time_validity_s, 120);
+    }
+
+    #[test]
+    fn store_update_nonexistent() {
+        let mut store = LdmStore::new();
+        let ok = store.update(
+            999,
+            0,
+            0,
+            0,
+            0,
+            0,
+            ItsDataObject::Unknown {
+                its_aid: 0,
+                raw: vec![],
+            },
+        );
+        assert!(!ok);
+    }
+
+    #[test]
+    fn store_remove() {
+        let mut store = LdmStore::new();
+        let id = store.insert(
+            36,
+            0,
+            60,
+            0,
+            0,
+            0,
+            ItsDataObject::Unknown {
+                its_aid: 36,
+                raw: vec![],
+            },
+        );
+        assert!(store.remove(id));
+        assert!(store.is_empty());
+        assert!(!store.remove(id));
+    }
+
+    #[test]
+    fn store_remove_expired() {
+        let mut store = LdmStore::new();
+        // Insert a record that expired long ago
+        store.insert(
+            36,
+            0, // timestamp = epoch
+            1, // validity = 1 second
+            0,
+            0,
+            0,
+            ItsDataObject::Unknown {
+                its_aid: 36,
+                raw: vec![],
+            },
+        );
+        let removed = store.remove_expired();
+        assert_eq!(removed, 1);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn store_remove_out_of_area() {
+        let mut store = LdmStore::new();
+        // Insert a record at Barcelona (lat 41.552, lon 2.134)
+        store.insert(
+            36,
+            now_its_ms(),
+            3600,
+            415520000,
+            21340000,
+            0,
+            ItsDataObject::Unknown {
+                its_aid: 36,
+                raw: vec![],
+            },
+        );
+        // Remove everything outside 1m of Madrid (40.4168, -3.7038)
+        let removed = store.remove_out_of_area(404168000, -37038000, 1.0);
+        assert_eq!(removed, 1);
+    }
+
+    #[test]
+    fn store_iter() {
+        let mut store = LdmStore::new();
+        store.insert(
+            36,
+            0,
+            3600,
+            0,
+            0,
+            0,
+            ItsDataObject::Unknown {
+                its_aid: 36,
+                raw: vec![],
+            },
+        );
+        store.insert(
+            37,
+            0,
+            3600,
+            0,
+            0,
+            0,
+            ItsDataObject::Unknown {
+                its_aid: 37,
+                raw: vec![],
+            },
+        );
+        let count = store.iter().count();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn its_data_object_its_aid() {
+        assert_eq!(
+            ItsDataObject::Unknown {
+                its_aid: 99,
+                raw: vec![]
+            }
+            .its_aid(),
+            99
+        );
+    }
+}

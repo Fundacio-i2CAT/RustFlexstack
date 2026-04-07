@@ -93,3 +93,52 @@ impl VamCoder {
         rasn::uper::decode::<Vam>(bytes).map_err(|e| format!("VAM UPER decode error: {e}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generation_delta_time_from_unix_ms_basic() {
+        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 2000);
+        assert_eq!(gdt.0, 2000);
+    }
+
+    #[test]
+    fn generation_delta_time_wraps() {
+        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 65_536);
+        assert_eq!(gdt.0, 0);
+    }
+
+    #[test]
+    fn generation_delta_time_now_runs() {
+        let _ = generation_delta_time_now();
+    }
+
+    #[test]
+    fn vam_header_fields() {
+        let hdr = vam_header(123);
+        assert_eq!(hdr.0.protocol_version.0, 3);
+        assert_eq!(hdr.0.message_id.0, 16);
+        assert_eq!(hdr.0.station_id.0, 123);
+    }
+
+    #[test]
+    fn vam_coder_new() {
+        let coder = VamCoder::new();
+        let coder2 = coder.clone();
+        let _ = format!("{:?}", coder2);
+    }
+
+    #[test]
+    fn vam_coder_default() {
+        let _coder = VamCoder::default();
+    }
+
+    #[test]
+    fn vam_coder_decode_invalid_bytes() {
+        let coder = VamCoder::new();
+        let result = coder.decode(&[0xFF, 0xFF]);
+        assert!(result.is_err());
+    }
+}
