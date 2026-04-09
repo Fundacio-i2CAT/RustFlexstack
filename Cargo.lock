@@ -766,6 +766,7 @@ dependencies = [
 name = "rustflexstack"
 version = "0.2.1"
 dependencies = [
+ "cc",
  "ecdsa",
  "elliptic-curve",
  "libc",

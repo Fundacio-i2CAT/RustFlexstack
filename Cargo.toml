@@ -23,6 +23,12 @@ p256 = { version = "0.13", features = ["ecdsa", "ecdsa-core"] }
 ecdsa = { version = "0.16", features = ["signing", "verifying"] }
 elliptic-curve = { version = "0.13", features = ["sec1"] }
 
+[build-dependencies]
+cc = { version = "1", optional = true }
+
+[features]
+cv2x = ["dep:cc"]
+
 [[example]]
 name = "cam_sender_receiver"
 path = "examples/cam_sender_receiver.rs"
@@ -58,4 +64,14 @@ path = "examples/bench_cam_rx.rs"
 [[example]]
 name = "bench_congestion"
 path = "examples/bench_congestion.rs"
+
+[[example]]
+name = "cv2x_cam_sender_receiver"
+path = "examples/cv2x_cam_sender_receiver.rs"
+required-features = ["cv2x"]
+
+[[example]]
+name = "cv2x_denm_sender_receiver"
+path = "examples/cv2x_denm_sender_receiver.rs"
+required-features = ["cv2x"]
 
