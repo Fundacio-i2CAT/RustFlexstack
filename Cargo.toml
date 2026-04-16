@@ -1,6 +1,6 @@
 [package]
 name = "rustflexstack"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "ETSI C-ITS GeoNetworking and BTP protocol stack in Rust"
 license = "AGPL-3.0-only"
@@ -73,5 +73,10 @@ required-features = ["cv2x"]
 [[example]]
 name = "cv2x_denm_sender_receiver"
 path = "examples/cv2x_denm_sender_receiver.rs"
+required-features = ["cv2x"]
+
+[[example]]
+name = "secured_cv2x_cam_sender_receiver"
+path = "examples/secured_cv2x_cam_sender_receiver.rs"
 required-features = ["cv2x"]
 

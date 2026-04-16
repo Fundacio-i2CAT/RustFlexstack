@@ -12,12 +12,10 @@
 #include "cv2x_wrapper.h"
 
 #include <array>
-#include <condition_variable>
 #include <cstring>
 #include <future>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 
 #include <arpa/inet.h>
@@ -41,18 +39,7 @@ using telux::cv2x::SpsFlowInfo;
 using telux::cv2x::TrafficCategory;
 using telux::cv2x::TrafficIpType;
 
-/* ── Cohda / Cv2xFactoryImpl forward declarations ──────────────────────── */
-namespace telux {
-namespace cv2x {
-    class ICv2xRadioManager;
-    class Cv2xFactoryImpl {
-    public:
-        static Cv2xFactoryImpl &getInstance();
-        std::shared_ptr<ICv2xRadioManager> getCv2xRadioManager(
-            std::function<void(telux::common::ServiceStatus)> statusCallback = nullptr);
-    };
-} // namespace cv2x
-} // namespace telux
+/* ── Public Cv2xFactory (declared in Cv2xFactory.hpp, included via Cv2xRadio.hpp) ── */
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 static constexpr uint32_t SPS_SERVICE_ID    = 1u;
@@ -110,28 +97,11 @@ cv2x_handle_t *cv2x_init(void)
 
     try {
         /* ── 1. Radio manager ──────────────────────────────────────────── */
-        bool   updated = false;
-        telux::common::ServiceStatus svc_status =
-            telux::common::ServiceStatus::SERVICE_UNAVAILABLE;
-        std::condition_variable cv;
-        std::mutex              mtx;
-
-        auto status_cb = [&](telux::common::ServiceStatus s) {
-            std::lock_guard<std::mutex> lock(mtx);
-            updated    = true;
-            svc_status = s;
-            cv.notify_all();
-        };
-
-        auto &factory = telux::cv2x::Cv2xFactoryImpl::getInstance();
-        auto  mgr     = factory.getCv2xRadioManager(status_cb);
+        auto &factory = telux::cv2x::Cv2xFactory::getInstance();
+        auto  mgr     = factory.getCv2xRadioManager();
         if (!mgr) throw std::runtime_error("getCv2xRadioManager returned null");
 
-        {
-            std::unique_lock<std::mutex> lk(mtx);
-            cv.wait(lk, [&] { return updated; });
-        }
-        if (svc_status != telux::common::ServiceStatus::SERVICE_AVAILABLE)
+        if (!mgr->onReady().get())
             throw std::runtime_error("Radio manager not available");
 
         /* ── 2. Request C-V2X status ───────────────────────────────────── */
