@@ -1,9 +1,10 @@
 /*
  * C-compatible wrapper for the Qualcomm Telematics SDK (telux) C-V2X API.
  *
- * Implements the interface declared in cv2x_wrapper.h.  The logic mirrors
- * cv2x_link_layer.cpp but exposes separate SPS and event TX paths and avoids
- * any pybind11 dependency.
+ * Uses the Telux C++ SDK (libtelux_cv2x.so) v1.46.0 which handles:
+ *   - QCMAP data call setup (rmnet_data15/rmnet_data16 bring-up)
+ *   - QMI service registration
+ *   - Flow creation and socket management
  *
  * Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
  * SPDX-License-Identifier: AGPL-3.0-only
@@ -11,65 +12,55 @@
 
 #include "cv2x_wrapper.h"
 
-#include <array>
 #include <cstring>
+#include <condition_variable>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <memory>
-#include <stdexcept>
+#include <mutex>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <telux/cv2x/Cv2xFactory.hpp>
 #include <telux/cv2x/Cv2xRadio.hpp>
-
-using std::promise;
-using std::shared_ptr;
-using telux::common::ErrorCode;
-using telux::common::Status;
-using telux::cv2x::Cv2xStatus;
-using telux::cv2x::Cv2xStatusType;
-using telux::cv2x::ICv2xRadio;
-using telux::cv2x::ICv2xRxSubscription;
-using telux::cv2x::ICv2xTxFlow;
-using telux::cv2x::Periodicity;
-using telux::cv2x::Priority;
-using telux::cv2x::SpsFlowInfo;
-using telux::cv2x::TrafficCategory;
-using telux::cv2x::TrafficIpType;
-
-/* ── Public Cv2xFactory (declared in Cv2xFactory.hpp, included via Cv2xRadio.hpp) ── */
+#include <telux/cv2x/Cv2xRadioManager.hpp>
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
-static constexpr uint32_t SPS_SERVICE_ID    = 1u;
-static constexpr uint16_t SPS_SRC_PORT      = 2500u;
-static constexpr uint16_t EVENT_SRC_PORT    = 2501u;
-static constexpr uint16_t RX_PORT           = 9000u;
-static constexpr uint32_t BUF_LEN           = 3000u;
-static constexpr int       TX_PRIORITY      = 3;
+static constexpr uint32_t SPS_SERVICE_ID  = 1u;
+static constexpr uint16_t SPS_SRC_PORT    = 2500u;
+static constexpr uint16_t EVENT_SRC_PORT  = 2501u;
+static constexpr uint16_t RX_PORT         = 9000u;
+static constexpr uint32_t BUF_LEN         = 3000u;
+static constexpr int      TX_PRIORITY     = 3;
 
-/* ── Opaque handle definition ──────────────────────────────────────────── */
+using namespace telux::cv2x;
+using namespace telux::common;
+
+/* ── Opaque handle ─────────────────────────────────────────────────────── */
 struct cv2x_handle {
-    shared_ptr<ICv2xRadio>           radio;
-    shared_ptr<ICv2xTxFlow>          sps_flow;
-    shared_ptr<ICv2xTxFlow>          event_flow;
-    shared_ptr<ICv2xRxSubscription>  rx_sub;
-    Cv2xStatus                       status;
-    promise<ErrorCode>               cb_promise;
+    std::shared_ptr<ICv2xRadioManager>   radioManager;
+    std::shared_ptr<ICv2xRadio>          radio;
+    std::shared_ptr<ICv2xTxFlow>         spsFlow;
+    std::shared_ptr<ICv2xTxFlow>         eventFlow;
+    std::shared_ptr<ICv2xRxSubscription> rxSub;
 };
 
-/* ── Internal helpers ──────────────────────────────────────────────────── */
+/* ── Helpers ───────────────────────────────────────────────────────────── */
 
-/**
- * Send a datagram on the given socket fd using sendmsg() with IPV6_TCLASS
- * ancillary data (required by the telux non-IP socket interface).
+/*
+ * Send data on a Telux-managed socket with IPV6_TCLASS ancillary data.
+ * msg_name is left NULL because the Telux SDK already connects/binds the
+ * socket to the correct destination when creating the flow.
  */
-static int send_on_sock(int sock, const uint8_t *data, size_t len, int priority)
+static int send_with_priority(int sock, const uint8_t *data, size_t len, int prio)
 {
     struct msghdr   message = {};
     struct iovec    iov[1]  = {};
     char            control[CMSG_SPACE(sizeof(int))];
+    std::memset(control, 0, sizeof(control));
 
     iov[0].iov_base = const_cast<uint8_t *>(data);
     iov[0].iov_len  = len;
@@ -83,176 +74,269 @@ static int send_on_sock(int sock, const uint8_t *data, size_t len, int priority)
     cmsghp->cmsg_level = IPPROTO_IPV6;
     cmsghp->cmsg_type  = IPV6_TCLASS;
     cmsghp->cmsg_len   = CMSG_LEN(sizeof(int));
-    std::memcpy(CMSG_DATA(cmsghp), &priority, sizeof(int));
+    std::memcpy(CMSG_DATA(cmsghp), &prio, sizeof(int));
 
-    return (sendmsg(sock, &message, 0) >= 0) ? 0 : -1;
+    ssize_t ret = sendmsg(sock, &message, 0);
+    if (ret < 0) {
+        std::cerr << "[cv2x_wrapper] sendmsg failed: " << strerror(errno) << std::endl;
+        return -1;
+    }
+    return 0;
 }
 
 /* ── Public C API ──────────────────────────────────────────────────────── */
 
-cv2x_handle_t *cv2x_init(void)
+cv2x_handle_t *rfx_cv2x_init(void)
 {
-    auto h = new (std::nothrow) cv2x_handle();
+    auto *h = new (std::nothrow) cv2x_handle;
     if (!h) return nullptr;
 
-    try {
-        /* ── 1. Radio manager ──────────────────────────────────────────── */
-        auto &factory = telux::cv2x::Cv2xFactory::getInstance();
-        auto  mgr     = factory.getCv2xRadioManager();
-        if (!mgr) throw std::runtime_error("getCv2xRadioManager returned null");
+    /* ── 1. Get Cv2xRadioManager ──────────────────────────────────────── */
+    std::cerr << "[cv2x_wrapper] Step 1/4: getting Cv2xRadioManager..." << std::endl;
 
-        if (!mgr->onReady().get())
-            throw std::runtime_error("Radio manager not available");
+    bool statusUpdated = false;
+    ServiceStatus managerStatus = ServiceStatus::SERVICE_UNAVAILABLE;
+    std::condition_variable cv;
+    std::mutex mtx;
 
-        /* ── 2. Request C-V2X status ───────────────────────────────────── */
-        h->cb_promise = promise<ErrorCode>();
-        auto stat_cb  = [h](Cv2xStatus st, ErrorCode err) {
-            if (err == ErrorCode::SUCCESS) h->status = st;
-            h->cb_promise.set_value(err);
-        };
-        if (Status::SUCCESS != mgr->requestCv2xStatus(stat_cb))
-            throw std::runtime_error("requestCv2xStatus failed");
-        if (ErrorCode::SUCCESS != h->cb_promise.get_future().get())
-            throw std::runtime_error("CV2X status error");
+    auto statusCb = [&](ServiceStatus status) {
+        std::lock_guard<std::mutex> lock(mtx);
+        statusUpdated = true;
+        managerStatus = status;
+        cv.notify_all();
+    };
 
-        /* ── 3. Get radio handle (SAFETY_TYPE) ─────────────────────────── */
-        h->radio = mgr->getCv2xRadio(TrafficCategory::SAFETY_TYPE);
-        if (!h->radio->isReady()) {
-            if (Status::SUCCESS != h->radio->onReady().get())
-                throw std::runtime_error("Radio onReady failed");
-        }
-
-        /* ── 4. Create combined SPS + event TX flow ────────────────────── */
-        SpsFlowInfo sps_info;
-        sps_info.priority                = Priority::PRIORITY_2;
-        sps_info.periodicity             = Periodicity::PERIODICITY_100MS;
-        sps_info.nbytesReserved          = BUF_LEN;
-        sps_info.autoRetransEnabledValid = true;
-        sps_info.autoRetransEnabled      = true;
-
-        h->cb_promise = promise<ErrorCode>();
-        auto sps_cb   = [h](shared_ptr<ICv2xTxFlow> sps,
-                          shared_ptr<ICv2xTxFlow> evt,
-                          ErrorCode sps_err,
-                          ErrorCode evt_err) {
-            if (sps_err == ErrorCode::SUCCESS) h->sps_flow   = sps;
-            if (evt_err == ErrorCode::SUCCESS) h->event_flow  = evt;
-            /* Report the SPS error; the event flow is best-effort. */
-            h->cb_promise.set_value(sps_err);
-        };
-
-        if (Status::SUCCESS !=
-            h->radio->createTxSpsFlow(
-                TrafficIpType::TRAFFIC_NON_IP,
-                SPS_SERVICE_ID,
-                sps_info,
-                SPS_SRC_PORT,
-                true,               /* eventSrcPortValid — create event flow too */
-                EVENT_SRC_PORT,
-                sps_cb))
-        {
-            throw std::runtime_error("createTxSpsFlow failed");
-        }
-        if (ErrorCode::SUCCESS != h->cb_promise.get_future().get())
-            throw std::runtime_error("SPS flow creation error");
-
-        /* If the event flow was not created (older firmware), log but continue */
-        if (!h->event_flow) {
-            std::cerr << "[cv2x_wrapper] Warning: event flow not created; "
-                         "all TX will use SPS flow\n";
-        }
-
-        /* ── 5. Create RX subscription ─────────────────────────────────── */
-        h->cb_promise = promise<ErrorCode>();
-        auto rx_cb    = [h](shared_ptr<ICv2xRxSubscription> sub, ErrorCode err) {
-            if (err == ErrorCode::SUCCESS) h->rx_sub = sub;
-            h->cb_promise.set_value(err);
-        };
-        if (Status::SUCCESS !=
-            h->radio->createRxSubscription(
-                TrafficIpType::TRAFFIC_NON_IP,
-                RX_PORT,
-                rx_cb))
-        {
-            throw std::runtime_error("createRxSubscription failed");
-        }
-        if (ErrorCode::SUCCESS != h->cb_promise.get_future().get())
-            throw std::runtime_error("RX subscription error");
-
-    } catch (const std::exception &ex) {
-        std::cerr << "[cv2x_wrapper] init error: " << ex.what() << "\n";
+    auto &factory = Cv2xFactory::getInstance();
+    h->radioManager = factory.getCv2xRadioManager(statusCb);
+    if (!h->radioManager) {
+        std::cerr << "[cv2x_wrapper] ERROR: getCv2xRadioManager returned null" << std::endl;
         delete h;
         return nullptr;
     }
 
+    {
+        std::unique_lock<std::mutex> lck(mtx);
+        cv.wait(lck, [&] { return statusUpdated; });
+    }
+
+    if (managerStatus != ServiceStatus::SERVICE_AVAILABLE) {
+        std::cerr << "[cv2x_wrapper] ERROR: RadioManager not SERVICE_AVAILABLE (status="
+                  << static_cast<int>(managerStatus) << ")" << std::endl;
+        delete h;
+        return nullptr;
+    }
+
+    std::cerr << "[cv2x_wrapper] Step 1/4: RadioManager ready" << std::endl;
+
+    /* ── 2. Check radio status ────────────────────────────────────────── */
+    std::cerr << "[cv2x_wrapper] Step 2/4: checking radio status..." << std::endl;
+
+    {
+        std::promise<ErrorCode> p;
+        auto f = p.get_future();
+        h->radioManager->requestCv2xStatus(
+            [&p](Cv2xStatus status, ErrorCode err) {
+                if (err == ErrorCode::SUCCESS) {
+                    const char *txNames[] = {"INACTIVE", "ACTIVE", "SUSPENDED"};
+                    const char *rxNames[] = {"INACTIVE", "ACTIVE", "SUSPENDED"};
+                    int tx = static_cast<int>(status.txStatus);
+                    int rx = static_cast<int>(status.rxStatus);
+                    std::cerr << "[cv2x_wrapper] TX="
+                              << ((tx >= 0 && tx <= 2) ? txNames[tx] : "?")
+                              << " RX="
+                              << ((rx >= 0 && rx <= 2) ? rxNames[rx] : "?")
+                              << std::endl;
+                }
+                p.set_value(err);
+            });
+        if (f.get() != ErrorCode::SUCCESS) {
+            std::cerr << "[cv2x_wrapper] WARNING: requestCv2xStatus failed" << std::endl;
+        }
+    }
+
+    /* Get radio handle */
+    h->radio = h->radioManager->getCv2xRadio(TrafficCategory::SAFETY_TYPE);
+    if (!h->radio) {
+        std::cerr << "[cv2x_wrapper] ERROR: getCv2xRadio returned null" << std::endl;
+        delete h;
+        return nullptr;
+    }
+
+    if (!h->radio->isReady()) {
+        std::cerr << "[cv2x_wrapper] Waiting for radio to be ready..." << std::endl;
+        if (h->radio->onReady().get() != Status::SUCCESS) {
+            std::cerr << "[cv2x_wrapper] ERROR: radio failed to become ready" << std::endl;
+            delete h;
+            return nullptr;
+        }
+    }
+
+    std::cerr << "[cv2x_wrapper] Step 2/4: radio ready" << std::endl;
+
+    /* ── 3. Create TX flows ───────────────────────────────────────────── */
+    std::cerr << "[cv2x_wrapper] Step 3/4: creating TX flows..." << std::endl;
+
+    /* SPS flow (with optional event flow) */
+    {
+        SpsFlowInfo spsInfo;
+        spsInfo.priority         = Priority::PRIORITY_2;
+        spsInfo.periodicity      = Periodicity::PERIODICITY_100MS;
+        spsInfo.nbytesReserved   = BUF_LEN;
+        spsInfo.autoRetransEnabledValid = true;
+        spsInfo.autoRetransEnabled      = true;
+
+        std::promise<ErrorCode> p;
+        auto f = p.get_future();
+
+        auto rc = h->radio->createTxSpsFlow(
+            TrafficIpType::TRAFFIC_NON_IP,
+            SPS_SERVICE_ID,
+            spsInfo,
+            SPS_SRC_PORT,
+            true,               /* eventSrcPortValid */
+            EVENT_SRC_PORT,     /* eventSrcPort */
+            [h, &p](std::shared_ptr<ICv2xTxFlow> spsFlow,
+                     std::shared_ptr<ICv2xTxFlow> evtFlow,
+                     ErrorCode spsErr,
+                     ErrorCode evtErr) {
+                if (spsErr == ErrorCode::SUCCESS) {
+                    h->spsFlow = spsFlow;
+                    std::cerr << "[cv2x_wrapper] SPS flow created (sock="
+                              << spsFlow->getSock() << ", port="
+                              << spsFlow->getPortNum() << ")" << std::endl;
+                }
+                if (evtErr == ErrorCode::SUCCESS && evtFlow) {
+                    h->eventFlow = evtFlow;
+                    std::cerr << "[cv2x_wrapper] Event flow created (sock="
+                              << evtFlow->getSock() << ", port="
+                              << evtFlow->getPortNum() << ")" << std::endl;
+                }
+                p.set_value(spsErr);
+            });
+
+        if (rc != Status::SUCCESS) {
+            std::cerr << "[cv2x_wrapper] ERROR: createTxSpsFlow returned "
+                      << static_cast<int>(rc) << std::endl;
+            rfx_cv2x_destroy(h);
+            return nullptr;
+        }
+
+        if (f.get() != ErrorCode::SUCCESS) {
+            std::cerr << "[cv2x_wrapper] ERROR: SPS flow creation failed" << std::endl;
+            rfx_cv2x_destroy(h);
+            return nullptr;
+        }
+    }
+
+    std::cerr << "[cv2x_wrapper] Step 3/4: TX flows created" << std::endl;
+
+    /* ── 4. Create RX subscription ────────────────────────────────────── */
+    std::cerr << "[cv2x_wrapper] Step 4/4: creating RX subscription..." << std::endl;
+
+    {
+        std::promise<ErrorCode> p;
+        auto f = p.get_future();
+
+        auto rc = h->radio->createRxSubscription(
+            TrafficIpType::TRAFFIC_NON_IP,
+            RX_PORT,
+            [h, &p](std::shared_ptr<ICv2xRxSubscription> rxSub, ErrorCode err) {
+                if (err == ErrorCode::SUCCESS && rxSub) {
+                    h->rxSub = rxSub;
+                    std::cerr << "[cv2x_wrapper] RX subscription created (sock="
+                              << rxSub->getSock() << ")" << std::endl;
+                }
+                p.set_value(err);
+            });
+
+        if (rc != Status::SUCCESS) {
+            std::cerr << "[cv2x_wrapper] ERROR: createRxSubscription returned "
+                      << static_cast<int>(rc) << std::endl;
+            rfx_cv2x_destroy(h);
+            return nullptr;
+        }
+
+        if (f.get() != ErrorCode::SUCCESS) {
+            std::cerr << "[cv2x_wrapper] ERROR: RX subscription creation failed" << std::endl;
+            rfx_cv2x_destroy(h);
+            return nullptr;
+        }
+    }
+
+    std::cerr << "[cv2x_wrapper] Step 4/4: RX subscription ready" << std::endl;
+    std::cerr << "[cv2x_wrapper] Initialisation complete" << std::endl;
+
     return h;
 }
 
-int cv2x_send_sps(cv2x_handle_t *h, const uint8_t *data, size_t len)
+int rfx_cv2x_send_sps(cv2x_handle_t *h, const uint8_t *data, size_t len)
 {
-    if (!h || !h->sps_flow) return -1;
-    return send_on_sock(h->sps_flow->getSock(), data, len, TX_PRIORITY);
+    if (!h || !h->spsFlow) return -1;
+    return send_with_priority(h->spsFlow->getSock(), data, len, TX_PRIORITY);
 }
 
-int cv2x_send_event(cv2x_handle_t *h, const uint8_t *data, size_t len)
+int rfx_cv2x_send_event(cv2x_handle_t *h, const uint8_t *data, size_t len)
 {
     if (!h) return -1;
-    /* Fall back to SPS flow if event flow was not created */
-    auto &flow = h->event_flow ? h->event_flow : h->sps_flow;
+
+    /* Prefer event flow; fall back to SPS flow */
+    auto &flow = h->eventFlow ? h->eventFlow : h->spsFlow;
     if (!flow) return -1;
-    return send_on_sock(flow->getSock(), data, len, TX_PRIORITY);
+
+    return send_with_priority(flow->getSock(), data, len, TX_PRIORITY);
 }
 
-int cv2x_receive(cv2x_handle_t *h, uint8_t *buf, size_t buf_len)
+int rfx_cv2x_receive(cv2x_handle_t *h, uint8_t *buf, size_t buf_len)
 {
-    if (!h || !h->rx_sub) return -1;
-    int sock = h->rx_sub->getSock();
-    ssize_t n = recv(sock, buf, buf_len, 0);
+    if (!h || !h->rxSub) return -1;
+    ssize_t n = recv(h->rxSub->getSock(), buf, buf_len, 0);
     return (n >= 0) ? static_cast<int>(n) : -1;
 }
 
-int cv2x_get_rx_sock(cv2x_handle_t *h)
+int rfx_cv2x_get_rx_sock(cv2x_handle_t *h)
 {
-    if (!h || !h->rx_sub) return -1;
-    return h->rx_sub->getSock();
+    if (!h || !h->rxSub) return -1;
+    return h->rxSub->getSock();
 }
 
-void cv2x_destroy(cv2x_handle_t *h)
+void rfx_cv2x_destroy(cv2x_handle_t *h)
 {
     if (!h) return;
 
+    /* Close TX flows and RX subscription via the SDK so the modem deregisters
+     * flows properly (matching what acme does on Ctrl+C). */
     if (h->radio) {
-        /* Close SPS flow */
-        if (h->sps_flow) {
-            h->cb_promise = promise<ErrorCode>();
-            h->radio->closeTxFlow(
-                h->sps_flow,
-                [h](shared_ptr<ICv2xTxFlow>, ErrorCode err) {
-                    h->cb_promise.set_value(err);
+        if (h->spsFlow) {
+            std::promise<ErrorCode> p;
+            auto f = p.get_future();
+            h->radio->closeTxFlow(h->spsFlow,
+                [&p](std::shared_ptr<ICv2xTxFlow>, ErrorCode err) {
+                    p.set_value(err);
                 });
-            h->cb_promise.get_future().get();
+            f.get();
+            h->spsFlow.reset();
         }
 
-        /* Close event flow */
-        if (h->event_flow) {
-            h->cb_promise = promise<ErrorCode>();
-            h->radio->closeTxFlow(
-                h->event_flow,
-                [h](shared_ptr<ICv2xTxFlow>, ErrorCode err) {
-                    h->cb_promise.set_value(err);
+        if (h->eventFlow) {
+            std::promise<ErrorCode> p;
+            auto f = p.get_future();
+            h->radio->closeTxFlow(h->eventFlow,
+                [&p](std::shared_ptr<ICv2xTxFlow>, ErrorCode err) {
+                    p.set_value(err);
                 });
-            h->cb_promise.get_future().get();
+            f.get();
+            h->eventFlow.reset();
         }
 
-        /* Close RX subscription */
-        if (h->rx_sub) {
-            h->cb_promise = promise<ErrorCode>();
-            h->radio->closeRxSubscription(
-                h->rx_sub,
-                [h](shared_ptr<ICv2xRxSubscription>, ErrorCode err) {
-                    h->cb_promise.set_value(err);
+        if (h->rxSub) {
+            std::promise<ErrorCode> p;
+            auto f = p.get_future();
+            h->radio->closeRxSubscription(h->rxSub,
+                [&p](std::shared_ptr<ICv2xRxSubscription>, ErrorCode err) {
+                    p.set_value(err);
                 });
-            h->cb_promise.get_future().get();
+            f.get();
+            h->rxSub.reset();
         }
     }
 

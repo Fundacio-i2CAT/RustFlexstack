@@ -34,7 +34,7 @@ typedef struct cv2x_handle cv2x_handle_t;
  * Returns a heap-allocated handle on success, or NULL on failure.
  * The caller must eventually call cv2x_destroy() to release resources.
  */
-cv2x_handle_t *cv2x_init(void);
+cv2x_handle_t *rfx_cv2x_init(void);
 
 /*
  * Send a packet through the SPS (Semi-Persistent Scheduling) TX flow.
@@ -42,7 +42,7 @@ cv2x_handle_t *cv2x_init(void);
  *
  * Returns 0 on success, -1 on error.
  */
-int cv2x_send_sps(cv2x_handle_t *h, const uint8_t *data, size_t len);
+int rfx_cv2x_send_sps(cv2x_handle_t *h, const uint8_t *data, size_t len);
 
 /*
  * Send a packet through the event-driven TX flow.
@@ -50,7 +50,7 @@ int cv2x_send_sps(cv2x_handle_t *h, const uint8_t *data, size_t len);
  *
  * Returns 0 on success, -1 on error.
  */
-int cv2x_send_event(cv2x_handle_t *h, const uint8_t *data, size_t len);
+int rfx_cv2x_send_event(cv2x_handle_t *h, const uint8_t *data, size_t len);
 
 /*
  * Blocking receive from the RX subscription.
@@ -58,7 +58,7 @@ int cv2x_send_event(cv2x_handle_t *h, const uint8_t *data, size_t len);
  * Reads up to buf_len bytes into buf.
  * Returns the number of bytes received on success, or -1 on error.
  */
-int cv2x_receive(cv2x_handle_t *h, uint8_t *buf, size_t buf_len);
+int rfx_cv2x_receive(cv2x_handle_t *h, uint8_t *buf, size_t buf_len);
 
 /*
  * Return the raw RX socket file descriptor.
@@ -66,13 +66,13 @@ int cv2x_receive(cv2x_handle_t *h, uint8_t *buf, size_t buf_len);
  *
  * Returns the fd on success, or -1 if the handle is invalid.
  */
-int cv2x_get_rx_sock(cv2x_handle_t *h);
+int rfx_cv2x_get_rx_sock(cv2x_handle_t *h);
 
 /*
  * Tear down all flows and subscriptions, then free the handle.
  * Safe to call with NULL (no-op).
  */
-void cv2x_destroy(cv2x_handle_t *h);
+void rfx_cv2x_destroy(cv2x_handle_t *h);
 
 #ifdef __cplusplus
 }

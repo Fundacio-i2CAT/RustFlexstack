@@ -18,12 +18,12 @@ pub struct cv2x_handle_t {
 }
 
 extern "C" {
-    pub fn cv2x_init() -> *mut cv2x_handle_t;
-    pub fn cv2x_send_sps(h: *mut cv2x_handle_t, data: *const u8, len: usize) -> c_int;
-    pub fn cv2x_send_event(h: *mut cv2x_handle_t, data: *const u8, len: usize) -> c_int;
-    pub fn cv2x_receive(h: *mut cv2x_handle_t, buf: *mut u8, buf_len: usize) -> c_int;
-    pub fn cv2x_get_rx_sock(h: *mut cv2x_handle_t) -> c_int;
-    pub fn cv2x_destroy(h: *mut cv2x_handle_t);
+    pub fn rfx_cv2x_init() -> *mut cv2x_handle_t;
+    pub fn rfx_cv2x_send_sps(h: *mut cv2x_handle_t, data: *const u8, len: usize) -> c_int;
+    pub fn rfx_cv2x_send_event(h: *mut cv2x_handle_t, data: *const u8, len: usize) -> c_int;
+    pub fn rfx_cv2x_receive(h: *mut cv2x_handle_t, buf: *mut u8, buf_len: usize) -> c_int;
+    pub fn rfx_cv2x_get_rx_sock(h: *mut cv2x_handle_t) -> c_int;
+    pub fn rfx_cv2x_destroy(h: *mut cv2x_handle_t);
 }
 
 /// Safe, owning wrapper around the C `cv2x_handle_t *`.
@@ -54,7 +54,7 @@ impl Cv2xHandle {
     /// Returns `Some(handle)` on success, `None` if the C layer returned NULL
     /// (radio unavailable, flow creation failure, etc.).
     pub fn new() -> Option<Self> {
-        let ptr = unsafe { cv2x_init() };
+        let ptr = unsafe { rfx_cv2x_init() };
         if ptr.is_null() {
             None
         } else {
@@ -64,25 +64,25 @@ impl Cv2xHandle {
 
     /// Send a packet via the SPS (Semi-Persistent Scheduling) flow.
     pub fn send_sps(&self, data: &[u8]) -> Result<(), ()> {
-        let ret = unsafe { cv2x_send_sps(self.ptr, data.as_ptr(), data.len()) };
+        let ret = unsafe { rfx_cv2x_send_sps(self.ptr, data.as_ptr(), data.len()) };
         if ret == 0 { Ok(()) } else { Err(()) }
     }
 
     /// Send a packet via the event-driven flow.
     pub fn send_event(&self, data: &[u8]) -> Result<(), ()> {
-        let ret = unsafe { cv2x_send_event(self.ptr, data.as_ptr(), data.len()) };
+        let ret = unsafe { rfx_cv2x_send_event(self.ptr, data.as_ptr(), data.len()) };
         if ret == 0 { Ok(()) } else { Err(()) }
     }
 
     /// Blocking receive.  Returns the received payload, or an error.
     pub fn receive(&self, buf: &mut [u8]) -> Result<usize, ()> {
-        let ret = unsafe { cv2x_receive(self.ptr, buf.as_mut_ptr(), buf.len()) };
+        let ret = unsafe { rfx_cv2x_receive(self.ptr, buf.as_mut_ptr(), buf.len()) };
         if ret >= 0 { Ok(ret as usize) } else { Err(()) }
     }
 
     /// Return the RX socket file descriptor for use with `poll()`.
     pub fn rx_sock_fd(&self) -> Option<c_int> {
-        let fd = unsafe { cv2x_get_rx_sock(self.ptr) };
+        let fd = unsafe { rfx_cv2x_get_rx_sock(self.ptr) };
         if fd >= 0 { Some(fd) } else { None }
     }
 
@@ -95,7 +95,7 @@ impl Cv2xHandle {
 impl Drop for Cv2xHandle {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
-            unsafe { cv2x_destroy(self.ptr) };
+            unsafe { rfx_cv2x_destroy(self.ptr) };
             self.ptr = ptr::null_mut();
         }
     }

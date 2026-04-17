@@ -5,49 +5,44 @@
 //!
 //! When the `cv2x` feature is enabled, the `cc` crate compiles
 //! `cv2x_ffi/cv2x_wrapper.cpp` into a static library and links it
-//! together with `telux_cv2x` and `telux_common` (dynamic).
+//! together with `libtelux_cv2x.so` and `libtelux_common.so` (dynamic).
 //!
-//! Set `TELUX_INCLUDE_DIR` to point to the telux header root if they
-//! are not under `/usr/include`.  Set `TELUX_LIB_DIR` if the `.so`
-//! files are not on the default library search path.
+//! Set `TELUX_INCLUDE_DIR` to point to the Telux SDK v1.46.0 headers.
+//! Set `TELUX_LIB_DIR` if the `.so` files are not on the default library
+//! search path.
 
 fn main() {
     #[cfg(feature = "cv2x")]
     {
-        let telux_include = std::env::var("TELUX_INCLUDE_DIR")
-            .unwrap_or_else(|_| "/usr/include".to_string());
-
-        cc::Build::new()
+        let mut build = cc::Build::new();
+        build
             .cpp(true)
-            .std("c++11")
             .file("cv2x_ffi/cv2x_wrapper.cpp")
-            .include("cv2x_ffi")
-            .include(&telux_include)
-            .compile("cv2x_wrapper_c");
+            .include("cv2x_ffi")            // picks up cv2x_wrapper.h
+            .flag("-std=c++14");
 
-        // If telux .so files live in a non-standard directory
+        // Telux SDK headers (v1.46.0)
+        if let Ok(inc_dir) = std::env::var("TELUX_INCLUDE_DIR") {
+            build.include(&inc_dir);
+        }
+
+        build.compile("cv2x_wrapper_cpp");
+
+        // If .so files live in a non-standard directory
         if let Ok(lib_dir) = std::env::var("TELUX_LIB_DIR") {
             println!("cargo:rustc-link-search=native={}", lib_dir);
-            // Cross-linking: tell the linker where to find DSOs that
-            // libtelux_cv2x.so pulls in transitively (libtelux_qmi,
-            // libqmi_common_so, libglib-2.0, …).  These are not needed
-            // on the build host but must be resolvable during the
-            // cross-link step.
             println!("cargo:rustc-link-arg=-Wl,-rpath-link,{}", lib_dir);
         }
 
+        // Telux SDK shared libraries
         println!("cargo:rustc-link-lib=dylib=telux_cv2x");
         println!("cargo:rustc-link-lib=dylib=telux_common");
-        println!("cargo:rustc-link-lib=dylib=telux_qmi");
-        println!("cargo:rustc-link-lib=dylib=qmi_common_so");
-        println!("cargo:rustc-link-lib=dylib=qmi_cci");
-        println!("cargo:rustc-link-lib=dylib=glib-2.0");
-        println!("cargo:rustc-link-lib=dylib=pcre");
-        println!("cargo:rustc-link-lib=dylib=dsutils");
-        println!("cargo:rustc-link-lib=dylib=dsi_netctrl");
 
-        println!("cargo:rerun-if-env-changed=TELUX_INCLUDE_DIR");
+        // C++ standard library
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+
         println!("cargo:rerun-if-env-changed=TELUX_LIB_DIR");
+        println!("cargo:rerun-if-env-changed=TELUX_INCLUDE_DIR");
         println!("cargo:rerun-if-changed=cv2x_ffi/cv2x_wrapper.cpp");
         println!("cargo:rerun-if-changed=cv2x_ffi/cv2x_wrapper.h");
     }
