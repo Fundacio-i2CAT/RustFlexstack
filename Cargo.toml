@@ -1,6 +1,6 @@
 [package]
 name = "rustflexstack"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "ETSI C-ITS GeoNetworking and BTP protocol stack in Rust"
 license = "AGPL-3.0-only"
@@ -22,40 +22,33 @@ sha2 = "0.10"
 p256 = { version = "0.13", features = ["ecdsa", "ecdsa-core"] }
 ecdsa = { version = "0.16", features = ["signing", "verifying"] }
 elliptic-curve = { version = "0.13", features = ["sec1"] }
+ctrlc = { version = "3", optional = true }
 
-[[example]]
-name = "cam_sender_receiver"
-path = "examples/cam_sender_receiver.rs"
+[build-dependencies]
+cc = { version = "1", optional = true }
+
+[features]
+cv2x = ["dep:cc", "dep:ctrlc"]
 
 [[example]]
 name = "denm_sender_receiver"
 path = "examples/denm_sender_receiver.rs"
 
 [[example]]
-name = "vam_sender_receiver"
-path = "examples/vam_sender_receiver.rs"
-
-[[example]]
 name = "generate_certificate_chain"
 path = "examples/generate_certificate_chain.rs"
 
 [[example]]
-name = "secured_cam_sender_receiver"
-path = "examples/secured_cam_sender_receiver.rs"
+name = "cv2x_denm_sender_receiver"
+path = "examples/cv2x_denm_sender_receiver.rs"
+required-features = ["cv2x"]
 
 [[example]]
-name = "secured_vam_sender_receiver"
-path = "examples/secured_vam_sender_receiver.rs"
+name = "v2x_cli"
+path = "examples/v2x_cli.rs"
 
 [[example]]
-name = "bench_cam_tx"
-path = "examples/bench_cam_tx.rs"
-
-[[example]]
-name = "bench_cam_rx"
-path = "examples/bench_cam_rx.rs"
-
-[[example]]
-name = "bench_congestion"
-path = "examples/bench_congestion.rs"
+name = "v2x_cli_cv2x"
+path = "examples/v2x_cli_cv2x.rs"
+required-features = ["cv2x"]
 

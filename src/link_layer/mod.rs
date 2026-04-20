@@ -9,3 +9,8 @@
 
 pub mod packet_consts;
 pub mod raw_link_layer;
+
+#[cfg(feature = "cv2x")]
+pub mod cv2x_ffi;
+#[cfg(feature = "cv2x")]
+pub mod cv2x_link_layer;

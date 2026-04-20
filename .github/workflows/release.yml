@@ -1,0 +1,156 @@
+name: Release
+
+# Triggered when a version tag is pushed (e.g. `git tag v0.3.0 && git push --tags`).
+# Creates a GitHub release with precompiled x86_64 binaries.
+#
+# C-V2X (aarch64) binaries cannot be built in CI because they require the
+# proprietary Qualcomm Telux SDK sysroot (headers + .so files).  Build them
+# locally with `cohda-toolchain/build-cv2x.sh --release` and attach them to
+# the release manually — see the job "attach-cv2x-instructions" output.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write          # needed to create releases and upload assets
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Build x86_64 binaries (all non-cv2x examples) ────────────────────────
+  build-x86_64:
+    name: Build x86_64 binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build all examples (release)
+        run: cargo build --release --examples --target x86_64-unknown-linux-gnu
+
+      - name: Collect binaries
+        run: |
+          mkdir -p dist/x86_64
+          EXAMPLES=(
+            v2x_cli
+            denm_sender_receiver
+            generate_certificate_chain
+          )
+          for ex in "${EXAMPLES[@]}"; do
+            cp "target/x86_64-unknown-linux-gnu/release/examples/${ex}" "dist/x86_64/"
+          done
+
+      - name: Create x86_64 tarball
+        run: |
+          cd dist
+          tar czf "rustflexstack-${GITHUB_REF_NAME}-x86_64-linux.tar.gz" x86_64/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-binaries
+          path: dist/rustflexstack-*-x86_64-linux.tar.gz
+
+  # ── Build aarch64 binaries (non-cv2x only) ──────────────────────────────
+  build-aarch64:
+    name: Build aarch64 binaries (non-cv2x)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cross-compilation toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build all examples (release)
+        run: cargo build --release --examples --target aarch64-unknown-linux-gnu
+
+      - name: Collect binaries
+        run: |
+          mkdir -p dist/aarch64
+          EXAMPLES=(
+            v2x_cli
+            denm_sender_receiver
+            generate_certificate_chain
+          )
+          for ex in "${EXAMPLES[@]}"; do
+            cp "target/aarch64-unknown-linux-gnu/release/examples/${ex}" "dist/aarch64/"
+          done
+
+      - name: Create aarch64 tarball
+        run: |
+          cd dist
+          tar czf "rustflexstack-${GITHUB_REF_NAME}-aarch64-linux.tar.gz" aarch64/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aarch64-binaries
+          path: dist/rustflexstack-*-aarch64-linux.tar.gz
+
+  # ── Create GitHub release ────────────────────────────────────────────────
+  release:
+    name: Create GitHub release
+    needs: [build-x86_64, build-aarch64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download x86_64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: x86_64-binaries
+          path: dist/
+
+      - name: Download aarch64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: aarch64-binaries
+          path: dist/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          generate_release_notes: true
+          files: |
+            dist/rustflexstack-*-x86_64-linux.tar.gz
+            dist/rustflexstack-*-aarch64-linux.tar.gz
+          body: |
+            ## Precompiled binaries
+
+            | Archive | Architecture | Link layer | Contents |
+            |---------|-------------|------------|----------|
+            | `rustflexstack-${{ github.ref_name }}-x86_64-linux.tar.gz` | x86_64 | Raw Ethernet | v2x_cli, denm_sender_receiver, generate_certificate_chain |
+            | `rustflexstack-${{ github.ref_name }}-aarch64-linux.tar.gz` | aarch64 | Raw Ethernet | Same as x86_64 (for ARM64 devices without C-V2X) |
+
+            ### C-V2X binaries (Cohda MK6)
+
+            C-V2X binaries require the proprietary Qualcomm Telux SDK and must be built locally:
+
+            ```bash
+            cd cohda-toolchain
+            ./build-cv2x.sh --release
+            ```
+
+            This produces the following aarch64 binaries in `target/aarch64-unknown-linux-gnu/release/examples/`:
+            - `v2x_cli_cv2x` — Comprehensive V2X node with all services (C-V2X link layer)
+            - `cv2x_denm_sender_receiver` — DENM sender/receiver (event flow)
+
+            To attach them to this release, use the GitHub CLI:
+            ```bash
+            gh release upload ${{ github.ref_name }} target/aarch64-unknown-linux-gnu/release/examples/v2x_cli_cv2x
+            ```

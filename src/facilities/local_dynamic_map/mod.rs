@@ -60,6 +60,7 @@ pub mod ldm_types;
 
 pub use if_ldm_3::IfLdm3;
 pub use if_ldm_4::IfLdm4;
+pub use ldm_maintenance::AreaCenter;
 pub use ldm_storage::ItsDataObject;
 
 use std::sync::Arc;
@@ -89,6 +90,8 @@ pub struct LdmFacility {
     pub if_ldm_3: IfLdm3,
     /// ETSI IF.LDM.4 — Data Consumer interface.
     pub if_ldm_4: IfLdm4,
+    /// Dynamically updatable maintenance area centre.
+    pub area_center: AreaCenter,
 }
 
 impl LdmFacility {
@@ -110,8 +113,13 @@ impl LdmFacility {
         let if_ldm_3 = IfLdm3::new(service.clone());
         let if_ldm_4 = IfLdm4::new(service.clone());
 
-        LdmMaintenance::spawn(service, area_lat_etsi, area_lon_etsi, area_radius_m);
+        let area_center =
+            LdmMaintenance::spawn(service, area_lat_etsi, area_lon_etsi, area_radius_m);
 
-        Arc::new(LdmFacility { if_ldm_3, if_ldm_4 })
+        Arc::new(LdmFacility {
+            if_ldm_3,
+            if_ldm_4,
+            area_center,
+        })
     }
 }

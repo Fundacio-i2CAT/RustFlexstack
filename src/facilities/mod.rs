@@ -12,6 +12,7 @@
 
 pub mod ca_basic_service;
 pub mod decentralized_environmental_notification_service;
+pub mod gpsd_location_service;
 pub mod local_dynamic_map;
 pub mod location_service;
 pub mod vru_awareness_service;
