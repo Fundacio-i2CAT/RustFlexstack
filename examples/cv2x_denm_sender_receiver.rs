@@ -37,7 +37,9 @@ use rustflexstack::geonet::mib::Mib;
 use rustflexstack::geonet::position_vector::LongPositionVector;
 use rustflexstack::geonet::router::Router as GNRouter;
 use rustflexstack::link_layer::cv2x_link_layer::Cv2xLinkLayer;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -83,7 +85,20 @@ fn main() {
     // ── Wire Cv2xLinkLayer ────────────────────────────────────────────────────
     let (ll_to_gn_tx, ll_to_gn_rx) = mpsc::channel::<Vec<u8>>();
     let cv2x_ll = Cv2xLinkLayer::new(ll_to_gn_tx, gn_to_ll_rx);
-    cv2x_ll.start();
+    let (stop_flag, ll_rx_join, ll_tx_join) = cv2x_ll.start();
+
+    // ── Ctrl+C handler ────────────────────────────────────────────────────────
+    let running = Arc::new(AtomicBool::new(true));
+    {
+        let running = Arc::clone(&running);
+        let stop_flag = Arc::clone(&stop_flag);
+        ctrlc::set_handler(move || {
+            eprintln!("\nterminating");
+            running.store(false, Ordering::SeqCst);
+            stop_flag.store(true, Ordering::SeqCst);
+        })
+        .expect("Failed to set Ctrl+C handler");
+    }
 
     // ── Wire threads ──────────────────────────────────────────────────────────
 
@@ -180,8 +195,16 @@ fn main() {
 
     // ── GPS publisher loop ────────────────────────────────────────────────────
     println!("Publishing GPS fixes @ 1 Hz — Ctrl+C to stop\n");
-    loop {
+    while running.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_secs(1));
         loc_svc.publish(gps_fix);
     }
+
+    // ── Graceful shutdown ─────────────────────────────────────────────────────
+    eprintln!("tearing down C-V2X flows...");
+    drop(gn_handle);
+    drop(btp_handle);
+    let _ = ll_rx_join.join();
+    let _ = ll_tx_join.join();
+    eprintln!("shutdown complete");
 }

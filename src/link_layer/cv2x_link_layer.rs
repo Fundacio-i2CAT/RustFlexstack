@@ -43,7 +43,7 @@ use super::cv2x_ffi::Cv2xHandle;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 /// Protocol byte prepended to every C-V2X non-IP frame.
 const CV2X_PROTOCOL_BYTE: u8 = 0x03;
@@ -139,10 +139,13 @@ impl Cv2xLinkLayer {
 
     /// Consume `self` and start the RX and TX background threads.
     ///
-    /// The threads run until:
-    /// - **RX**: `stop_flag` is set to `true`.
-    /// - **TX**: the `gn_rx` sender is dropped (channel closed).
-    pub fn start(self) {
+    /// Returns `(stop_flag, rx_join, tx_join)`.  To shut down gracefully:
+    ///
+    /// 1. Set `stop_flag` to `true`.
+    /// 2. Drop the `gn_to_ll_rx` sender so the TX channel closes.
+    /// 3. Join both handles — this ensures `Cv2xHandle::drop()` runs and
+    ///    the SDK closes all flows / QCMAP resources.
+    pub fn start(self) -> (Arc<AtomicBool>, JoinHandle<()>, JoinHandle<()>) {
         let Cv2xLinkLayer {
             gn_tx,
             gn_rx,
@@ -158,9 +161,11 @@ impl Cv2xLinkLayer {
         let handle_rx = Arc::clone(&handle);
         let handle_tx = Arc::clone(&handle);
         let stop_flag_rx = Arc::clone(&stop_flag);
+        let stop_flag_tx = Arc::clone(&stop_flag);
+        let stop_ret = Arc::clone(&stop_flag);
 
         // ── RX thread: C-V2X radio ──► GeoNetworking ─────────────────────
-        thread::spawn(move || {
+        let rx_join = thread::spawn(move || {
             // Get the RX socket fd for poll().
             let rx_fd = match handle_rx.rx_sock_fd() {
                 Some(fd) => fd,
@@ -214,8 +219,12 @@ impl Cv2xLinkLayer {
         });
 
         // ── TX thread: GeoNetworking ──► C-V2X radio ─────────────────────
-        thread::spawn(move || {
+        let tx_join = thread::spawn(move || {
             while let Ok(gn_payload) = gn_rx.recv() {
+                if stop_flag_tx.load(Ordering::Relaxed) {
+                    break;
+                }
+
                 // Build the CV2X frame: [0x03] [GN payload]
                 let mut frame = Vec::with_capacity(1 + gn_payload.len());
                 frame.push(CV2X_PROTOCOL_BYTE);
@@ -233,14 +242,13 @@ impl Cv2xLinkLayer {
                 };
 
                 if result.is_err() {
-                    eprintln!(
-                        "[CV2X TX] Send error (sps={})",
-                        use_sps
-                    );
+                    eprintln!("[CV2X TX] Send error (sps={})", use_sps);
                 }
             }
             eprintln!("[CV2X TX] Channel closed, thread exiting");
         });
+
+        (stop_ret, rx_join, tx_join)
     }
 }
 

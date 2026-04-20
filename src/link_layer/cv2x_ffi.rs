@@ -65,25 +65,41 @@ impl Cv2xHandle {
     /// Send a packet via the SPS (Semi-Persistent Scheduling) flow.
     pub fn send_sps(&self, data: &[u8]) -> Result<(), ()> {
         let ret = unsafe { rfx_cv2x_send_sps(self.ptr, data.as_ptr(), data.len()) };
-        if ret == 0 { Ok(()) } else { Err(()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     /// Send a packet via the event-driven flow.
     pub fn send_event(&self, data: &[u8]) -> Result<(), ()> {
         let ret = unsafe { rfx_cv2x_send_event(self.ptr, data.as_ptr(), data.len()) };
-        if ret == 0 { Ok(()) } else { Err(()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     /// Blocking receive.  Returns the received payload, or an error.
     pub fn receive(&self, buf: &mut [u8]) -> Result<usize, ()> {
         let ret = unsafe { rfx_cv2x_receive(self.ptr, buf.as_mut_ptr(), buf.len()) };
-        if ret >= 0 { Ok(ret as usize) } else { Err(()) }
+        if ret >= 0 {
+            Ok(ret as usize)
+        } else {
+            Err(())
+        }
     }
 
     /// Return the RX socket file descriptor for use with `poll()`.
     pub fn rx_sock_fd(&self) -> Option<c_int> {
         let fd = unsafe { rfx_cv2x_get_rx_sock(self.ptr) };
-        if fd >= 0 { Some(fd) } else { None }
+        if fd >= 0 {
+            Some(fd)
+        } else {
+            None
+        }
     }
 
     /// Raw pointer accessor (for advanced FFI use only).

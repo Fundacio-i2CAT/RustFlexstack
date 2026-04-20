@@ -61,32 +61,16 @@ cargo build --release
 To build and run examples:
 
 ```
-cargo run --example cam_sender_receiver
+# Comprehensive V2X CLI (CAM + DENM + VAM, optional security & GPSD)
+sudo cargo run --example v2x_cli -- --iface eth0 --send cam
+sudo cargo run --example v2x_cli -- --iface eth0 --send cam --security
+sudo cargo run --example v2x_cli -- --iface eth0 --send cam --gpsd
+
+# DENM sender/receiver
 cargo run --example denm_sender_receiver
-cargo run --example vam_sender_receiver
-```
 
-### Secured examples
-
-The secured examples require an ECDSA certificate chain. Generate it first,
-then run two instances (one per Authorization Ticket):
-
-```
+# Generate ECDSA certificate chain (needed for --security)
 cargo run --example generate_certificate_chain
-
-# Terminal 1:
-sudo cargo run --example secured_cam_sender_receiver -- --at 1
-# Terminal 2:
-sudo cargo run --example secured_cam_sender_receiver -- --at 2
-```
-
-The same pattern applies to the secured VAM example:
-
-```
-# Terminal 1:
-sudo cargo run --example secured_vam_sender_receiver -- --at 1
-# Terminal 2:
-sudo cargo run --example secured_vam_sender_receiver -- --at 2
 ```
 
 ### Cross-compilation for aarch64

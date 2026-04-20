@@ -7,7 +7,7 @@
 //! `cv2x_ffi/cv2x_wrapper.cpp` into a static library and links it
 //! together with `libtelux_cv2x.so` and `libtelux_common.so` (dynamic).
 //!
-//! Set `TELUX_INCLUDE_DIR` to point to the Telux SDK v1.46.0 headers.
+//! Set `TELUX_INCLUDE_DIR` to point to the Telux SDK headers.
 //! Set `TELUX_LIB_DIR` if the `.so` files are not on the default library
 //! search path.
 
@@ -18,10 +18,10 @@ fn main() {
         build
             .cpp(true)
             .file("cv2x_ffi/cv2x_wrapper.cpp")
-            .include("cv2x_ffi")            // picks up cv2x_wrapper.h
+            .include("cv2x_ffi") // picks up cv2x_wrapper.h
             .flag("-std=c++14");
 
-        // Telux SDK headers (v1.46.0)
+        // Telux SDK headers
         if let Ok(inc_dir) = std::env::var("TELUX_INCLUDE_DIR") {
             build.include(&inc_dir);
         }
