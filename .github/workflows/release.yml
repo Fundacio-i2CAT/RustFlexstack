@@ -29,12 +29,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-gnu
+          targets: x86_64-unknown-linux-musl
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build all examples (release)
-        run: cargo build --release --examples --target x86_64-unknown-linux-gnu
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build all examples (release, musl static)
+        run: cargo build --release --examples --target x86_64-unknown-linux-musl
 
       - name: Collect binaries
         run: |
@@ -45,7 +48,7 @@ jobs:
             generate_certificate_chain
           )
           for ex in "${EXAMPLES[@]}"; do
-            cp "target/x86_64-unknown-linux-gnu/release/examples/${ex}" "dist/x86_64/"
+            cp "target/x86_64-unknown-linux-musl/release/examples/${ex}" "dist/x86_64/"
           done
 
       - name: Create x86_64 tarball
@@ -68,15 +71,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-unknown-linux-gnu
+          targets: aarch64-unknown-linux-musl
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install cross-compilation toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Build all examples (release)
-        run: cargo build --release --examples --target aarch64-unknown-linux-gnu
+      - name: Build all examples (release, musl static)
+        run: cross build --release --examples --target aarch64-unknown-linux-musl
 
       - name: Collect binaries
         run: |
@@ -87,7 +90,7 @@ jobs:
             generate_certificate_chain
           )
           for ex in "${EXAMPLES[@]}"; do
-            cp "target/aarch64-unknown-linux-gnu/release/examples/${ex}" "dist/aarch64/"
+            cp "target/aarch64-unknown-linux-musl/release/examples/${ex}" "dist/aarch64/"
           done
 
       - name: Create aarch64 tarball
@@ -134,23 +137,21 @@ jobs:
 
             | Archive | Architecture | Link layer | Contents |
             |---------|-------------|------------|----------|
-            | `rustflexstack-${{ github.ref_name }}-x86_64-linux.tar.gz` | x86_64 | Raw Ethernet | v2x_cli, denm_sender_receiver, generate_certificate_chain |
-            | `rustflexstack-${{ github.ref_name }}-aarch64-linux.tar.gz` | aarch64 | Raw Ethernet | Same as x86_64 (for ARM64 devices without C-V2X) |
+            | `rustflexstack-v0.3.0-x86_64-linux.tar.gz` | x86_64 | Raw Ethernet | v2x_cli, denm_sender_receiver, generate_certificate_chain |
+            | `rustflexstack-v0.3.0-aarch64-linux.tar.gz` | aarch64 | Raw Ethernet | Same as x86_64 (for ARM64 devices without C-V2X) |
+            | `v2x_cli_cv2x` | aarch64 | C-V2X (PC5) | Comprehensive V2X CLI for Cohda MK6 devices |
+            | `cv2x_denm_sender_receiver` | aarch64 | C-V2X (PC5) | DENM sender/receiver for Cohda MK6 devices |
 
             ### C-V2X binaries (Cohda MK6)
 
-            C-V2X binaries require the proprietary Qualcomm Telux SDK and must be built locally:
+            The C-V2X binaries are precompiled and attached to this release. They target **Cohda MK6** on-board units (AArch64 / Qualcomm SA515M) and use the C-V2X PC5 radio interface for direct vehicle-to-vehicle communication.
 
-            ```bash
-            cd cohda-toolchain
-            ./build-cv2x.sh --release
-            ```
+            > **Licensing note:** The binaries themselves are provided under AGPL-3.0 and contain only RustFlexstack code. However, the cross-compilation toolchain used to build them depends on the proprietary Qualcomm Telux SDK (headers and shared libraries), which cannot be redistributed. The Telux shared libraries (`libtelux_cv2x.so`, `libtelux_common.so`, etc.) are **not** bundled — they are part of the Qualcomm firmware already present on MK6 devices. If you need to rebuild these binaries, you must obtain the Telux SDK separately from Qualcomm or Cohda Wireless.
 
-            This produces the following aarch64 binaries in `target/aarch64-unknown-linux-gnu/release/examples/`:
-            - `v2x_cli_cv2x` — Comprehensive V2X node with all services (C-V2X link layer)
-            - `cv2x_denm_sender_receiver` — DENM sender/receiver (event flow)
+            #### What do the C-V2X binaries do?
 
-            To attach them to this release, use the GitHub CLI:
-            ```bash
-            gh release upload ${{ github.ref_name }} target/aarch64-unknown-linux-gnu/release/examples/v2x_cli_cv2x
-            ```
+            - **`v2x_cli_cv2x`** — A full-featured V2X node that transmits and receives CAM, DENM, and VAM messages over the C-V2X PC5 sidelink radio. Supports ETSI security (IEEE 1609.2 signing and verification), live GPS via GPSD, and a Local Dynamic Map (LDM) for tracking nearby ITS stations. Run with `--help` for all options.
+
+            - **`cv2x_denm_sender_receiver`** — A focused DENM (Decentralized Environmental Notification Message) example that sends and receives road hazard warnings over C-V2X.
+
+            Both binaries require `cv2x-daemon` to be running on the MK6 device and the `rmnet_data16` network interface to be up.
