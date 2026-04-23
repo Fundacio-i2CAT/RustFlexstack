@@ -33,11 +33,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install musl toolchain
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Install cargo-zigbuild
+        run: pip install ziglang && cargo install cargo-zigbuild
 
       - name: Build all examples (release, musl static)
-        run: cargo build --release --examples --target x86_64-unknown-linux-musl
+        run: cargo zigbuild --release --examples --target x86_64-unknown-linux-musl
 
       - name: Collect binaries
         run: |
@@ -75,11 +75,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Install cargo-zigbuild
+        run: pip install ziglang && cargo install cargo-zigbuild
 
       - name: Build all examples (release, musl static)
-        run: cross build --release --examples --target aarch64-unknown-linux-musl
+        run: cargo zigbuild --release --examples --target aarch64-unknown-linux-musl
 
       - name: Collect binaries
         run: |
