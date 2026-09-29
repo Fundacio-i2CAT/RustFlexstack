@@ -170,7 +170,6 @@ impl Cv2xLinkLayer {
             let rx_fd = match handle_rx.rx_sock_fd() {
                 Some(fd) => fd,
                 None => {
-                    eprintln!("[CV2X RX] Failed to get RX socket fd");
                     return;
                 }
             };
@@ -209,13 +208,9 @@ impl Cv2xLinkLayer {
                     Ok(_) => {
                         // Empty or single-byte frame — skip
                     }
-                    Err(()) => {
-                        eprintln!("[CV2X RX] receive error");
-                    }
+                    Err(()) => {}
                 }
             }
-
-            eprintln!("[CV2X RX] Thread exiting");
         });
 
         // ── TX thread: GeoNetworking ──► C-V2X radio ─────────────────────
@@ -235,17 +230,12 @@ impl Cv2xLinkLayer {
                     .map(sps_classifier)
                     .unwrap_or(true); // Default to SPS for malformed packets
 
-                let result = if use_sps {
+                let _ = if use_sps {
                     handle_tx.send_sps(&frame)
                 } else {
                     handle_tx.send_event(&frame)
                 };
-
-                if result.is_err() {
-                    eprintln!("[CV2X TX] Send error (sps={})", use_sps);
-                }
             }
-            eprintln!("[CV2X TX] Channel closed, thread exiting");
         });
 
         (stop_ret, rx_join, tx_join)

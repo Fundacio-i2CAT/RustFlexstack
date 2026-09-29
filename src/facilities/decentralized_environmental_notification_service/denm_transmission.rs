@@ -262,7 +262,6 @@ impl DENMTransmissionManagement {
                 transmit_denm(&btp_handle, &coder, &denm, &request);
                 thread::sleep(interval);
             }
-            eprintln!("[DENM TX] Finished transmission period");
         });
     }
 
@@ -282,61 +281,52 @@ fn transmit_denm(
     denm: &Denm,
     request: &DENRequest,
 ) {
-    match coder.encode(denm) {
-        Ok(data) => {
-            // Event position in 1/10 µdeg for the GN area centre (Area uses u32).
-            let area_lat = ((request.event_latitude * 1e7).round() as i32)
-                .clamp(-900_000_000, 900_000_000) as u32;
-            let area_lon = ((request.event_longitude * 1e7).round() as i32)
-                .clamp(-1_800_000_000, 1_800_000_000) as u32;
+    if let Ok(data) = coder.encode(denm) {
+        // Event position in 1/10 µdeg for the GN area centre (Area uses u32).
+        let area_lat =
+            ((request.event_latitude * 1e7).round() as i32).clamp(-900_000_000, 900_000_000) as u32;
+        let area_lon = ((request.event_longitude * 1e7).round() as i32)
+            .clamp(-1_800_000_000, 1_800_000_000) as u32;
 
-            let req = BTPDataRequest {
-                btp_type: CommonNH::BtpB,
-                source_port: 0,
-                destination_port: 2002, // BTP port for DENM
-                destination_port_info: 0,
-                gn_packet_transport_type: PacketTransportType {
-                    header_type: HeaderType::GeoBroadcast,
-                    header_sub_type: HeaderSubType::GeoBroadcast(
-                        GeoBroadcastHST::GeoBroadcastCircle,
-                    ),
-                },
-                gn_destination_address: GNAddress {
-                    m: M::GnMulticast,
-                    st: ST::Unknown,
-                    mid: MID::new([0xFF; 6]),
-                },
-                communication_profile: CommunicationProfile::Unspecified,
-                gn_area: Area {
-                    latitude: area_lat,
-                    longitude: area_lon,
-                    a: request.relevance_radius_m as u16, // semi-major axis (m)
-                    b: 0,
-                    angle: 0,
-                },
-                traffic_class: TrafficClass {
-                    scf: false,
-                    channel_offload: false,
-                    tc_id: 0,
-                },
-                security_profile: SecurityProfile::DecentralizedEnvironmentalNotificationMessage,
-                its_aid: 37,
-                security_permissions: vec![],
-                gn_max_hop_limit: 10,
-                gn_max_packet_lifetime: None,
-                gn_repetition_interval: None,
-                gn_max_repetition_time: None,
-                destination: None,
-                length: data.len() as u16,
-                data,
-            };
+        let req = BTPDataRequest {
+            btp_type: CommonNH::BtpB,
+            source_port: 0,
+            destination_port: 2002, // BTP port for DENM
+            destination_port_info: 0,
+            gn_packet_transport_type: PacketTransportType {
+                header_type: HeaderType::GeoBroadcast,
+                header_sub_type: HeaderSubType::GeoBroadcast(GeoBroadcastHST::GeoBroadcastCircle),
+            },
+            gn_destination_address: GNAddress {
+                m: M::GnMulticast,
+                st: ST::Unknown,
+                mid: MID::new([0xFF; 6]),
+            },
+            communication_profile: CommunicationProfile::Unspecified,
+            gn_area: Area {
+                latitude: area_lat,
+                longitude: area_lon,
+                a: request.relevance_radius_m as u16, // semi-major axis (m)
+                b: 0,
+                angle: 0,
+            },
+            traffic_class: TrafficClass {
+                scf: false,
+                channel_offload: false,
+                tc_id: 0,
+            },
+            security_profile: SecurityProfile::DecentralizedEnvironmentalNotificationMessage,
+            its_aid: 37,
+            security_permissions: vec![],
+            gn_max_hop_limit: 10,
+            gn_max_packet_lifetime: None,
+            gn_repetition_interval: None,
+            gn_max_repetition_time: None,
+            destination: None,
+            length: data.len() as u16,
+            data,
+        };
 
-            btp_handle.send_btp_data_request(req);
-            eprintln!(
-                "[DENM TX] Sent DENM station_id={}",
-                denm.header.station_id.0
-            );
-        }
-        Err(e) => eprintln!("[DENM TX] Encode error: {}", e),
+        btp_handle.send_btp_data_request(req);
     }
 }

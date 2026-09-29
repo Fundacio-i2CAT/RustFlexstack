@@ -13,6 +13,30 @@ pub struct SNSignRequest {
     pub generation_location: Option<GenerationLocation>,
 }
 
+impl SNSignRequest {
+    pub fn new(
+        tbs_message: Vec<u8>,
+        its_aid: u64,
+        permissions: Vec<u8>,
+        generation_location: Option<GenerationLocation>,
+    ) -> Self {
+        Self {
+            tbs_message,
+            its_aid,
+            permissions,
+            generation_location,
+        }
+    }
+
+    pub fn tbs_message_length(&self) -> usize {
+        self.tbs_message.len()
+    }
+
+    pub fn permissions_length(&self) -> usize {
+        self.permissions.len()
+    }
+}
+
 /// 3-D location embedded in signed message headers.
 #[derive(Debug, Clone)]
 pub struct GenerationLocation {
@@ -25,6 +49,16 @@ pub struct GenerationLocation {
 #[derive(Debug, Clone)]
 pub struct SNSignConfirm {
     pub sec_message: Vec<u8>,
+}
+
+impl SNSignConfirm {
+    pub fn new(sec_message: Vec<u8>) -> Self {
+        Self { sec_message }
+    }
+
+    pub fn sec_message_length(&self) -> usize {
+        self.sec_message.len()
+    }
 }
 
 /// SN-VERIFY.request

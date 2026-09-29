@@ -41,36 +41,13 @@ impl VAMReceptionManagement {
 
         thread::spawn(move || {
             while let Ok(indication) = ind_rx.recv() {
-                match coder.decode(&indication.data) {
-                    Ok(vam) => {
-                        eprintln!(
-                            "[VAM RX] station={} gen_dt={} lat={:.5} lon={:.5}",
-                            vam.header.0.station_id.0,
-                            vam.vam.generation_delta_time.0,
-                            vam.vam
-                                .vam_parameters
-                                .basic_container
-                                .reference_position
-                                .latitude
-                                .0 as f64
-                                / 1e7,
-                            vam.vam
-                                .vam_parameters
-                                .basic_container
-                                .reference_position
-                                .longitude
-                                .0 as f64
-                                / 1e7,
-                        );
-                        // Forward to caller; if they dropped the receiver, stop quietly.
-                        if vam_tx.send(vam).is_err() {
-                            break;
-                        }
+                if let Ok(vam) = coder.decode(&indication.data) {
+                    // Forward to caller; if they dropped the receiver, stop quietly.
+                    if vam_tx.send(vam).is_err() {
+                        break;
                     }
-                    Err(e) => eprintln!("[VAM RX] Decode error (clause 7): {}", e),
                 }
             }
-            eprintln!("[VAM RX] Thread exiting");
         });
     }
 }

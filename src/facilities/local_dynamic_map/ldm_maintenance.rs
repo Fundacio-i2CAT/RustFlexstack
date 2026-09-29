@@ -110,30 +110,21 @@ impl LdmMaintenance {
                         let mut store = svc.store.write().unwrap();
 
                         // 1. Expiry-based garbage collection.
-                        let expired = store.remove_expired();
-                        if expired > 0 {
-                            eprintln!("[LDM Maintenance] Removed {expired} expired record(s)");
-                        }
+                        let _ = store.remove_expired();
 
                         // 2. Spatial garbage collection (if area is defined).
                         if area_radius_m > 0.0 {
-                            let out_of_area = store.remove_out_of_area(
+                            let _ = store.remove_out_of_area(
                                 center_clone.lat(),
                                 center_clone.lon(),
                                 area_radius_m,
                             );
-                            if out_of_area > 0 {
-                                eprintln!(
-                                    "[LDM Maintenance] Removed {out_of_area} out-of-area record(s)"
-                                );
-                            }
                         }
                     } // write lock released here
 
                     // 3. Fire subscriptions (takes store read-lock internally).
                     svc.fire_subscriptions();
                 }
-                eprintln!("[LDM Maintenance] Thread exiting");
             })
             .expect("failed to spawn ldm-maintenance thread");
 

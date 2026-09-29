@@ -50,8 +50,7 @@ use rustflexstack::facilities::decentralized_environmental_notification_service:
 use rustflexstack::facilities::gpsd_location_service::GpsdLocationService;
 use rustflexstack::facilities::local_dynamic_map::{
     ldm_constants::ITS_AID_CAM,
-    ldm_storage::ItsDataObject,
-    ldm_types::{RegisterDataConsumerReq, RegisterDataProviderReq, RequestDataObjectsReq},
+    ldm_types::{RegisterDataConsumerReq, RegisterDataProviderReq},
     LdmFacility,
 };
 use rustflexstack::facilities::location_service::{GpsFix, LocationService};
@@ -63,9 +62,12 @@ use rustflexstack::geonet::position_vector::LongPositionVector;
 use rustflexstack::geonet::router::Router as GNRouter;
 use rustflexstack::link_layer::raw_link_layer::RawLinkLayer;
 
-use rustflexstack::security::certificate::{Certificate, OwnCertificate};
+use rustflexstack::security::certificate::{
+    decode_ieee1609_dot2_data, Certificate, OwnCertificate,
+};
 use rustflexstack::security::certificate_library::CertificateLibrary;
 use rustflexstack::security::ecdsa_backend::EcdsaBackend;
+use rustflexstack::security::ieee1609_dot2::{Ieee1609Dot2Content, SignerIdentifier};
 use rustflexstack::security::pki_client::PkiClient;
 use rustflexstack::security::sign_service::SignService;
 use rustflexstack::security::sn_sap::{ReportVerify, SNSignRequest, SNVerifyRequest};
@@ -369,6 +371,15 @@ fn spawn_verify_middleware(
             match bh.nh {
                 BasicNH::SecuredPacket if packet.len() > 4 => {
                     let sec_message = &packet[4..];
+                    let data = decode_ieee1609_dot2_data(sec_message);
+                    let signer_type = match &data.content {
+                        Ieee1609Dot2Content::signedData(sd) => match &sd.signer {
+                            SignerIdentifier::certificate(_) => "certificate",
+                            SignerIdentifier::digest(_) => "digest",
+                            _ => "other",
+                        },
+                        _ => "unknown",
+                    };
                     let request = SNVerifyRequest {
                         message: sec_message.to_vec(),
                     };
@@ -393,8 +404,9 @@ fn spawn_verify_middleware(
                     };
                     if confirm.report == ReportVerify::Success {
                         println!(
-                            "[SEC RX] Verified OK — ITS-AID={}, cert={:02x?}",
+                            "[SEC RX] Verified OK — its_aid={}, signer={}, cert={:02x?}",
                             confirm.its_aid,
+                            signer_type,
                             &confirm.certificate_id[..],
                         );
                         let mut new_bh = bh;
@@ -764,7 +776,7 @@ fn main() {
         station_id,
         ..CamVehicleData::default()
     };
-    let (ca_svc, _cam_rx) = CooperativeAwarenessBasicService::new(
+    let (ca_svc, cam_rx) = CooperativeAwarenessBasicService::new(
         btp_handle.clone(),
         cam_vehicle_data,
         Some(ldm.clone()),
@@ -791,45 +803,34 @@ fn main() {
     let (vru_svc, vam_rx) = VruAwarenessService::new(btp_handle.clone(), device_data);
     vru_svc.start(vam_gps);
 
-    // ── LDM query printer (CAMs) ─────────────────────────────────────────
-    let ldm_reader = ldm.clone();
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(1));
-        let resp = ldm_reader
-            .if_ldm_4
-            .request_data_objects(RequestDataObjectsReq {
-                application_id: ITS_AID_CAM,
-                data_object_types: vec![ITS_AID_CAM],
-                filter: None,
-                order: None,
-                max_results: None,
-            });
-        if !resp.data_objects.is_empty() {
-            println!("[LDM] {} CAM record(s):", resp.data_objects.len());
-            for entry in &resp.data_objects {
-                if let ItsDataObject::Cam(cam) = &entry.data_object {
-                    let lat = cam
-                        .cam
-                        .cam_parameters
-                        .basic_container
-                        .reference_position
-                        .latitude
-                        .0 as f64
-                        / 1e7;
-                    let lon = cam
-                        .cam
-                        .cam_parameters
-                        .basic_container
-                        .reference_position
-                        .longitude
-                        .0 as f64
-                        / 1e7;
-                    println!(
-                        "  [CAM] record={:>5} station={:>10}  lat={:.5}  lon={:.5}",
-                        entry.record_id, cam.header.station_id.0, lat, lon,
-                    );
-                }
-            }
+    // ── CAM printer ──────────────────────────────────────────────────────
+    thread::spawn(move || {
+        while let Ok(cam) = cam_rx.recv() {
+            let lat = cam
+                .cam
+                .cam_parameters
+                .basic_container
+                .reference_position
+                .latitude
+                .0 as f64
+                / 1e7;
+            let lon = cam
+                .cam
+                .cam_parameters
+                .basic_container
+                .reference_position
+                .longitude
+                .0 as f64
+                / 1e7;
+            let lf_tag = if cam.cam.cam_parameters.low_frequency_container.is_some() {
+                " [LF]"
+            } else {
+                ""
+            };
+            println!(
+                "[CAM RX]  station={:>10}  lat={:.5}  lon={:.5}{}",
+                cam.header.station_id.0, lat, lon, lf_tag
+            );
         }
     });
 
@@ -876,15 +877,33 @@ fn main() {
     thread::sleep(Duration::from_millis(100));
 
     if let Some(mut loc_svc) = static_loc_svc {
-        println!("Publishing static GPS fixes @ 10 Hz — Ctrl+C to stop\n");
+        println!("Publishing simulated GPS fixes @ 10 Hz — Ctrl+C to stop\n");
+        let mut sim_lat = lat;
+        let mut sim_lon = lon;
+        let mut sim_heading = 0.0f64;
+        let sim_speed = 10.0f64; // ~36 km/h
+        let earth_r = 6_371_000.0f64;
+        let dt = 0.1f64; // 100 ms (10 Hz)
+
         loop {
             thread::sleep(Duration::from_millis(100));
+
+            // Heading change > 4.0 deg threshold (ETSI TS 103 900 §6.1.3 condition 1)
+            sim_heading = (sim_heading + 5.0) % 360.0;
+
+            // Position update (flat-Earth approximation)
+            let d = sim_speed * dt;
+            let heading_rad = sim_heading.to_radians();
+            let lat_rad = sim_lat.to_radians();
+            sim_lat += (d * heading_rad.cos() / earth_r).to_degrees();
+            sim_lon += (d * heading_rad.sin() / (earth_r * lat_rad.cos())).to_degrees();
+
             loc_svc.publish(GpsFix {
-                latitude: lat,
-                longitude: lon,
+                latitude: sim_lat,
+                longitude: sim_lon,
                 altitude_m: 120.0,
-                speed_mps: 0.0,
-                heading_deg: 0.0,
+                speed_mps: sim_speed,
+                heading_deg: sim_heading,
                 pai: true,
             });
         }

@@ -131,7 +131,6 @@ impl RawLinkLayer {
             let if_index = match find_interface(&iface_name_rx) {
                 Some(i) => i.index,
                 None => {
-                    eprintln!("[LL RX] Interface '{}' not found", iface_name_rx);
                     return;
                 }
             };
@@ -146,7 +145,6 @@ impl RawLinkLayer {
                 )
             };
             if sock < 0 {
-                eprintln!("[LL RX] Failed to open AF_PACKET socket");
                 return;
             }
 
@@ -155,18 +153,13 @@ impl RawLinkLayer {
             // transmitted to this socket — eliminates self-echo entirely.
             unsafe {
                 let val: libc::c_int = 1;
-                let ret = libc::setsockopt(
+                let _ = libc::setsockopt(
                     sock,
                     libc::SOL_PACKET,
                     23, // PACKET_IGNORE_OUTGOING
                     &val as *const libc::c_int as *const libc::c_void,
                     std::mem::size_of::<libc::c_int>() as libc::socklen_t,
                 );
-                if ret < 0 {
-                    eprintln!(
-                        "[LL RX] PACKET_IGNORE_OUTGOING not supported, falling back to MAC filter"
-                    );
-                }
             }
 
             // Bind to the specific interface so we don't receive from all NICs.
@@ -187,7 +180,6 @@ impl RawLinkLayer {
                 )
             };
             if ret < 0 {
-                eprintln!("[LL RX] Failed to bind socket");
                 unsafe {
                     libc::close(sock);
                 }
@@ -241,7 +233,6 @@ impl RawLinkLayer {
             unsafe {
                 libc::close(sock);
             }
-            eprintln!("[LL RX] Thread exiting");
         });
 
         // ── TX thread: GeoNetworking ──► NIC ─────────────────────────────────
@@ -249,7 +240,6 @@ impl RawLinkLayer {
             let interface = match find_interface(&iface_name_tx) {
                 Some(i) => i,
                 None => {
-                    eprintln!("[LL TX] Interface '{}' not found", iface_name_tx);
                     return;
                 }
             };
@@ -260,11 +250,9 @@ impl RawLinkLayer {
             let (mut tx, _rx) = match datalink::channel(&interface, config) {
                 Ok(Channel::Ethernet(t, r)) => (t, r),
                 Ok(_) => {
-                    eprintln!("[LL TX] Unexpected channel type");
                     return;
                 }
-                Err(e) => {
-                    eprintln!("[LL TX] Failed to open channel: {}", e);
+                Err(_) => {
                     return;
                 }
             };
@@ -276,11 +264,8 @@ impl RawLinkLayer {
                 let dest_mac: [u8; 6] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
                 let frame = build_eth_frame(dest_mac, mac_address, &gn_payload);
                 // send_to returns Option<io::Result<()>>; None means no-op.
-                if let Some(Err(e)) = tx.send_to(&frame, None) {
-                    eprintln!("[LL TX] Send error: {}", e);
-                }
+                let _ = tx.send_to(&frame, None);
             }
-            eprintln!("[LL TX] Channel closed, thread exiting");
         });
     }
 }

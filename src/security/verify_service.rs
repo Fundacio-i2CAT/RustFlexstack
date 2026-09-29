@@ -31,6 +31,26 @@ impl<'a> VerifyService<'a> {
             sign_service,
         }
     }
+
+    /// Verify a signed message request and dispatch any P2PCD/unknown-cert events
+    /// to the associated `SignService` if configured.
+    pub fn verify(&mut self, request: &SNVerifyRequest) -> SNVerifyConfirm {
+        let (confirm, events) = verify_message(request, self.backend, self.cert_library);
+        if let Some(ref mut sign_svc) = self.sign_service {
+            for event in events {
+                match event {
+                    VerifyEvent::UnknownAt(h8) => sign_svc.notify_unknown_at(&h8),
+                    VerifyEvent::InlineP2pcdRequest(h3s) => {
+                        sign_svc.notify_inline_p2pcd_request(&h3s);
+                    }
+                    VerifyEvent::ReceivedCaCertificate(cert) => {
+                        sign_svc.notify_received_ca_certificate(*cert);
+                    }
+                }
+            }
+        }
+        confirm
+    }
 }
 
 /// Stateless verification function that does not require a mutable `VerifyService`.
@@ -600,5 +620,30 @@ mod tests {
         // Just ensure they can be constructed and formatted
         assert!(format!("{:?}", ev1).contains("UnknownAt"));
         assert!(format!("{:?}", ev2).contains("InlineP2pcdRequest"));
+    }
+
+    #[test]
+    fn test_verify_service_instance_verify() {
+        let (_, _, mut svc) = setup();
+        let sec_msg = sign_cam_message(&mut svc);
+        let req = SNVerifyRequest { message: sec_msg };
+        let verify_backend = EcdsaBackend::new();
+        let mut verify_lib = CertificateLibrary::new(
+            &verify_backend,
+            svc.cert_library
+                .known_root_certificates
+                .values()
+                .cloned()
+                .collect(),
+            svc.cert_library
+                .known_authorization_authorities
+                .values()
+                .cloned()
+                .collect(),
+            vec![],
+        );
+        let mut verifier = VerifyService::new(&verify_backend, &mut verify_lib, Some(&mut svc));
+        let confirm = verifier.verify(&req);
+        assert_eq!(confirm.report, ReportVerify::Success);
     }
 }

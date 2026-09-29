@@ -41,24 +41,13 @@ impl DENMReceptionManagement {
 
         thread::spawn(move || {
             while let Ok(indication) = ind_rx.recv() {
-                match coder.decode(&indication.data) {
-                    Ok(denm) => {
-                        eprintln!(
-                            "[DENM RX] station={} seq={} lat={:.5} lon={:.5}",
-                            denm.header.station_id.0,
-                            denm.denm.management.action_id.sequence_number.0,
-                            denm.denm.management.event_position.latitude.0 as f64 / 1e7,
-                            denm.denm.management.event_position.longitude.0 as f64 / 1e7,
-                        );
-                        // Forward to caller; if they dropped the receiver, stop quietly.
-                        if denm_tx.send(denm).is_err() {
-                            break;
-                        }
+                if let Ok(denm) = coder.decode(&indication.data) {
+                    // Forward to caller; if they dropped the receiver, stop quietly.
+                    if denm_tx.send(denm).is_err() {
+                        break;
                     }
-                    Err(e) => eprintln!("[DENM RX] Decode error: {}", e),
                 }
             }
-            eprintln!("[DENM RX] Thread exiting");
         });
     }
 }

@@ -135,7 +135,6 @@ impl Router {
             CommonNH::BtpA => BTPAHeader::initialize_with_request(&request).encode(),
             CommonNH::BtpB => BTPBHeader::initialize_with_request(&request).encode(),
             _ => {
-                eprintln!("[BTP] Unsupported BTP type in request");
                 return;
             }
         };
@@ -170,7 +169,6 @@ impl Router {
 
     fn btpb_data_indication(&mut self, gn_ind: GNDataIndication) {
         if gn_ind.data.len() < 4 {
-            eprintln!("[BTP] BTP-B payload too short");
             return;
         }
         let btp_bytes: [u8; 4] = gn_ind.data[0..4].try_into().unwrap();
@@ -179,22 +177,13 @@ impl Router {
         let indication = BTPDataIndication::initialize_with_gn_data_indication(&gn_ind)
             .set_destination_port_and_info(header.destination_port, header.destination_port_info);
 
-        match self.port_callbacks.get(&indication.destination_port) {
-            Some(tx) => {
-                let _ = tx.send(indication);
-            }
-            None => {
-                eprintln!(
-                    "[BTP] No sink registered for port {}",
-                    indication.destination_port
-                );
-            }
+        if let Some(tx) = self.port_callbacks.get(&indication.destination_port) {
+            let _ = tx.send(indication);
         }
     }
 
     fn btpa_data_indication(&mut self, gn_ind: GNDataIndication) {
         if gn_ind.data.len() < 4 {
-            eprintln!("[BTP] BTP-A payload too short");
             return;
         }
         let btp_bytes: [u8; 4] = gn_ind.data[0..4].try_into().unwrap();
@@ -204,16 +193,8 @@ impl Router {
             .set_destination_port_and_info(header.destination_port(), 0);
         indication.source_port = header.source_port();
 
-        match self.port_callbacks.get(&indication.destination_port) {
-            Some(tx) => {
-                let _ = tx.send(indication);
-            }
-            None => {
-                eprintln!(
-                    "[BTP] No sink registered for port {}",
-                    indication.destination_port
-                );
-            }
+        if let Some(tx) = self.port_callbacks.get(&indication.destination_port) {
+            let _ = tx.send(indication);
         }
     }
 
@@ -221,7 +202,7 @@ impl Router {
         match gn_ind.upper_protocol_entity {
             CommonNH::BtpB => self.btpb_data_indication(gn_ind),
             CommonNH::BtpA => self.btpa_data_indication(gn_ind),
-            _ => eprintln!("[BTP] Unsupported upper protocol entity in indication"),
+            _ => {}
         }
     }
 }

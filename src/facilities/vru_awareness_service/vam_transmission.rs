@@ -273,7 +273,6 @@ impl VAMTransmissionManagement {
                         Ok(fix) => current_fix = Some(fix),
                         Err(RecvTimeoutError::Timeout) => break,
                         Err(RecvTimeoutError::Disconnected) => {
-                            eprintln!("[VAM TX] GPS channel closed, thread exiting");
                             return;
                         }
                     }
@@ -327,67 +326,60 @@ impl VAMTransmissionManagement {
 
                 let vam = build_vam(&fix, &device_data, lf);
 
-                match coder.encode(&vam) {
-                    Ok(data) => {
-                        let req = BTPDataRequest {
-                            btp_type: CommonNH::BtpB,
-                            source_port: 0,
-                            destination_port: 2018,
-                            destination_port_info: 0,
-                            gn_packet_transport_type: PacketTransportType {
-                                header_type: HeaderType::Tsb,
-                                header_sub_type: HeaderSubType::TopoBroadcast(
-                                    TopoBroadcastHST::SingleHop,
-                                ),
-                            },
-                            gn_destination_address: GNAddress {
-                                m: M::GnMulticast,
-                                st: ST::Unknown,
-                                mid: MID::new([0xFF; 6]),
-                            },
-                            communication_profile: CommunicationProfile::Unspecified,
-                            gn_area: Area {
-                                latitude: 0,
-                                longitude: 0,
-                                a: 0,
-                                b: 0,
-                                angle: 0,
-                            },
-                            traffic_class: TrafficClass {
-                                scf: false,
-                                channel_offload: false,
-                                tc_id: 0,
-                            },
-                            security_profile: SecurityProfile::VruAwarenessMessage,
-                            its_aid: 638,
-                            security_permissions: vec![],
-                            gn_max_hop_limit: 1,
-                            gn_max_packet_lifetime: None,
-                            gn_repetition_interval: None,
-                            gn_max_repetition_time: None,
-                            destination: None,
-                            length: data.len() as u16,
-                            data,
-                        };
-                        btp_handle.send_btp_data_request(req);
+                if let Ok(data) = coder.encode(&vam) {
+                    let req = BTPDataRequest {
+                        btp_type: CommonNH::BtpB,
+                        source_port: 0,
+                        destination_port: 2018,
+                        destination_port_info: 0,
+                        gn_packet_transport_type: PacketTransportType {
+                            header_type: HeaderType::Tsb,
+                            header_sub_type: HeaderSubType::TopoBroadcast(
+                                TopoBroadcastHST::SingleHop,
+                            ),
+                        },
+                        gn_destination_address: GNAddress {
+                            m: M::GnMulticast,
+                            st: ST::Unknown,
+                            mid: MID::new([0xFF; 6]),
+                        },
+                        communication_profile: CommunicationProfile::Unspecified,
+                        gn_area: Area {
+                            latitude: 0,
+                            longitude: 0,
+                            a: 0,
+                            b: 0,
+                            angle: 0,
+                        },
+                        traffic_class: TrafficClass {
+                            scf: false,
+                            channel_offload: false,
+                            tc_id: 0,
+                        },
+                        security_profile: SecurityProfile::VruAwarenessMessage,
+                        its_aid: 638,
+                        security_permissions: vec![],
+                        gn_max_hop_limit: 1,
+                        gn_max_packet_lifetime: None,
+                        gn_repetition_interval: None,
+                        gn_max_repetition_time: None,
+                        destination: None,
+                        length: data.len() as u16,
+                        data,
+                    };
+                    btp_handle.send_btp_data_request(req);
 
-                        eprintln!("[VAM TX] Sent VAM: station={}", device_data.station_id,);
+                    // Update state
+                    last_vam_time = Some(now);
+                    last_vam_lat = Some(fix.latitude);
+                    last_vam_lon = Some(fix.longitude);
+                    last_vam_speed = Some(fix.speed_mps);
+                    last_vam_heading = Some(fix.heading_deg);
 
-                        // Update state
-                        last_vam_time = Some(now);
-                        last_vam_lat = Some(fix.latitude);
-                        last_vam_lon = Some(fix.longitude);
-                        last_vam_speed = Some(fix.speed_mps);
-                        last_vam_heading = Some(fix.heading_deg);
-
-                        if include_lf {
-                            last_lf_time = Some(now);
-                        }
-                        is_first_vam = false;
+                    if include_lf {
+                        last_lf_time = Some(now);
                     }
-                    Err(e) => {
-                        eprintln!("[VAM TX] Encode error: {}", e);
-                    }
+                    is_first_vam = false;
                 }
             }
         });

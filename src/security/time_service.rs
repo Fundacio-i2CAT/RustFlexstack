@@ -20,6 +20,11 @@ pub fn unix_time_secs() -> f64 {
         .as_secs_f64()
 }
 
+/// Parity alias for Python `TimeService.time()`.
+pub fn time() -> f64 {
+    unix_time_secs()
+}
+
 /// Return the current ITS timestamp in **microseconds** (TAI, ITS epoch).
 ///
 /// This matches the `Time64` type used in `generationTime` fields inside
@@ -30,6 +35,11 @@ pub fn timestamp_its_microseconds() -> u64 {
         .expect("system clock before Unix epoch");
     let its_secs = now.as_secs() - ITS_EPOCH + ELAPSED_SECONDS;
     its_secs * 1_000_000 + u64::from(now.subsec_micros())
+}
+
+/// Parity alias for Python `TimeService.timestamp_its()` (returns milliseconds).
+pub fn timestamp_its() -> u64 {
+    timestamp_its_microseconds() / 1_000
 }
 
 #[cfg(test)]

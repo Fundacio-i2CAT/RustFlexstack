@@ -21,6 +21,7 @@ use crate::security::security_asn::ieee1609_dot2_base_types::{
 };
 
 /// ECDSA backend managing NIST P-256 key pairs.
+#[derive(Clone, Debug)]
 pub struct EcdsaBackend {
     keys: HashMap<usize, SigningKey>,
     next_id: usize,

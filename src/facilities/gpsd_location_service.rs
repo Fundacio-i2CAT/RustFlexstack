@@ -83,27 +83,18 @@ impl GpsdLocationService {
 
         thread::spawn(move || {
             loop {
-                eprintln!("[GPSD] Connecting to {} ...", addr);
-
-                match connect_and_watch(&addr) {
-                    Ok(reader) => {
-                        eprintln!("[GPSD] Connected — reading TPV fixes");
-                        for line in reader.lines() {
-                            match line {
-                                Ok(line) => {
-                                    if let Some(fix) = parse_tpv(&line) {
-                                        inner.publish(fix);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("[GPSD] Read error: {} — reconnecting", e);
-                                    break;
+                if let Ok(reader) = connect_and_watch(&addr) {
+                    for line in reader.lines() {
+                        match line {
+                            Ok(line) => {
+                                if let Some(fix) = parse_tpv(&line) {
+                                    inner.publish(fix);
                                 }
                             }
+                            Err(_) => {
+                                break;
+                            }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("[GPSD] Connection failed: {}", e);
                     }
                 }
 

@@ -337,7 +337,6 @@ impl Router {
                     .chain(sign_confirm.sec_message.iter().copied())
                     .collect();
             } else {
-                eprintln!("[GN] Security enabled but no SignService configured");
                 return GNDataConfirm {
                     result_code: ResultCode::Unspecified,
                 };
@@ -515,7 +514,6 @@ impl Router {
         let dest_addr = match &request.destination {
             Some(addr) => *addr,
             None => {
-                eprintln!("[GN] GUC request missing destination");
                 return GNDataConfirm {
                     result_code: ResultCode::Unspecified,
                 };
@@ -584,7 +582,6 @@ impl Router {
                 {
                     self.gn_data_request_shb(request)
                 } else {
-                    eprintln!("[GN] TSB multi-hop source not yet fully implemented");
                     GNDataConfirm {
                         result_code: ResultCode::Unspecified,
                     }
@@ -593,12 +590,9 @@ impl Router {
             HeaderType::GeoBroadcast => self.gn_data_request_gbc(request),
             HeaderType::GeoAnycast => self.gn_data_request_gac(request),
             HeaderType::GeoUnicast => self.gn_data_request_guc(request),
-            _ => {
-                eprintln!("[GN] Header type not supported");
-                GNDataConfirm {
-                    result_code: ResultCode::Unspecified,
-                }
-            }
+            _ => GNDataConfirm {
+                result_code: ResultCode::Unspecified,
+            },
         }
     }
 
@@ -609,7 +603,6 @@ impl Router {
     /// Top-level receive dispatcher — process Basic Header.
     pub fn process_basic_header(&mut self, packet: &[u8]) {
         if packet.len() < 4 {
-            eprintln!("[GN] Packet too short for Basic Header");
             return;
         }
         let basic_header = BasicHeader::decode(
@@ -618,7 +611,6 @@ impl Router {
                 .expect("BasicHeader slice wrong length"),
         );
         if basic_header.version != self.mib.itsGnProtocolVersion {
-            eprintln!("[GN] Protocol version mismatch");
             return;
         }
         let remaining = &packet[4..];
@@ -633,9 +625,7 @@ impl Router {
             BasicNH::SecuredPacket => {
                 self.process_security_header(remaining, &basic_header);
             }
-            _ => {
-                eprintln!("[GN] Basic NH not supported");
-            }
+            _ => {}
         }
     }
 
@@ -644,7 +634,6 @@ impl Router {
         let (backend, cert_library) = match (&self.verify_backend, &mut self.verify_cert_library) {
             (Some(b), Some(cl)) => (b, cl),
             _ => {
-                eprintln!("[GN] Secured packet received but no verify service configured");
                 return;
             }
         };
@@ -653,14 +642,26 @@ impl Router {
             message: packet.to_vec(),
         };
 
-        let (confirm, _events) =
+        let (confirm, events) =
             verify_service::verify_message(&verify_request, backend, cert_library);
 
+        if let Some(ref mut sign_service) = self.sign_service {
+            for event in events {
+                match event {
+                    verify_service::VerifyEvent::UnknownAt(h8) => {
+                        sign_service.notify_unknown_at(&h8);
+                    }
+                    verify_service::VerifyEvent::InlineP2pcdRequest(h3s) => {
+                        sign_service.notify_inline_p2pcd_request(&h3s);
+                    }
+                    verify_service::VerifyEvent::ReceivedCaCertificate(cert) => {
+                        sign_service.notify_received_ca_certificate(*cert);
+                    }
+                }
+            }
+        }
+
         if confirm.report != ReportVerify::Success {
-            eprintln!(
-                "[GN] Secured packet verification failed: {:?}",
-                confirm.report
-            );
             return;
         }
 
@@ -672,7 +673,6 @@ impl Router {
     /// Process Common Header and dispatch to appropriate handler.
     fn process_common_header(&mut self, packet: &[u8], basic_header: &BasicHeader) {
         if packet.len() < 8 {
-            eprintln!("[GN] Packet too short for Common Header");
             return;
         }
         let common_header = CommonHeader::decode(
@@ -683,7 +683,6 @@ impl Router {
         let payload = &packet[8..];
 
         if basic_header.rhl > common_header.mhl {
-            eprintln!("[GN] Hop limit exceeded");
             return;
         }
 
@@ -701,7 +700,6 @@ impl Router {
                 {
                     self.gn_data_indicate_tsb(payload, &common_header, basic_header)
                 } else {
-                    eprintln!("[GN] Unsupported TSB sub-type");
                     None
                 }
             }
@@ -718,10 +716,7 @@ impl Router {
                 self.gn_data_indicate_ls(payload, &common_header, basic_header);
                 None // LS never delivers to upper entity
             }
-            _ => {
-                eprintln!("[GN] Header type not supported");
-                None
-            }
+            _ => None,
         };
 
         if let Some(ind) = indication {
@@ -740,7 +735,6 @@ impl Router {
         basic_header: &BasicHeader,
     ) -> Option<GNDataIndication> {
         if packet.len() < 28 {
-            eprintln!("[GN] SHB packet too short");
             return None;
         }
         let lpv = LongPositionVector::decode(
@@ -798,7 +792,6 @@ impl Router {
         basic_header: &BasicHeader,
     ) -> Option<GNDataIndication> {
         if packet.len() < 44 {
-            eprintln!("[GN] GBC packet too short");
             return None;
         }
         let ext = GBCExtendedHeader::decode(
@@ -1152,9 +1145,7 @@ impl Router {
             HeaderSubType::LocationService(LocationServiceHST::LsReply) => {
                 self.gn_data_indicate_ls_reply(packet, common_header, basic_header);
             }
-            _ => {
-                eprintln!("[GN] Unknown LS HST");
-            }
+            _ => {}
         }
     }
 
