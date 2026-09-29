@@ -366,14 +366,12 @@ mod tests {
     use crate::security::certificate_library::CertificateLibrary;
     use crate::security::ecdsa_backend::EcdsaBackend;
     use crate::security::security_asn::ieee1609_dot2::{
-        CertificateId, EndEntityType, PsidGroupPermissions, PsidSsp, SequenceOfAppExtensions,
-        SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions,
-        SequenceOfPsidGroupPermissions, SequenceOfPsidSsp, SubjectPermissions,
-        ToBeSignedCertificate, VerificationKeyIndicator,
+        CertificateId, EndEntityType, PsidGroupPermissions, SequenceOfPsidGroupPermissions,
+        SubjectPermissions, ToBeSignedCertificate, VerificationKeyIndicator,
     };
     use crate::security::security_asn::ieee1609_dot2_base_types::{
-        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, HashedId3, Psid,
-        PublicVerificationKey, Time32, Uint16, Uint32, ValidityPeriod,
+        CrlSeries, Duration as AsnDuration, EccP256CurvePoint, HashedId3, Psid, PsidSsp,
+        PublicVerificationKey, SequenceOfPsidSsp, Time32, Uint16, Uint32, ValidityPeriod,
     };
     use crate::security::sign_service::SignService;
     use crate::security::sn_sap::{GenerationLocation, SNSignRequest, SNVerifyRequest};
@@ -407,9 +405,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![]),
-            SequenceOfCertIssueExtensions(vec![]),
-            SequenceOfCertRequestExtensions(vec![]),
+            None,
+            None,
+            None,
         )
     }
 
@@ -432,9 +430,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(pk),
             None,
-            SequenceOfAppExtensions(vec![]),
-            SequenceOfCertIssueExtensions(vec![]),
-            SequenceOfCertRequestExtensions(vec![]),
+            None,
+            None,
+            None,
         )
     }
 

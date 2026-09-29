@@ -16,7 +16,16 @@
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments
+    clippy::all
+)]
+pub mod pki_asn;
+pub mod pki_client;
+#[allow(
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    unused,
+    clippy::all
 )]
 pub mod security_asn;
 
@@ -27,3 +36,7 @@ pub mod sign_service;
 pub mod sn_sap;
 pub mod time_service;
 pub mod verify_service;
+
+pub use security_asn::{
+    etsi_ts103097_extension_module, etsi_ts103097_module, ieee1609_dot2, ieee1609_dot2_base_types,
+};

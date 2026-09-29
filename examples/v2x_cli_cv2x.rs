@@ -68,6 +68,7 @@ use rustflexstack::link_layer::cv2x_link_layer::Cv2xLinkLayer;
 use rustflexstack::security::certificate::{Certificate, OwnCertificate};
 use rustflexstack::security::certificate_library::CertificateLibrary;
 use rustflexstack::security::ecdsa_backend::EcdsaBackend;
+use rustflexstack::security::pki_client::PkiClient;
 use rustflexstack::security::sign_service::SignService;
 use rustflexstack::security::sn_sap::{ReportVerify, SNSignRequest, SNVerifyRequest};
 use rustflexstack::security::verify_service::{verify_message, VerifyEvent};
@@ -82,7 +83,14 @@ USAGE:
 OPTIONS:
     --send <cam|vam>       Transmit CAMs or VAMs [default: receive-only]
     --security             Enable ETSI TS 103 097 signing/verification
-    --at <1|2>             Authorization Ticket index [default: 1]
+    --pki                  Obtain certificates dynamically from ETSI TS 102 941 PKI (implies --security)
+    --ea-url <URL>         Enrolment Authority URL [default: http://localhost:8080]
+    --aa-url <URL>         Authorization Authority URL [default: http://localhost:8081]
+    --rca-cert <PATH>      Root CA certificate file [default: <certs-dir>/root_ca.cert or rca.coer]
+    --ea-cert <PATH>       EA certificate file [default: <certs-dir>/ea.cert or ea.coer]
+    --aa-cert <PATH>       AA certificate file [default: <certs-dir>/aa.cert or aa.coer]
+    --reprovision          Force reprovisioning from PKI even if cached AT exists
+    --at <1|2>             Authorization Ticket index (static mode) [default: 1]
     --certs-dir <PATH>     Certificate directory [default: certs/]
     --gpsd [<ADDR>]        Use real GPS from gpsd [default addr: 127.0.0.1:2947]
     --lat <DEG>            Static GPS latitude [default: 41.552]
@@ -93,8 +101,11 @@ EXAMPLES:
     # Receive-only:
     ./v2x_cli_cv2x
 
-    # Send CAMs with security and real GPS:
+    # Send CAMs with static security and real GPS:
     ./v2x_cli_cv2x --send cam --security --at 1 --gpsd
+
+    # Send CAMs with PKI certificates:
+    ./v2x_cli_cv2x --send cam --pki --ea-url http://localhost:8080 --aa-url http://localhost:8081
 
     # Send VAMs with static position:
     ./v2x_cli_cv2x --send vam --lat 41.386 --lon 2.112
@@ -151,6 +162,145 @@ fn build_security_stack(at_index: usize, certs_dir: &str) -> SignService {
     sign_service.add_own_certificate(own);
 
     sign_service
+}
+
+fn load_cert_from_first_available(
+    candidates: &[&Path],
+    issuer: Option<Certificate>,
+) -> Result<Certificate, String> {
+    for path in candidates {
+        if path.exists() {
+            let bytes =
+                fs::read(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+            return Ok(Certificate::from_bytes(&bytes, issuer));
+        }
+    }
+    Err(format!(
+        "None of the candidate files exist: {:?}",
+        candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+    ))
+}
+
+/// Build the security stack using a live or cached PKI-issued Authorization Ticket (AT).
+#[allow(clippy::too_many_arguments)]
+fn build_pki_security_stack(
+    ea_url: &str,
+    aa_url: &str,
+    rca_path: Option<&str>,
+    ea_path: Option<&str>,
+    aa_path: Option<&str>,
+    certs_dir: &str,
+    reprovision: bool,
+    its_id: [u8; 8],
+) -> Result<SignService, Box<dyn std::error::Error>> {
+    let cert_dir = Path::new(certs_dir);
+
+    let rca_p1 = cert_dir.join("root_ca.cert");
+    let rca_p2 = cert_dir.join("rca.coer");
+    let rca_p3 = cert_dir.join("rca.cert");
+    let rca_explicit;
+    let rca_candidates: Vec<&Path> = match rca_path {
+        Some(p) => {
+            rca_explicit = Path::new(p);
+            vec![rca_explicit]
+        }
+        None => vec![rca_p1.as_path(), rca_p2.as_path(), rca_p3.as_path()],
+    };
+    let rca_cert = load_cert_from_first_available(&rca_candidates, None)
+        .map_err(|e| format!("RCA certificate not found: {}", e))?;
+
+    let ea_p1 = cert_dir.join("ea.cert");
+    let ea_p2 = cert_dir.join("ea.coer");
+    let ea_explicit;
+    let ea_candidates: Vec<&Path> = match ea_path {
+        Some(p) => {
+            ea_explicit = Path::new(p);
+            vec![ea_explicit]
+        }
+        None => vec![ea_p1.as_path(), ea_p2.as_path()],
+    };
+    let ea_cert = load_cert_from_first_available(&ea_candidates, Some(rca_cert.clone()))
+        .map_err(|e| format!("EA certificate not found: {}", e))?;
+
+    let aa_p1 = cert_dir.join("aa.cert");
+    let aa_p2 = cert_dir.join("aa.coer");
+    let aa_explicit;
+    let aa_candidates: Vec<&Path> = match aa_path {
+        Some(p) => {
+            aa_explicit = Path::new(p);
+            vec![aa_explicit]
+        }
+        None => vec![aa_p1.as_path(), aa_p2.as_path()],
+    };
+    let aa_cert = load_cert_from_first_available(&aa_candidates, Some(rca_cert.clone()))
+        .map_err(|e| format!("AA certificate not found: {}", e))?;
+
+    println!(
+        "[PKI] Loaded RCA HashedId8: {:02x?}",
+        rca_cert.as_hashedid8()
+    );
+    println!(
+        "[PKI] Loaded  EA HashedId8: {:02x?}",
+        ea_cert.as_hashedid8()
+    );
+    println!(
+        "[PKI] Loaded  AA HashedId8: {:02x?}",
+        aa_cert.as_hashedid8()
+    );
+
+    let mut client = PkiClient::new(
+        ea_url,
+        aa_url,
+        ea_cert.clone(),
+        aa_cert.clone(),
+        rca_cert.clone(),
+        None,
+        cert_dir,
+        Some(its_id),
+        None,
+    );
+
+    let at_own = if !reprovision {
+        if let Some(cached) = client.load_at_from_disk(Some("at")) {
+            println!(
+                "[PKI] Reusing cached AT from disk: {}/at.cert (HashedId8: {:02x?})",
+                certs_dir,
+                cached.as_hashedid8()
+            );
+            cached
+        } else {
+            println!(
+                "[PKI] No cached AT found. Starting PKI provisioning (EA: {}, AA: {})...",
+                ea_url, aa_url
+            );
+            client.provision(None, None, None)?
+        }
+    } else {
+        println!(
+            "[PKI] Starting PKI provisioning (EA: {}, AA: {})...",
+            ea_url, aa_url
+        );
+        client.provision(None, None, None)?
+    };
+
+    println!(
+        "[PKI] Provisioning complete. Own AT HashedId8: {:02x?}",
+        at_own.as_hashedid8()
+    );
+
+    let cert_library = CertificateLibrary::new(
+        &client.backend,
+        vec![rca_cert],
+        vec![aa_cert],
+        vec![at_own.cert.clone()],
+    );
+    let mut sign_service = SignService::new(client.backend, cert_library);
+    sign_service.add_own_certificate(at_own);
+
+    Ok(sign_service)
 }
 
 /// Spawn the TX signing middleware thread.
@@ -272,6 +422,13 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let mut send_mode: Option<String> = None;
     let mut security = false;
+    let mut use_pki = false;
+    let mut ea_url = "http://localhost:8080".to_string();
+    let mut aa_url = "http://localhost:8081".to_string();
+    let mut rca_cert_path: Option<String> = None;
+    let mut ea_cert_path: Option<String> = None;
+    let mut aa_cert_path: Option<String> = None;
+    let mut reprovision = false;
     let mut at_index: usize = 1;
     let mut certs_dir = "certs".to_string();
     let mut use_gpsd = false;
@@ -297,6 +454,36 @@ fn main() {
             }
             "--security" => {
                 security = true;
+            }
+            "--pki" => {
+                use_pki = true;
+                security = true;
+            }
+            "--ea-url" => {
+                i += 1;
+                ea_url = args[i].clone();
+            }
+            "--aa-url" => {
+                i += 1;
+                aa_url = args[i].clone();
+            }
+            "--rca-cert" => {
+                i += 1;
+                rca_cert_path = Some(args[i].clone());
+            }
+            "--ea-cert" => {
+                i += 1;
+                ea_cert_path = Some(args[i].clone());
+            }
+            "--aa-cert" => {
+                i += 1;
+                aa_cert_path = Some(args[i].clone());
+            }
+            "--reprovision" => {
+                reprovision = true;
+            }
+            "--no-reprovision" => {
+                reprovision = false;
             }
             "--at" => {
                 i += 1;
@@ -342,7 +529,17 @@ fn main() {
         if security { "enabled" } else { "disabled" }
     );
     if security {
-        println!("  AT index: {}", at_index);
+        if use_pki {
+            println!("  Mode:     PKI (ETSI TS 102 941 S3/S2)");
+            println!("  EA URL:   {}", ea_url);
+            println!("  AA URL:   {}", aa_url);
+            if reprovision {
+                println!("  Reprovision: true");
+            }
+        } else {
+            println!("  Mode:     Static certificates");
+            println!("  AT index: {}", at_index);
+        }
         println!("  Certs:    {}/", certs_dir);
     }
     if use_gpsd {
@@ -432,7 +629,23 @@ fn main() {
     let ll_tx_source: mpsc::Receiver<Vec<u8>>;
 
     if security {
-        let sign_service = build_security_stack(at_index, &certs_dir);
+        let sign_service = if use_pki {
+            let mut its_id = [0u8; 8];
+            its_id[0..6].copy_from_slice(&mac);
+            build_pki_security_stack(
+                &ea_url,
+                &aa_url,
+                rca_cert_path.as_deref(),
+                ea_cert_path.as_deref(),
+                aa_cert_path.as_deref(),
+                &certs_dir,
+                reprovision,
+                its_id,
+            )
+            .expect("Failed to initialize PKI security stack")
+        } else {
+            build_security_stack(at_index, &certs_dir)
+        };
         println!(
             "Security stack loaded. Own AT HashedId8: {:02x?}",
             sign_service

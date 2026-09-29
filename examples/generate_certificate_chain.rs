@@ -20,8 +20,7 @@ use rasn::prelude::*;
 use rustflexstack::security::certificate::{encode_certificate, OwnCertificate};
 use rustflexstack::security::ecdsa_backend::EcdsaBackend;
 use rustflexstack::security::security_asn::ieee1609_dot2::{
-    CertificateId, EndEntityType, PsidGroupPermissions, SequenceOfAppExtensions,
-    SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions, SequenceOfPsidGroupPermissions,
+    CertificateId, EndEntityType, PsidGroupPermissions, SequenceOfPsidGroupPermissions,
     SubjectPermissions, ToBeSignedCertificate, VerificationKeyIndicator,
 };
 use rustflexstack::security::security_asn::ieee1609_dot2_base_types::{
@@ -122,9 +121,9 @@ fn main() {
                 ),
         ),
         None,
-        SequenceOfAppExtensions(Default::default()),
-        SequenceOfCertIssueExtensions(Default::default()),
-        SequenceOfCertRequestExtensions(Default::default()),
+        None,
+        None,
+        None,
     );
     let root_ca = OwnCertificate::initialize_self_signed(&mut backend, root_tbs);
     println!("Root CA  HashedId8: {:02x?}", root_ca.as_hashedid8());
@@ -153,9 +152,9 @@ fn main() {
                 ),
         ),
         None,
-        SequenceOfAppExtensions(Default::default()),
-        SequenceOfCertIssueExtensions(Default::default()),
-        SequenceOfCertRequestExtensions(Default::default()),
+        None,
+        None,
+        None,
     );
     let aa = OwnCertificate::initialize_issued(&mut backend, aa_tbs, &root_ca);
     println!("AA       HashedId8: {:02x?}", aa.as_hashedid8());
@@ -184,9 +183,9 @@ fn main() {
                     ),
             ),
             None,
-            SequenceOfAppExtensions(Default::default()),
-            SequenceOfCertIssueExtensions(Default::default()),
-            SequenceOfCertRequestExtensions(Default::default()),
+            None,
+            None,
+            None,
         );
         let at = OwnCertificate::initialize_issued(&mut backend, at_tbs, &aa);
         println!("{:<8} HashedId8: {:02x?}", name, at.as_hashedid8());

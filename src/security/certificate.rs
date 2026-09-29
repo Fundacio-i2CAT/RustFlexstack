@@ -495,9 +495,7 @@ mod tests {
 
     fn make_root_tbs() -> ToBeSignedCertificate {
         use crate::security::security_asn::ieee1609_dot2::{
-            CertificateId, EndEntityType, PsidGroupPermissions, SequenceOfAppExtensions,
-            SequenceOfCertIssueExtensions, SequenceOfCertRequestExtensions,
-            SequenceOfPsidGroupPermissions,
+            CertificateId, EndEntityType, PsidGroupPermissions, SequenceOfPsidGroupPermissions,
         };
         use crate::security::security_asn::ieee1609_dot2_base_types::{
             CrlSeries, Duration as AsnDuration, HashedId3, Time32, Uint16, Uint32, ValidityPeriod,
@@ -533,20 +531,17 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(placeholder_pk),
             None,
-            SequenceOfAppExtensions(vec![]),
-            SequenceOfCertIssueExtensions(vec![]),
-            SequenceOfCertRequestExtensions(vec![]),
+            None,
+            None,
+            None,
         )
     }
 
     fn make_at_tbs() -> ToBeSignedCertificate {
-        use crate::security::security_asn::ieee1609_dot2::{
-            CertificateId, PsidSsp, SequenceOfAppExtensions, SequenceOfCertIssueExtensions,
-            SequenceOfCertRequestExtensions, SequenceOfPsidSsp,
-        };
+        use crate::security::security_asn::ieee1609_dot2::CertificateId;
         use crate::security::security_asn::ieee1609_dot2_base_types::{
-            CrlSeries, Duration as AsnDuration, HashedId3, Psid, Time32, Uint16, Uint32,
-            ValidityPeriod,
+            CrlSeries, Duration as AsnDuration, HashedId3, Psid, PsidSsp, SequenceOfPsidSsp,
+            Time32, Uint16, Uint32, ValidityPeriod,
         };
 
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
@@ -570,9 +565,9 @@ mod tests {
             None,
             VerificationKeyIndicator::verificationKey(placeholder_pk),
             None,
-            SequenceOfAppExtensions(vec![]),
-            SequenceOfCertIssueExtensions(vec![]),
-            SequenceOfCertRequestExtensions(vec![]),
+            None,
+            None,
+            None,
         )
     }
 
@@ -694,5 +689,32 @@ mod tests {
         let issuer_h8 = at.cert.get_issuer_hashedid8();
         assert!(issuer_h8.is_some());
         assert_eq!(issuer_h8.unwrap(), root.as_hashedid8());
+    }
+
+    #[test]
+    fn certificate_decode_pythonpki_certs_if_present() {
+        let rca_path = std::path::Path::new(
+            "/home/jordimarias/Desktop/IDIADAPKI/pythonpki/rca_data/rca_cert.coer",
+        );
+        let ea_path =
+            std::path::Path::new("/home/jordimarias/Desktop/IDIADAPKI/pythonpki/ea_data/cert.coer");
+        let aa_path =
+            std::path::Path::new("/home/jordimarias/Desktop/IDIADAPKI/pythonpki/aa_data/cert.coer");
+
+        if rca_path.exists() {
+            let bytes = std::fs::read(rca_path).expect("read rca");
+            let cert = Certificate::from_bytes(&bytes, None);
+            assert_eq!(cert.base().r_type, CertificateType::explicit);
+        }
+        if ea_path.exists() {
+            let bytes = std::fs::read(ea_path).expect("read ea");
+            let cert = Certificate::from_bytes(&bytes, None);
+            assert_eq!(cert.base().r_type, CertificateType::explicit);
+        }
+        if aa_path.exists() {
+            let bytes = std::fs::read(aa_path).expect("read aa");
+            let cert = Certificate::from_bytes(&bytes, None);
+            assert_eq!(cert.base().r_type, CertificateType::explicit);
+        }
     }
 }

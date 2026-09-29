@@ -3,1093 +3,11 @@
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_base_types {
-    extern crate alloc;
-    pub use super::etsi_ts103097_module::{
-        EtsiTs103097Data, EtsiTs103097DataEncrypted, EtsiTs103097DataEncryptedUnicast,
-        EtsiTs103097DataSigned, EtsiTs103097DataSignedAndEncryptedUnicast,
-        EtsiTs103097DataSignedExternalPayload, EtsiTs103097DataUnsecured,
-    };
-    use super::ieee1609_dot2::*;
-    pub use super::ieee1609_dot2::{
-        CertificateId, GeographicRegion, HashedData, SequenceOfPsidGroupPermissions,
-        SequenceOfPsidSsp, SubjectAssurance, ValidityPeriod,
-    };
-    use super::ieee1609_dot2_base_types::*;
-    pub use super::ieee1609_dot2_base_types::{
-        HashedId8, PublicEncryptionKey, PublicVerificationKey, Signature, Time32,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, value("1..=255"))]
-    pub struct CertificateFormat(pub u8);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CertificateSubjectAttributes {
-        pub id: Option<CertificateId>,
-        #[rasn(identifier = "validityPeriod")]
-        pub validity_period: Option<ValidityPeriod>,
-        pub region: Option<GeographicRegion>,
-        #[rasn(identifier = "assuranceLevel")]
-        pub assurance_level: Option<SubjectAssurance>,
-        #[rasn(identifier = "appPermissions")]
-        pub app_permissions: Option<SequenceOfPsidSsp>,
-        #[rasn(identifier = "certIssuePermissions")]
-        pub cert_issue_permissions: Option<SequenceOfPsidGroupPermissions>,
-    }
-    impl CertificateSubjectAttributes {
-        pub fn new(
-            id: Option<CertificateId>,
-            validity_period: Option<ValidityPeriod>,
-            region: Option<GeographicRegion>,
-            assurance_level: Option<SubjectAssurance>,
-            app_permissions: Option<SequenceOfPsidSsp>,
-            cert_issue_permissions: Option<SequenceOfPsidGroupPermissions>,
-        ) -> Self {
-            Self {
-                id,
-                validity_period,
-                region,
-                assurance_level,
-                app_permissions,
-                cert_issue_permissions,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    pub enum EcSignature {
-        #[rasn(value("0.."))]
-        encryptedEcSignature(Ieee1609Dot2Data),
-        ecSignature(EtsiTs103097DataSignedExternalPayload),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct PublicKeys {
-        #[rasn(identifier = "verificationKey")]
-        pub verification_key: PublicVerificationKey,
-        #[rasn(identifier = "encryptionKey")]
-        pub encryption_key: Option<PublicEncryptionKey>,
-    }
-    impl PublicKeys {
-        pub fn new(
-            verification_key: PublicVerificationKey,
-            encryption_key: Option<PublicEncryptionKey>,
-        ) -> Self {
-            Self {
-                verification_key,
-                encryption_key,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct Version(pub Integer);
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_messages_ca {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::Version;
-    use super::etsi_ts102941_trust_lists::{ToBeSignedCrl, ToBeSignedRcaCtl, ToBeSignedTlmCtl};
-    use super::etsi_ts102941_types_authorization::{
-        EtsiTs102941ButterflyAuthorizationRequestX509Signed, InnerAtRequest, InnerAtResponse,
-    };
-    use super::etsi_ts102941_types_authorization_validation::{
-        AuthorizationValidationRequest, AuthorizationValidationResponse,
-    };
-    use super::etsi_ts102941_types_ca_management::CaCertificateRequest;
-    use super::etsi_ts102941_types_enrolment::{InnerEcRequestSignedForPop, InnerEcResponse};
-    use super::etsi_ts102941_types_link_certificate::{
-        ToBeSignedLinkCertificate, ToBeSignedLinkCertificateRca, ToBeSignedLinkCertificateTlm,
-    };
-    use super::etsi_ts103097_module::{
-        EtsiTs103097Data, EtsiTs103097DataEncryptedUnicast, EtsiTs103097DataSigned,
-        EtsiTs103097DataSignedAndEncryptedUnicast, EtsiTs103097DataSignedExternalPayload,
-    };
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_dot1_aca_ra_interface::{AcaRaCertResponse, RaAcaCertRequest};
-    use super::ieee1609_dot2_dot1_ee_ra_interface::{
-        EeRaCertRequest, EeRaDownloadRequest, RaEeCertInfo,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AuthorizationValidationRequestMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AuthorizationValidationRequestMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AuthorizationValidationResponseMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AuthorizationValidationResponseMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ButterflyCertRequestMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl ButterflyCertRequestMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ButterflyCertResponseMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl ButterflyCertResponseMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CaCertificateRekeyingMessage(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CaCertificateRequestMessage(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct RcaDoubleSignedLinkCertificateMessage(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct RcaSingleSignedLinkCertificateMessage(pub Ieee1609Dot2Data);
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_messages_itss_optional_privacy {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::Version;
-    use super::etsi_ts102941_trust_lists::{ToBeSignedCrl, ToBeSignedRcaCtl, ToBeSignedTlmCtl};
-    use super::etsi_ts102941_types_authorization::{
-        EtsiTs102941ButterflyAuthorizationRequestX509Signed, InnerAtRequest, InnerAtResponse,
-    };
-    use super::etsi_ts102941_types_enrolment::{InnerEcRequestSignedForPop, InnerEcResponse};
-    use super::etsi_ts102941_types_link_certificate::{
-        ToBeSignedLinkCertificate, ToBeSignedLinkCertificateTlm,
-    };
-    use super::etsi_ts103097_module::{
-        EtsiTs103097Data, EtsiTs103097DataEncryptedUnicast, EtsiTs103097DataSigned,
-        EtsiTs103097DataSignedAndEncryptedUnicast,
-    };
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_dot1_ee_ra_interface::{
-        EeRaCertRequest, EeRaDownloadRequest, RaEeCertInfo,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AuthorizationRequestMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AuthorizationRequestMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AuthorizationRequestMessageWithPop {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AuthorizationRequestMessageWithPop {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AuthorizationResponseMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AuthorizationResponseMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ButterflyAtDownloadRequestMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl ButterflyAtDownloadRequestMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ButterflyAuthorizationRequestMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl ButterflyAuthorizationRequestMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct ButterflyAuthorizationResponseMessage(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CertificateRevocationListMessage(pub Ieee1609Dot2Data);
-    #[doc = "***********"]
-    #[doc = "-- Messages"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EnrolmentRequestMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EnrolmentRequestMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EnrolmentResponseMessage {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EnrolmentResponseMessage {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "***********"]
-    #[doc = "-- EtsiTs102941Data"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EtsiTs102941Data {
-        #[rasn(value("1"))]
-        pub version: Version,
-        pub content: EtsiTs102941DataContent,
-    }
-    impl EtsiTs102941Data {
-        pub fn new(version: Version, content: EtsiTs102941DataContent) -> Self {
-            Self { version, content }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum EtsiTs102941DataContent {
-        enrolmentRequest(InnerEcRequestSignedForPop),
-        enrolmentResponse(InnerEcResponse),
-        authorizationRequest(InnerAtRequest),
-        authorizationResponse(InnerAtResponse),
-        certificateRevocationList(ToBeSignedCrl),
-        certificateTrustListTlm(ToBeSignedTlmCtl),
-        certificateTrustListRca(ToBeSignedRcaCtl),
-        authorizationValidationRequest(()),
-        authorizationValidationResponse(()),
-        caCertificateRequest(()),
-        #[rasn(extension_addition)]
-        linkCertificateTlm(ToBeSignedLinkCertificateTlm),
-        #[rasn(extension_addition)]
-        singleSignedLinkCertificateRca(()),
-        #[rasn(extension_addition)]
-        doubleSignedlinkCertificateRca(()),
-        #[rasn(extension_addition)]
-        butterflyAuthorizationRequest(EeRaCertRequest),
-        #[rasn(extension_addition)]
-        x509SignedbutterflyAuthorizationRequest(
-            EtsiTs102941ButterflyAuthorizationRequestX509Signed,
-        ),
-        #[rasn(extension_addition)]
-        butterflyAuthorizationResponse(RaEeCertInfo),
-        #[rasn(extension_addition)]
-        butterflyCertificateRequest(()),
-        #[rasn(extension_addition)]
-        butterflyCertificateResponse(()),
-        #[rasn(extension_addition)]
-        butterflyAtDownloadRequest(EeRaDownloadRequest),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct RcaCertificateTrustListMessage(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct TlmCertificateTrustListMessage(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct TlmLinkCertificateMessage(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct X509SignedButterflyAuthorizationRequestMessage(pub EtsiTs103097Data);
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_trust_lists {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{HashedId8, Time32, Version};
-    use super::etsi_ts103097_module::{
-        EtsiTs103097Certificate, EtsiTs103097DataSigned, EtsiTs103097DataSignedAndEncrypted,
-    };
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AaEntry {
-        #[rasn(identifier = "aaCertificate")]
-        pub aa_certificate: EtsiTs103097Certificate,
-        #[rasn(identifier = "accessPoint")]
-        pub access_point: Url,
-    }
-    impl AaEntry {
-        pub fn new(aa_certificate: EtsiTs103097Certificate, access_point: Url) -> Self {
-            Self {
-                aa_certificate,
-                access_point,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CrlEntry(pub HashedId8);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum CtlCommand {
-        add(CtlEntry),
-        delete(CtlDelete),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum CtlDelete {
-        cert(HashedId8),
-        dc(DcDelete),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum CtlEntry {
-        rca(RootCaEntry),
-        ea(EaEntry),
-        aa(AaEntry),
-        dc(DcEntry),
-        tlm(TlmEntry),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CtlFormat {
-        pub version: Version,
-        #[rasn(identifier = "nextUpdate")]
-        pub next_update: Time32,
-        #[rasn(identifier = "isFullCtl")]
-        pub is_full_ctl: bool,
-        #[rasn(value("0..=255"), identifier = "ctlSequence")]
-        pub ctl_sequence: u8,
-        #[rasn(identifier = "ctlCommands")]
-        pub ctl_commands: SequenceOf<CtlCommand>,
-    }
-    impl CtlFormat {
-        pub fn new(
-            version: Version,
-            next_update: Time32,
-            is_full_ctl: bool,
-            ctl_sequence: u8,
-            ctl_commands: SequenceOf<CtlCommand>,
-        ) -> Self {
-            Self {
-                version,
-                next_update,
-                is_full_ctl,
-                ctl_sequence,
-                ctl_commands,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct DcDelete(pub Url);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct DcEntry {
-        pub url: Url,
-        pub cert: SequenceOf<HashedId8>,
-    }
-    impl DcEntry {
-        pub fn new(url: Url, cert: SequenceOf<HashedId8>) -> Self {
-            Self { url, cert }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct DeltaCtl(pub CtlFormat);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EaEntry {
-        #[rasn(identifier = "eaCertificate")]
-        pub ea_certificate: EtsiTs103097Certificate,
-        #[rasn(identifier = "aaAccessPoint")]
-        pub aa_access_point: Url,
-        #[rasn(identifier = "itsAccessPoint")]
-        pub its_access_point: Option<Url>,
-    }
-    impl EaEntry {
-        pub fn new(
-            ea_certificate: EtsiTs103097Certificate,
-            aa_access_point: Url,
-            its_access_point: Option<Url>,
-        ) -> Self {
-            Self {
-                ea_certificate,
-                aa_access_point,
-                its_access_point,
-            }
-        }
-    }
-    #[doc = "***********"]
-    #[doc = "-- CTL"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct FullCtl(pub CtlFormat);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct RootCaEntry {
-        #[rasn(identifier = "selfsignedRootCa")]
-        pub selfsigned_root_ca: EtsiTs103097Certificate,
-        #[rasn(identifier = "successorTo")]
-        pub successor_to: Option<EtsiTs103097Certificate>,
-    }
-    impl RootCaEntry {
-        pub fn new(
-            selfsigned_root_ca: EtsiTs103097Certificate,
-            successor_to: Option<EtsiTs103097Certificate>,
-        ) -> Self {
-            Self {
-                selfsigned_root_ca,
-                successor_to,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct TlmEntry {
-        #[rasn(identifier = "selfSignedTLMCertificate")]
-        pub self_signed_tlmcertificate: EtsiTs103097Certificate,
-        #[rasn(identifier = "successorTo")]
-        pub successor_to: Option<EtsiTs103097Certificate>,
-        #[rasn(identifier = "accessPoint")]
-        pub access_point: Url,
-    }
-    impl TlmEntry {
-        pub fn new(
-            self_signed_tlmcertificate: EtsiTs103097Certificate,
-            successor_to: Option<EtsiTs103097Certificate>,
-            access_point: Url,
-        ) -> Self {
-            Self {
-                self_signed_tlmcertificate,
-                successor_to,
-                access_point,
-            }
-        }
-    }
-    #[doc = "***********"]
-    #[doc = "-- CRL"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct ToBeSignedCrl {
-        pub version: Version,
-        #[rasn(identifier = "thisUpdate")]
-        pub this_update: Time32,
-        #[rasn(identifier = "nextUpdate")]
-        pub next_update: Time32,
-        pub entries: SequenceOf<CrlEntry>,
-    }
-    impl ToBeSignedCrl {
-        pub fn new(
-            version: Version,
-            this_update: Time32,
-            next_update: Time32,
-            entries: SequenceOf<CrlEntry>,
-        ) -> Self {
-            Self {
-                version,
-                this_update,
-                next_update,
-                entries,
-            }
-        }
-    }
-    #[doc = "***********"]
-    #[doc = "-- RCA CTL"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct ToBeSignedRcaCtl(pub CtlFormat);
-    #[doc = "***********"]
-    #[doc = "-- TLM CTL"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct ToBeSignedTlmCtl(pub CtlFormat);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct Url(pub Ia5String);
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_types_authorization {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{
-        CertificateFormat, CertificateSubjectAttributes, EcSignature, HashedId8, PublicKeys,
-        Version,
-    };
-    use super::etsi_ts103097_module::{EtsiTs103097Certificate, EtsiTs103097DataSigned};
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_dot1_ee_ra_interface::EeRaInterfacePdu;
-    use super::ieee1609_dot2_dot1_protocol::{
-        Ieee1609Dot2DataSignedX509AuthenticatedCertRequest, ScmsPduScoped, SignerSingleX509Cert,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "***********"]
-    #[doc = "-- AuthorizationRequest/Response"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(enumerated)]
-    #[non_exhaustive]
-    pub enum AuthorizationResponseCode {
-        ok = 0,
-        #[rasn(identifier = "its-aa-cantparse")]
-        its_aa_cantparse = 1,
-        #[rasn(identifier = "its-aa-badcontenttype")]
-        its_aa_badcontenttype = 2,
-        #[rasn(identifier = "its-aa-imnottherecipient")]
-        its_aa_imnottherecipient = 3,
-        #[rasn(identifier = "its-aa-unknownencryptionalgorithm")]
-        its_aa_unknownencryptionalgorithm = 4,
-        #[rasn(identifier = "its-aa-decryptionfailed")]
-        its_aa_decryptionfailed = 5,
-        #[rasn(identifier = "its-aa-keysdontmatch")]
-        its_aa_keysdontmatch = 6,
-        #[rasn(identifier = "its-aa-incompleterequest")]
-        its_aa_incompleterequest = 7,
-        #[rasn(identifier = "its-aa-invalidencryptionkey")]
-        its_aa_invalidencryptionkey = 8,
-        #[rasn(identifier = "its-aa-outofsyncrequest")]
-        its_aa_outofsyncrequest = 9,
-        #[rasn(identifier = "its-aa-unknownea")]
-        its_aa_unknownea = 10,
-        #[rasn(identifier = "its-aa-invalidea")]
-        its_aa_invalidea = 11,
-        #[rasn(identifier = "its-aa-deniedpermissions")]
-        its_aa_deniedpermissions = 12,
-        #[rasn(identifier = "aa-ea-cantreachea")]
-        aa_ea_cantreachea = 13,
-        #[rasn(identifier = "ea-aa-cantparse")]
-        ea_aa_cantparse = 14,
-        #[rasn(identifier = "ea-aa-badcontenttype")]
-        ea_aa_badcontenttype = 15,
-        #[rasn(identifier = "ea-aa-imnottherecipient")]
-        ea_aa_imnottherecipient = 16,
-        #[rasn(identifier = "ea-aa-unknownencryptionalgorithm")]
-        ea_aa_unknownencryptionalgorithm = 17,
-        #[rasn(identifier = "ea-aa-decryptionfailed")]
-        ea_aa_decryptionfailed = 18,
-        invalidaa = 19,
-        invalidaasignature = 20,
-        wrongea = 21,
-        unknownits = 22,
-        invalidsignature = 23,
-        invalidencryptionkey = 24,
-        deniedpermissions = 25,
-        deniedtoomanycerts = 26,
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(
-        automatic_tags,
-        identifier = "EtsiTs102941ButterflyAuthorizationRequest-X509Signed"
-    )]
-    pub struct EtsiTs102941ButterflyAuthorizationRequestX509Signed {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EtsiTs102941ButterflyAuthorizationRequestX509Signed {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct InnerAtRequest {
-        #[rasn(identifier = "publicKeys")]
-        pub public_keys: PublicKeys,
-        #[rasn(size("32"), identifier = "hmacKey")]
-        pub hmac_key: OctetString,
-        #[rasn(identifier = "sharedAtRequest")]
-        pub shared_at_request: SharedAtRequest,
-        #[rasn(identifier = "ecSignature")]
-        pub ec_signature: EcSignature,
-    }
-    impl InnerAtRequest {
-        pub fn new(
-            public_keys: PublicKeys,
-            hmac_key: OctetString,
-            shared_at_request: SharedAtRequest,
-            ec_signature: EcSignature,
-        ) -> Self {
-            Self {
-                public_keys,
-                hmac_key,
-                shared_at_request,
-                ec_signature,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct InnerAtResponse {
-        #[rasn(size("16"), identifier = "requestHash")]
-        pub request_hash: OctetString,
-        #[rasn(identifier = "responseCode")]
-        pub response_code: AuthorizationResponseCode,
-        pub certificate: Option<EtsiTs103097Certificate>,
-    }
-    impl InnerAtResponse {
-        pub fn new(
-            request_hash: OctetString,
-            response_code: AuthorizationResponseCode,
-            certificate: Option<EtsiTs103097Certificate>,
-        ) -> Self {
-            Self {
-                request_hash,
-                response_code,
-                certificate,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct SharedAtRequest {
-        #[rasn(identifier = "eaId")]
-        pub ea_id: HashedId8,
-        #[rasn(size("16"), identifier = "keyTag")]
-        pub key_tag: OctetString,
-        #[rasn(identifier = "certificateFormat")]
-        pub certificate_format: CertificateFormat,
-        #[rasn(value("0.."), identifier = "requestedSubjectAttributes")]
-        pub requested_subject_attributes: CertificateSubjectAttributes,
-    }
-    impl SharedAtRequest {
-        pub fn new(
-            ea_id: HashedId8,
-            key_tag: OctetString,
-            certificate_format: CertificateFormat,
-            requested_subject_attributes: CertificateSubjectAttributes,
-        ) -> Self {
-            Self {
-                ea_id,
-                key_tag,
-                certificate_format,
-                requested_subject_attributes,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_types_authorization_validation {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{
-        CertificateFormat, CertificateSubjectAttributes, EcSignature, HashedId8, PublicKeys,
-        Version,
-    };
-    use super::etsi_ts102941_types_authorization::SharedAtRequest;
-    use super::etsi_ts103097_module::EtsiTs103097Certificate;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct AuthorizationValidationRequest {
-        #[rasn(identifier = "sharedAtRequest")]
-        pub shared_at_request: SharedAtRequest,
-        #[rasn(identifier = "ecSignature")]
-        pub ec_signature: EcSignature,
-    }
-    impl AuthorizationValidationRequest {
-        pub fn new(shared_at_request: SharedAtRequest, ec_signature: EcSignature) -> Self {
-            Self {
-                shared_at_request,
-                ec_signature,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct AuthorizationValidationResponse {
-        #[rasn(size("16"), identifier = "requestHash")]
-        pub request_hash: OctetString,
-        #[rasn(identifier = "responseCode")]
-        pub response_code: AuthorizationValidationResponseCode,
-        #[rasn(value("0.."), identifier = "confirmedSubjectAttributes")]
-        pub confirmed_subject_attributes: Option<CertificateSubjectAttributes>,
-    }
-    impl AuthorizationValidationResponse {
-        pub fn new(
-            request_hash: OctetString,
-            response_code: AuthorizationValidationResponseCode,
-            confirmed_subject_attributes: Option<CertificateSubjectAttributes>,
-        ) -> Self {
-            Self {
-                request_hash,
-                response_code,
-                confirmed_subject_attributes,
-            }
-        }
-    }
-    #[doc = "***********"]
-    #[doc = "-- AuthorizationValidationRequest/Response"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(enumerated)]
-    #[non_exhaustive]
-    pub enum AuthorizationValidationResponseCode {
-        ok = 0,
-        cantparse = 1,
-        badcontenttype = 2,
-        imnottherecipient = 3,
-        unknownencryptionalgorithm = 4,
-        decryptionfailed = 5,
-        invalidaa = 6,
-        invalidaasignature = 7,
-        wrongea = 8,
-        unknownits = 9,
-        invalidsignature = 10,
-        invalidencryptionkey = 11,
-        deniedpermissions = 12,
-        deniedtoomanycerts = 13,
-        deniedrequest = 14,
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_types_ca_management {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{CertificateSubjectAttributes, PublicKeys};
-    use super::etsi_ts103097_module::{EtsiTs103097Certificate, EtsiTs103097DataSigned};
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "***********"]
-    #[doc = "-- CA certificate request "]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CaCertificateRequest {
-        #[rasn(identifier = "publicKeys")]
-        pub public_keys: PublicKeys,
-        #[rasn(identifier = "requestedSubjectAttributes")]
-        pub requested_subject_attributes: CertificateSubjectAttributes,
-    }
-    impl CaCertificateRequest {
-        pub fn new(
-            public_keys: PublicKeys,
-            requested_subject_attributes: CertificateSubjectAttributes,
-        ) -> Self {
-            Self {
-                public_keys,
-                requested_subject_attributes,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_types_enrolment {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{
-        CertificateFormat, CertificateSubjectAttributes, EcSignature, HashedId8, PublicKeys,
-        Version,
-    };
-    use super::etsi_ts103097_module::{EtsiTs103097Certificate, EtsiTs103097DataSigned};
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "***********"]
-    #[doc = "-- EnrolmentRequest/Response"]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(enumerated)]
-    #[non_exhaustive]
-    pub enum EnrolmentResponseCode {
-        ok = 0,
-        cantparse = 1,
-        badcontenttype = 2,
-        imnottherecipient = 3,
-        unknownencryptionalgorithm = 4,
-        decryptionfailed = 5,
-        unknownits = 6,
-        invalidsignature = 7,
-        invalidencryptionkey = 8,
-        baditsstatus = 9,
-        incompleterequest = 10,
-        deniedpermissions = 11,
-        invalidkeys = 12,
-        deniedrequest = 13,
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct InnerEcRequest {
-        #[rasn(identifier = "itsId")]
-        pub its_id: OctetString,
-        #[rasn(identifier = "certificateFormat")]
-        pub certificate_format: CertificateFormat,
-        #[rasn(identifier = "publicKeys")]
-        pub public_keys: PublicKeys,
-        #[rasn(value("0.."), identifier = "requestedSubjectAttributes")]
-        pub requested_subject_attributes: CertificateSubjectAttributes,
-    }
-    impl InnerEcRequest {
-        pub fn new(
-            its_id: OctetString,
-            certificate_format: CertificateFormat,
-            public_keys: PublicKeys,
-            requested_subject_attributes: CertificateSubjectAttributes,
-        ) -> Self {
-            Self {
-                its_id,
-                certificate_format,
-                public_keys,
-                requested_subject_attributes,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct InnerEcRequestSignedForPop(pub Ieee1609Dot2Data);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct InnerEcResponse {
-        #[rasn(size("16"), identifier = "requestHash")]
-        pub request_hash: OctetString,
-        #[rasn(identifier = "responseCode")]
-        pub response_code: EnrolmentResponseCode,
-        pub certificate: Option<EtsiTs103097Certificate>,
-    }
-    impl InnerEcResponse {
-        pub fn new(
-            request_hash: OctetString,
-            response_code: EnrolmentResponseCode,
-            certificate: Option<EtsiTs103097Certificate>,
-        ) -> Self {
-            Self {
-                request_hash,
-                response_code,
-                certificate,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod etsi_ts102941_types_link_certificate {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{HashedData, Time32};
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "***********"]
-    #[doc = "-- Link certificate messages  "]
-    #[doc = "***********"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct ToBeSignedLinkCertificate {
-        #[rasn(identifier = "expiryTime")]
-        pub expiry_time: Time32,
-        #[rasn(identifier = "certificateHash")]
-        pub certificate_hash: HashedData,
-    }
-    impl ToBeSignedLinkCertificate {
-        pub fn new(expiry_time: Time32, certificate_hash: HashedData) -> Self {
-            Self {
-                expiry_time,
-                certificate_hash,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct ToBeSignedLinkCertificateRca(pub ToBeSignedLinkCertificate);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct ToBeSignedLinkCertificateTlm(pub ToBeSignedLinkCertificate);
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
+    clippy::too_many_arguments
 )]
 pub mod etsi_ts103097_extension_module {
     extern crate alloc;
-    use super::ieee1609_dot2::*;
     use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{HashedId8, Time32};
     use core::borrow::Borrow;
     use rasn::prelude::*;
     use std::sync::LazyLock;
@@ -1126,11 +44,11 @@ pub mod etsi_ts103097_extension_module {
     pub struct EtsiTs102941CtlRequest {
         #[rasn(identifier = "issuerId")]
         pub issuer_id: HashedId8,
-        #[rasn(value("0..=255"), identifier = "lastKnownCtlSequence")]
-        pub last_known_ctl_sequence: Option<u8>,
+        #[rasn(identifier = "lastKnownCtlSequence")]
+        pub last_known_ctl_sequence: Option<Uint8>,
     }
     impl EtsiTs102941CtlRequest {
-        pub fn new(issuer_id: HashedId8, last_known_ctl_sequence: Option<u8>) -> Self {
+        pub fn new(issuer_id: HashedId8, last_known_ctl_sequence: Option<Uint8>) -> Self {
             Self {
                 issuer_id,
                 last_known_ctl_sequence,
@@ -1141,31 +59,54 @@ pub mod etsi_ts103097_extension_module {
     #[rasn(delegate)]
     pub struct EtsiTs102941DeltaCtlRequest(pub EtsiTs102941CtlRequest);
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct EtsiTs102941FullCtlRequest {
+        #[rasn(identifier = "issuerId")]
+        pub issuer_id: HashedId8,
+        #[rasn(identifier = "lastKnownCtlSequence")]
+        pub last_known_ctl_sequence: Option<Uint8>,
+        #[rasn(identifier = "segmentNumber")]
+        pub segment_number: Option<Uint8>,
+    }
+    impl EtsiTs102941FullCtlRequest {
+        pub fn new(
+            issuer_id: HashedId8,
+            last_known_ctl_sequence: Option<Uint8>,
+            segment_number: Option<Uint8>,
+        ) -> Self {
+            Self {
+                issuer_id,
+                last_known_ctl_sequence,
+                segment_number,
+            }
+        }
+    }
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct EtsiTs103097HeaderInfoExtensionId(pub ExtId);
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, value("1"))]
+    #[rasn(delegate, value("2"))]
     pub struct ExtensionModuleVersion(pub u8);
     pub const ETSI_TS102941_CRL_REQUEST_ID: EtsiTs103097HeaderInfoExtensionId =
         EtsiTs103097HeaderInfoExtensionId(ExtId(1));
     #[doc = "'01'H"]
     pub const ETSI_TS102941_DELTA_CTL_REQUEST_ID: EtsiTs103097HeaderInfoExtensionId =
         EtsiTs103097HeaderInfoExtensionId(ExtId(2));
+    #[doc = "'02'H"]
+    pub const ETSI_TS102941_FULL_CTL_REQUEST_ID: EtsiTs103097HeaderInfoExtensionId =
+        EtsiTs103097HeaderInfoExtensionId(ExtId(3));
 }
 #[allow(
     non_camel_case_types,
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
+    clippy::too_many_arguments
 )]
 pub mod etsi_ts103097_module {
     extern crate alloc;
     use super::etsi_ts103097_extension_module::ExtensionModuleVersion;
-    use super::ieee1609_dot2::*;
     use super::ieee1609_dot2::{Certificate, Ieee1609Dot2Data};
-    use super::ieee1609_dot2_base_types::*;
     use core::borrow::Borrow;
     use rasn::prelude::*;
     use std::sync::LazyLock;
@@ -1178,26 +119,18 @@ pub mod etsi_ts103097_module {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, identifier = "EtsiTs103097Data-SignedExternalPayload")]
     pub struct EtsiTs103097DataSignedExternalPayload(pub EtsiTs103097Data);
-    // Type aliases for WITH COMPONENTS constrained types (constraints removed for rasn compat)
-    pub type EtsiTs103097DataSigned = EtsiTs103097Data;
-    pub type EtsiTs103097DataEncrypted = EtsiTs103097Data;
-    pub type EtsiTs103097DataEncryptedUnicast = EtsiTs103097Data;
-    pub type EtsiTs103097DataSignedAndEncryptedUnicast = EtsiTs103097Data;
-    pub type EtsiTs103097DataSignedAndEncrypted = EtsiTs103097Data;
-    pub type EtsiTs103097DataUnsecured = EtsiTs103097Data;
 }
 #[allow(
     non_camel_case_types,
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
+    clippy::too_many_arguments
 )]
 pub mod ieee1609_dot2 {
     extern crate alloc;
     use super::etsi_ts103097_extension_module::EtsiOriginatingHeaderInfoExtension;
-    pub use super::ieee1609_dot2_base_types::*;
+    use super::ieee1609_dot2_base_types::*;
     use core::borrow::Borrow;
     use rasn::prelude::*;
     use std::sync::LazyLock;
@@ -1207,37 +140,6 @@ pub mod ieee1609_dot2 {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Aes128CcmCiphertext(pub One28BitCcmCiphertext);
-    #[doc = "* "]
-    #[doc = " * @class AesCcmCiphertext"]
-    #[doc = " *"]
-    #[doc = " * @brief This data structure encapsulates an encrypted ciphertext for the"]
-    #[doc = " * AES-CCM symmetric algorithm. It contains the following fields:"]
-    #[doc = " *"]
-    #[doc = " * <br><br>The ciphertext is 16 bytes longer than the corresponding plaintext."]
-    #[doc = " *"]
-    #[doc = " * <br><br>The plaintext resulting from a correct decryption of the"]
-    #[doc = " * ciphertext is a COER-encoded Ieee1609Dot2Data structure."]
-    #[doc = " *"]
-    #[doc = " * @param nonce contains the nonce N as specified in 5.3.7. "]
-    #[doc = " *"]
-    #[doc = " * @param ccmCiphertext contains the ciphertext C as specified in 5.3.7."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AesCcmCiphertext {
-        #[rasn(size("12"))]
-        pub nonce: OctetString,
-        #[rasn(identifier = "ccmCiphertext")]
-        pub ccm_ciphertext: Opaque,
-    }
-    impl AesCcmCiphertext {
-        pub fn new(nonce: OctetString, ccm_ciphertext: Opaque) -> Self {
-            Self {
-                nonce,
-                ccm_ciphertext,
-            }
-        }
-    }
     #[doc = "*"]
     #[doc = " * @brief This structure contains an individual AppExtension. AppExtensions "]
     #[doc = " * specified in this standard are drawn from the ASN.1 Information Object Set "]
@@ -1334,7 +236,7 @@ pub mod ieee1609_dot2 {
     #[doc = "                Certificates and other Security Management                 "]
     #[doc = "***************************************************************************"]
     #[doc = "*"]
-    #[doc = " * @brief This structure is a profile of the structure CertificateBase which"]
+    #[doc = " * @brief This structure is a profile of the structure CertificateBase, which"]
     #[doc = " * specifies the valid combinations of fields to transmit implicit and"]
     #[doc = " * explicit certificates."]
     #[doc = " *"]
@@ -1368,7 +270,8 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param signature: is included in an ExplicitCertificate. It is the"]
     #[doc = " * signature, calculated by the signer identified in the issuer field, over"]
     #[doc = " * the hash of toBeSigned. The hash is calculated as specified in 5.3.1, where:"]
-    #[doc = " *   - Data input is the encoding of toBeSigned following the COER."]
+    #[doc = " *   - Data input is the encoding of toBeSigned, canonicalized as described"]
+    #[doc = " * next."]
     #[doc = " *   - Signer identifier input depends on the verification type, which in"]
     #[doc = " * turn depends on the choice indicated by issuer. If the choice indicated by"]
     #[doc = " * issuer is self, the verification type is self-signed and the signer"]
@@ -1529,7 +432,7 @@ pub mod ieee1609_dot2 {
     #[doc = "***************************************************************************"]
     #[doc = "*"]
     #[doc = " * @brief This data structure encodes data that has been encrypted to one or "]
-    #[doc = " * more recipients using the recipients’ public or symmetric keys as "]
+    #[doc = " * more recipients using the recipients� public or symmetric keys as "]
     #[doc = " * specified in 5.3.4."]
     #[doc = " *"]
     #[doc = " * @param recipients: contains one or more RecipientInfos. These entries may"]
@@ -1638,7 +541,7 @@ pub mod ieee1609_dot2 {
         sm3HashedData(HashedId32),
     }
     #[doc = "*"]
-    #[doc = " * @brief This structure contains information that is used to establish"]
+    #[doc = " * @brief This structure contains the following information that is used to establish"]
     #[doc = " * validity by the criteria of 5.2."]
     #[doc = " *"]
     #[doc = " * @param psid: indicates the application area with which the sender is"]
@@ -1769,7 +672,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * contributing organization. In this version of this standard two values are"]
     #[doc = " * defined: "]
     #[doc = " *   - ieee1609OriginatingExtensionId indicating extensions originating with "]
-    #[doc = " * IEEE 1609."]
+    #[doc = " * IEEE Std 1609."]
     #[doc = " *   - etsiOriginatingExtensionId indicating extensions originating with "]
     #[doc = " * ETSI TC ITS."]
     #[doc = " "]
@@ -1994,7 +897,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * @note In the name of this structure, \"One28\" indicates that the "]
     #[doc = " * symmetric cipher block size is 128 bits. It happens to also be the case "]
     #[doc = " * that the keys used for both AES-128-CCM and SM4-CCM are also 128 bits long. "]
-    #[doc = " * This is, however, not what “One28” refers to. Since the cipher is used in "]
+    #[doc = " * This is, however, not what �One28� refers to. Since the cipher is used in "]
     #[doc = " * counter mode, i.e., as a stream cipher, the fact that that block size is 128"]
     #[doc = " * bits affects only the size of the MAC and does not affect the size of the"]
     #[doc = " * raw ciphertext."]
@@ -2017,19 +920,57 @@ pub mod ieee1609_dot2 {
     }
     #[doc = "*"]
     #[doc = " * @brief This type is the AppExtension used to identify an operating "]
-    #[doc = " * organization. The associated CertIssueExtension and CertRequestExtension "]
-    #[doc = " * are both of type OperatingOrganizationId."]
-    #[doc = " * To determine consistency between this type and an SPDU, the SDEE "]
-    #[doc = " * specification for that SPDU is required to specify how the SPDU can be "]
-    #[doc = " * used to determine an OBJECT IDENTIFIER (for example, by including the "]
-    #[doc = " * full OBJECT IDENTIFIER in the SPDU, or by including a RELATIVE-OID with "]
-    #[doc = " * clear instructions about how a full OBJECT IDENTIFIER can be obtained from"]
-    #[doc = " * the RELATIVE-OID). The SPDU is then consistent with this type if the "]
-    #[doc = " * OBJECT IDENTIFIER determined from the SPDU is identical to the OBJECT "]
+    #[doc = " * organization. See 5.2.6.6.7.2 for discussion of how the"]
+    #[doc = " * OperatingOrganizationId can be integrated into the SPDU payload by an"]
+    #[doc = " * SDEE specifier."]
+    #[doc = " *"]
+    #[doc = " * A certificate may have an OperatingOrganizationId associated with it even if"]
+    #[doc = " * the certificate does not contain an OperatingOrganizationId field. If the"]
+    #[doc = " * certificate does not contain an OperatingOrganizationId field, the"]
+    #[doc = " * associated OperatingOrganizationId is determined as follows:"]
+    #[doc = " *"]
+    #[doc = " *   - If the certificate is self-signed, that is, the choice indicated by the"]
+    #[doc = " * issuer field in the enclosing certificate structure is self, the"]
+    #[doc = " * certificate has no OperatingOrganizationId associated with it."]
+    #[doc = " *"]
+    #[doc = " *   -  Otherwise, the certificate has the same OperatingOrganizationId as"]
+    #[doc = " * the certificate that issued it."]
+    #[doc = " *"]
+    #[doc = " * The above algorithm is applied recursively, i.e. if"]
+    #[doc = " * OperatingOrganizationId is omitted from the issuing certificate, then"]
+    #[doc = " * the issuing certificate of that certificate is inspected to determine if"]
+    #[doc = " * OperatingOrganizationId is present, and so on."]
+    #[doc = " *"]
+    #[doc = " * Consistency with SPDU payload. As discussed in 5.2.6.6.7.2, the SPDU payload"]
+    #[doc = " * design might or might not include OperatingOrganizationId material. "]
+    #[doc = " *"]
+    #[doc = " * If OperatingOrganizationId material appears in the SPDU payload, then the"]
+    #[doc = " * SDEE specification is expected to state that consistency is required between"]
+    #[doc = " * the payload and the certificate (although, as discussed in 5.2.6.6.7.2, this"]
+    #[doc = " * approach is not recommended)."]
+    #[doc = " *"]
+    #[doc = " * If consistency is required between the OperatingOrganizationID"]
+    #[doc = " * and operating organization information represented by an OBJECT"]
+    #[doc = " * IDENTIFIER in the SPDU payload, then the SDEE specification for that SPDU is"]
+    #[doc = " * required to specify how the SPDU can be used to determine an OBJECT"]
+    #[doc = " * IDENTIFIER of the same length as the OperatingOrganizationId in the"]
+    #[doc = " * certificate (e.g., by including the full OBJECT IDENTIFIER in the SPDU, or"]
+    #[doc = " * by including a RELATIVE-OID with clear instructions about how a full OBJECT"]
+    #[doc = " * IDENTIFIER can be obtained from the RELATIVE-OID, or by truncating an"]
+    #[doc = " * OBJECT IDENTIFIER from the message to be the same length as the OBJECT"]
+    #[doc = " * IDENTIFIER in the certificate). The SPDU is then consistent with this type"]
+    #[doc = " * if the OBJECT IDENTIFIER determined from the SPDU is identical to the OBJECT"]
     #[doc = " * IDENTIFIER contained in this field."]
-    #[doc = " * This AppExtension does not have consistency conditions with a "]
-    #[doc = " * corresponding CertIssueExtension. It can appear in a certificate issued "]
-    #[doc = " * by any CA."]
+    #[doc = " *"]
+    #[doc = " * Consistency with issuing certificate. This AppExtension does not have"]
+    #[doc = " * consistency conditions with a corresponding CertIssueExtension. It can"]
+    #[doc = " * appear in a certificate issued by any CA."]
+    #[doc = " *"]
+    #[doc = " * Consistency with certificate request signing certificate. This AppExtension"]
+    #[doc = " * does not have consistency conditions with a corresponding"]
+    #[doc = " * CertRequestExtension. It can appear in a certificate request signed by any"]
+    #[doc = " * certificate containing certRequestPermissions, i.e. by any enrollment"]
+    #[doc = " * certificate."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
@@ -2048,7 +989,7 @@ pub mod ieee1609_dot2 {
     #[doc = " *   - If the containing RecipientInfo structure indicates "]
     #[doc = " * signedDataRecipInfo, this field contains the HashedId8 of the "]
     #[doc = " * Ieee1609Dot2Data of type signedData that contained the encryption key, "]
-    #[doc = " * with that Ieee¬¬1609¬Dot2¬¬Data canonicalized per 6.3.4. The HashedId8 is "]
+    #[doc = " * with that Ieee��1609�Dot2��Data canonicalized per 6.3.4. The HashedId8 is "]
     #[doc = " * calculated with the hash algorithm determined as specified in 5.3.9.5."]
     #[doc = " *   - If the containing RecipientInfo structure indicates rekRecipInfo, this "]
     #[doc = " * field contains the HashedId8 of the COER encoding of a PublicEncryptionKey "]
@@ -2084,14 +1025,14 @@ pub mod ieee1609_dot2 {
     #[doc = " *"]
     #[doc = " * @param tlsHandshake: indicates that the Signed SPDU is not to be directly "]
     #[doc = " * consumed as an application PDU and is to be used to provide information "]
-    #[doc = " * about the holder’s permissions to a Transport Layer Security (TLS) "]
+    #[doc = " * about the holder�s permissions to a Transport Layer Security (TLS) "]
     #[doc = " * (IETF 5246 [B15], IETF 8446 [B16]) handshake process operating to secure "]
     #[doc = " * communications to an application process. See IETF [B15] and ISO 21177 "]
     #[doc = " * [B20] for further information."]
     #[doc = " *"]
     #[doc = " * @param iso21177ExtendedAuth: indicates that the Signed SPDU is not to be "]
     #[doc = " * directly consumed as an application PDU and is to be used to provide "]
-    #[doc = " * additional information about the holder’s permissions to the ISO 21177 "]
+    #[doc = " * additional information about the holder�s permissions to the ISO 21177 "]
     #[doc = " * Security Subsystem for an application process. See ISO 21177 [B20] for "]
     #[doc = " * further information."]
     #[doc = " *"]
@@ -2144,13 +1085,13 @@ pub mod ieee1609_dot2 {
     #[doc = " * Different instances of PsidGroupPermissions within a ToBeSignedCertificate"]
     #[doc = " * may have different values for eeType."]
     #[doc = " *   - If this field indicates app, the chain is allowed to end in an "]
-    #[doc = " * authorization certificate, i.e., a certficate in which these permissions "]
+    #[doc = " * authorization certificate, i.e., a certificate in which these permissions "]
     #[doc = " * appear in an appPermissions field (in other words, if the field does not "]
     #[doc = " * indicate app and the chain ends in an authorization certificate, the "]
     #[doc = " * chain shall be considered invalid)."]
     #[doc = " *   - If this field indicates enroll, the chain is allowed to end in an "]
     #[doc = " * enrollment certificate, i.e., a certificate in which these permissions "]
-    #[doc = " * appear in a certReqPermissions permissions field (in other words, if the "]
+    #[doc = " * appear in a certRequestPermissions permissions field (in other words, if the "]
     #[doc = " * field does not indicate enroll and the chain ends in an enrollment "]
     #[doc = " * certificate, the chain shall be considered invalid)."]
     #[doc = " "]
@@ -2197,9 +1138,8 @@ pub mod ieee1609_dot2 {
         Integer::from(0i128)
     }
     fn psid_group_permissions_ee_type_default() -> EndEntityType {
-        let mut bits = FixedBitString::<8>::default();
+        let mut bits = FixedBitString::<8usize>::default();
         bits.set(0, true);
-        // bit 1 is false by default
         EndEntityType(bits)
     }
     #[doc = "*"]
@@ -2208,10 +1148,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * selected if the EncryptedData was encrypted using the static encryption"]
     #[doc = " * key approach specified in 5.3.4. The other options are selected if the"]
     #[doc = " * EncryptedData was encrypted using the ephemeral encryption key approach"]
-    #[doc = " * specified in 5.3.4. The meanings of the choices are:"]
-    #[doc = " *"]
-    #[doc = " * See Annex C.7 for guidance on when it may be appropriate to use"]
-    #[doc = " * each of these approaches."]
+    #[doc = " * specified in 5.3.4. The meanings of the choices are as follows:"]
     #[doc = " *"]
     #[doc = " * @param pskRecipInfo: The data was encrypted directly using a pre-shared "]
     #[doc = " * symmetric key."]
@@ -2256,6 +1193,9 @@ pub mod ieee1609_dot2 {
     #[doc = " * parameter P1 and so no input to the encryption process that uses the hash "]
     #[doc = " * of the empty string."]
     #[doc = " *"]
+    #[doc = " * See C.8 for guidance on when it may be appropriate to use each of these"]
+    #[doc = " * approaches."]
+    #[doc = " *"]
     #[doc = " * @note The material input to encryption is the bytes of the encryption key "]
     #[doc = " * with no headers, encapsulation, or length indication. Contrast this to "]
     #[doc = " * encryption of data, where the data is encapsulated in an Ieee1609Dot2Data."]
@@ -2275,7 +1215,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * AppExtension type is associated with consistency conditions, specific to "]
     #[doc = " * that extension, that govern its consistency with SPDUs signed by the "]
     #[doc = " * certificate holder and with the CertIssueExtensions in the CA certificates "]
-    #[doc = " * in that certificate holder’s chain. Those consistency conditions are "]
+    #[doc = " * in that certificate holder�s chain. Those consistency conditions are "]
     #[doc = " * specified for each individual AppExtension below."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
@@ -2288,7 +1228,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * specific to that extension, that govern its consistency with "]
     #[doc = " * AppExtensions in certificates issued by the certificate holder and with "]
     #[doc = " * the CertIssueExtensions in the CA certificates in that certificate "]
-    #[doc = " * holder’s chain. Those consistency conditions are specified for each "]
+    #[doc = " * holder�s chain. Those consistency conditions are specified for each "]
     #[doc = " * individual CertIssueExtension below."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
@@ -2301,7 +1241,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * specific to that extension, that govern its consistency with "]
     #[doc = " * AppExtensions in certificates issued by the certificate holder and with "]
     #[doc = " * the CertRequestExtensions in the CA certificates in that certificate "]
-    #[doc = " * holder’s chain. Those consistency conditions are specified for each "]
+    #[doc = " * holder�s chain. Those consistency conditions are specified for each "]
     #[doc = " * individual CertRequestExtension below."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
@@ -2387,7 +1327,7 @@ pub mod ieee1609_dot2 {
     #[doc = " * structure contains at least one of the optional elements, and may contain "]
     #[doc = " * more than one. See 5.2.4.3.4 for more details."]
     #[doc = " * The security profile in Annex C allows an implementation of this standard "]
-    #[doc = " * to state which forms of Signed¬Data¬Payload are supported by that "]
+    #[doc = " * to state which forms of SignedDataPayload are supported by that "]
     #[doc = " * implementation, and also how the signer and verifier are intended to obtain"]
     #[doc = " * the external data for hashing. The specification of an SDEE that uses "]
     #[doc = " * external data is expected to be explicit and unambiguous about how this "]
@@ -2401,8 +1341,9 @@ pub mod ieee1609_dot2 {
     #[doc = " * transported within the structure, and which the creator of the structure "]
     #[doc = " * wishes to cryptographically bind to the signature. "]
     #[doc = " *"]
-    #[doc = " * @param omitted: indicates that there is external data to be included in the"]
-    #[doc = " * hash calculation for the signature.The mechanism for including the external"]
+    #[doc = " * @param omitted: indicates that there is data to be included in the hash"]
+    #[doc = " * calculation for the signature that is not included in the SPDU, either in"]
+    #[doc = " * data or by use of the extDataHash. The mechanism for including the omitted"]
     #[doc = " * data in the hash calculation is specified in 6.3.6."]
     #[doc = " *"]
     #[doc = " * @note Canonicalization: This data structure is subject to canonicalization "]
@@ -2449,7 +1390,9 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param certificate: If the choice indicated is certificate:"]
     #[doc = " *   - The structure contains one or more Certificate structures, in order"]
     #[doc = " * such that the first certificate is the authorization certificate and each"]
-    #[doc = " * subsequent certificate is the issuer of the one before it."]
+    #[doc = " * subsequent certificate is the issuer of the one before it. The certificate"]
+    #[doc = " * chain may be of any length. It should not include the root CA certificate"]
+    #[doc = " * (as the receiving SDS is assumed to know all valid root CAs already)."]
     #[doc = " *   - The verification type is certificate and the certificate data"]
     #[doc = " * passed to the hash function as specified in 5.3.1 is the authorization"]
     #[doc = " * certificate."]
@@ -2570,21 +1513,6 @@ pub mod ieee1609_dot2 {
     #[doc = " * @brief The fields in the ToBeSignedCertificate structure have the"]
     #[doc = " * following meaning:"]
     #[doc = " *"]
-    #[doc = " * For both implicit and explicit certificates, when the certificate"]
-    #[doc = " * is hashed to create or recover the public key (in the case of an implicit"]
-    #[doc = " * certificate) or to generate or verify the signature (in the case of an"]
-    #[doc = " * explicit certificate), the hash is Hash (Data input) || Hash ("]
-    #[doc = " * Signer identifier input), where:"]
-    #[doc = " *   - Data input is the COER encoding of toBeSigned, canonicalized"]
-    #[doc = " * as described above."]
-    #[doc = " *   - Signer identifier input depends on the verification type,"]
-    #[doc = " * which in turn depends on the choice indicated by issuer. If the choice"]
-    #[doc = " * indicated by issuer is self, the verification type is self-signed and the"]
-    #[doc = " * signer identifier input is the empty string. If the choice indicated by"]
-    #[doc = " * issuer is not self, the verification type is certificate and the signer"]
-    #[doc = " * identifier input is the COER encoding of the canonicalization per 6.4.3 of"]
-    #[doc = " * the certificate indicated by issuer."]
-    #[doc = " *"]
     #[doc = " * In other words, for implicit certificates, the value H (CertU) in SEC 4,"]
     #[doc = " * section 3, is for purposes of this standard taken to be H [H"]
     #[doc = " * (canonicalized ToBeSignedCertificate from the subordinate certificate) ||"]
@@ -2609,12 +1537,26 @@ pub mod ieee1609_dot2 {
     #[doc = " * @param validityPeriod: contains the validity period of the certificate."]
     #[doc = " *"]
     #[doc = " * @param region: if present, indicates the validity region of the"]
-    #[doc = " * certificate. If it is omitted the validity region is indicated as follows:"]
-    #[doc = " *   - If enclosing certificate is self-signed, i.e., the choice indicated"]
+    #[doc = " * certificate. If it is omitted the validity region is determined as follows:"]
+    #[doc = " *   - If the enclosing certificate is self-signed, i.e., the choice indicated"]
     #[doc = " * by the issuer field in the enclosing certificate structure is self, the"]
     #[doc = " * certificate is valid worldwide."]
     #[doc = " *   - Otherwise, the certificate has the same validity region as the"]
     #[doc = " * certificate that issued it."]
+    #[doc = " *"]
+    #[doc = " * The above algorithm is applied recursively, i.e. if region is omitted from"]
+    #[doc = " * the issuing certificate, then the issuing certificate of that certificate is"]
+    #[doc = " * inspected to determine if region is present, and so on. A certificate,"]
+    #[doc = " * therefore, has global geographic validity as defined in 5.2.6.6.3.1 if"]
+    #[doc = " * region is not present in the certificate or in any certificate in its chain."]
+    #[doc = " * Otherwise, i.e., if region is present in the certificate or in at least one"]
+    #[doc = " * certificate in its chain, the certificate has area validity as defined in"]
+    #[doc = " * 5.2.6.6.3.1."]
+    #[doc = " *"]
+    #[doc = " * The use of the validity region to determine geographic consistency of an"]
+    #[doc = " * SPDU is specified in 5.2.6.6.3.1. The use of the validity region to"]
+    #[doc = " * determine geographic consistency of a subordinate certificate with an"]
+    #[doc = " * issuing certificate is specified in 5.1.2.4."]
     #[doc = " *"]
     #[doc = " * @param assuranceLevel: indicates the assurance level of the certificate"]
     #[doc = " * holder."]
@@ -2659,6 +1601,9 @@ pub mod ieee1609_dot2 {
     #[doc = " * Further material about the compact unified butterfly key response can be "]
     #[doc = " * found in IEEE Std 1609.2.1."]
     #[doc = " *"]
+    #[doc = " * If this field is present, at least one of the bits in the field shall be"]
+    #[doc = " * non-zero."]
+    #[doc = " *"]
     #[doc = " * @note usesCubk is only relevant for CA certificates, and the only "]
     #[doc = " * functionality defined associated with this field is associated with "]
     #[doc = " * consistency checks on received certificate responses. No functionality "]
@@ -2669,10 +1614,43 @@ pub mod ieee1609_dot2 {
     #[doc = " * to application activities that the certificate holder is carrying out. "]
     #[doc = " *"]
     #[doc = " * @param certIssueExtensions: indicates additional permissions to issue "]
-    #[doc = " * certificates containing endEntityExtensions. "]
+    #[doc = " * certificates containing appExtensions. "]
     #[doc = " *"]
     #[doc = " * @param certRequestExtensions: indicates additional permissions to request "]
     #[doc = " * certificates containing endEntityExtensions."]
+    #[doc = " *"]
+    #[doc = " * @note In IEEE Std 1609.2-2022 these were not marked optional; they are in"]
+    #[doc = " * this version of the standard; this is technically not backwards compatible"]
+    #[doc = " * but in practice there are no scenarios in which a legacy system will break"]
+    #[doc = " * (because it would have to be the case that Issue or Request was included and"]
+    #[doc = " * App wasn't, but no issue or request extension values are currently defined)."]
+    #[doc = " * "]
+    #[doc = " * @note Issue and Request extensions are specified in this version of this"]
+    #[doc = " * standard for future use but do not currently have any values defined. The"]
+    #[doc = " * only certificate extension defined is OperatingOrganizationId and that can"]
+    #[doc = " * be issued by any CA. It can be taken as likely that future appExtensions"]
+    #[doc = " * will also be issuable by any CA, as otherwise consistency rules will differ"]
+    #[doc = " * between appExtensions, and so in practice these certIssueExtensions and"]
+    #[doc = " * certRequestExtensions fields will never be use. See Annex G for discussion"]
+    #[doc = " * of how the standard could in principle be extended to include extensions"]
+    #[doc = " * that do have a need to be validated up the chain."]
+    #[doc = " *"]
+    #[doc = " * @note Calculating the hash of a certificate:"]
+    #[doc = " * For both implicit and explicit certificates, when the certificate"]
+    #[doc = " * is hashed to create or recover the public key (in the case of an implicit"]
+    #[doc = " * certificate) or to generate or verify the signature (in the case of an"]
+    #[doc = " * explicit certificate), the hash is Hash (Data input) || Hash ("]
+    #[doc = " * Signer identifier input), where:"]
+    #[doc = " *   - Data input is the COER encoding of toBeSigned, canonicalized"]
+    #[doc = " * as described above."]
+    #[doc = " *   - Signer identifier input depends on the verification type,"]
+    #[doc = " * which in turn depends on the choice indicated by issuer. If the choice"]
+    #[doc = " * indicated by issuer is self, the verification type is self-signed and the"]
+    #[doc = " * signer identifier input is the empty string. If the choice indicated by"]
+    #[doc = " * issuer is not self, the verification type is certificate and the signer"]
+    #[doc = " * identifier input is the COER encoding of the canonicalization per 6.4.3 of"]
+    #[doc = " * the certificate indicated by issuer."]
+    #[doc = " *"]
     #[doc = " *"]
     #[doc = " * @note Canonicalization: This data structure is subject to canonicalization "]
     #[doc = " * for the relevant operations specified in 6.1.2. The canonicalization "]
@@ -2765,11 +1743,11 @@ pub mod ieee1609_dot2 {
         #[rasn(extension_addition, size("8"))]
         pub flags: Option<BitString>,
         #[rasn(extension_addition, identifier = "appExtensions")]
-        pub app_extensions: SequenceOfAppExtensions,
+        pub app_extensions: Option<SequenceOfAppExtensions>,
         #[rasn(extension_addition, identifier = "certIssueExtensions")]
-        pub cert_issue_extensions: SequenceOfCertIssueExtensions,
+        pub cert_issue_extensions: Option<SequenceOfCertIssueExtensions>,
         #[rasn(extension_addition, identifier = "certRequestExtension")]
-        pub cert_request_extension: SequenceOfCertRequestExtensions,
+        pub cert_request_extension: Option<SequenceOfCertRequestExtensions>,
     }
     impl ToBeSignedCertificate {
         pub fn new(
@@ -2786,9 +1764,9 @@ pub mod ieee1609_dot2 {
             encryption_key: Option<PublicEncryptionKey>,
             verify_key_indicator: VerificationKeyIndicator,
             flags: Option<BitString>,
-            app_extensions: SequenceOfAppExtensions,
-            cert_issue_extensions: SequenceOfCertIssueExtensions,
-            cert_request_extension: SequenceOfCertRequestExtensions,
+            app_extensions: Option<SequenceOfAppExtensions>,
+            cert_issue_extensions: Option<SequenceOfCertIssueExtensions>,
+            cert_request_extension: Option<SequenceOfCertRequestExtensions>,
         ) -> Self {
             Self {
                 id,
@@ -2829,11 +1807,11 @@ pub mod ieee1609_dot2 {
     #[doc = " * ToBeSignedData, concatenated with the hash of the omitted payload. The hash"]
     #[doc = " * of the omitted payload is calculated with the same hash algorithm that is "]
     #[doc = " * used to calculate the hash of the data input for signing or verification. "]
-    #[doc = " * The data input to the hash operation is simply the COER enocding of the "]
+    #[doc = " * The data input to the hash operation is simply the COER encoding of the "]
     #[doc = " * ToBeSignedData, concatenated with the hash of the omitted payload: there is"]
     #[doc = " * no additional wrapping or length indication. As noted in 5.2.4.3.4, the "]
     #[doc = " * means by which the signer and verifier establish the contents of the "]
-    #[doc = " * omitted payload are out of scope for this standard."]
+    #[doc = " * omitted payload are outside the scope of this standard."]
     #[doc = " *"]
     #[doc = " * @note Canonicalization: This data structure is subject to canonicalization "]
     #[doc = " * for the relevant operations specified in 6.1.2. The canonicalization "]
@@ -2903,8 +1881,7 @@ pub mod ieee1609_dot2 {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
+    clippy::too_many_arguments
 )]
 pub mod ieee1609_dot2_base_types {
     extern crate alloc;
@@ -2951,13 +1928,20 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * the sspValue in A is set equal to the bit in that position in the"]
     #[doc = " * sspValue in P."]
     #[doc = " *"]
-    #[doc = " * @note A BitmapSsp B is consistent with a BitmapSspRange R if for every"]
-    #[doc = " * bit set to 1 in the sspBitmask in R, the bit in the identical position in"]
-    #[doc = " * B is set equal to the bit in that position in the sspValue in R. For each"]
-    #[doc = " * bit set to 0 in the sspBitmask in R, the corresponding bit in the"]
-    #[doc = " * identical position in B may be freely set to 0 or 1, i.e., if a bit is"]
-    #[doc = " * set to 0 in the sspBitmask in R, the value of corresponding bit in the"]
-    #[doc = " * identical position in B has no bearing on whether B and R are consistent."]
+    #[doc = " * @note To restate the final sub-bullet point immediately above: A BitmapSsp B"]
+    #[doc = " * is consistent with a BitmapSspRange R if for every bit set to 1 in the"]
+    #[doc = " * sspBitmask in R, the bit in the identical position in B is set equal to the"]
+    #[doc = " * bit in that position in the sspValue in R. For each bit set to 0 in the"]
+    #[doc = " * sspBitmask in R, the corresponding bit in the identical position in B may be"]
+    #[doc = " * freely set to 0 or 1, i.e., if a bit is set to 0 in the sspBitmask in R, the"]
+    #[doc = " * value of corresponding bit in the identical position in B has no bearing on"]
+    #[doc = " * whether B and R are consistent."]
+    #[doc = " *"]
+    #[doc = " * @note Where a BitmapSsp in an authorization certificate is being compared"]
+    #[doc = " * with a BitmapSspRange in an issuing certificate, the rules given above imply"]
+    #[doc = " * that the BitmapSsp: (a) cannot be longer than BitmapSspRange in the issuing"]
+    #[doc = " * cert; (b) Can be shorter than the BitmapSspRange but must be long enough to"]
+    #[doc = " * reach the last \"1\" bit in the sspBitmask."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, size("0..=31"))]
@@ -3037,7 +2021,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * Implementation Conformance Statement (PICS) provided in Annex A allows "]
     #[doc = " * an implementation to state which UnCountryId values it recognizes and "]
     #[doc = " * which region values are recognized within that country."]
-    #[doc = " * If a verifying implementation is required to check that an relevant "]
+    #[doc = " * If a verifying implementation is required to check that relevant "]
     #[doc = " * geographic information in a signed SPDU is consistent with a certificate "]
     #[doc = " * containing one or more instances of this type, then the SDS is permitted "]
     #[doc = " * to indicate that the signed SPDU is valid even if some values of country "]
@@ -3083,8 +2067,8 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * shall support a regionAndSubregions field containing at least eight "]
     #[doc = " * entries."]
     #[doc = " * A conformant implementation that implements this type shall recognize "]
-    #[doc = " * (in the sense of “be able to determine whether a two dimensional location "]
-    #[doc = " * lies inside or outside the borders identified by”) at least one value of "]
+    #[doc = " * (in the sense of �be able to determine whether a two dimensional location "]
+    #[doc = " * lies inside or outside the borders identified by�) at least one value of "]
     #[doc = " * country and at least one value for a region within the country indicated "]
     #[doc = " * by that recognized country value. In this version of this standard, the "]
     #[doc = " * only means to satisfy this is for a conformant implementation to recognize "]
@@ -3093,7 +2077,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * (PICS) provided in Annex A allows an implementation to state which "]
     #[doc = " * UnCountryId values it recognizes and which region values are recognized "]
     #[doc = " * within that country."]
-    #[doc = " * If a verifying implementation is required to check that an relevant "]
+    #[doc = " * If a verifying implementation is required to check that relevant "]
     #[doc = " * geographic information in a signed SPDU is consistent with a certificate "]
     #[doc = " * containing one or more instances of this type, then the SDS is permitted "]
     #[doc = " * to indicate that the signed SPDU is valid even if some values of country "]
@@ -3184,7 +2168,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = "*"]
     #[doc = " * @brief This structure specifies a point on an elliptic curve in Weierstrass"]
     #[doc = " * form defined over a 256-bit prime number. The curves supported in this"]
-    #[doc = " * standard are NIST p256 as defined in FIPS 186-4, Brainpool p256r1 as"]
+    #[doc = " * standard are NIST p256 as defined in FIPS 186-5, Brainpool p256r1 as"]
     #[doc = " * defined in RFC 5639, and the SM2 curve as defined in GB/T 32918.5-2017."]
     #[doc = " * The fields in this structure are OCTET STRINGS produced with the elliptic"]
     #[doc = " * curve point encoding and decoding methods defined in subclause 5.5.6 of"]
@@ -3268,7 +2252,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This structure represents an ECDSA signature. The signature is"]
     #[doc = " * generated as specified in 5.3.1."]
     #[doc = " *"]
-    #[doc = " * If the signature process followed the specification of FIPS 186-4"]
+    #[doc = " * If the signature process followed the specification of FIPS 186-5"]
     #[doc = " * and output the integer r, r is represented as an EccP256CurvePoint"]
     #[doc = " * indicating the selection x-only."]
     #[doc = " *"]
@@ -3285,10 +2269,10 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @note When the signature is of form x-only, the x-value in rSig is"]
     #[doc = " * an integer mod n, the order of the group; when the signature is of form"]
     #[doc = " * compressed-y-\\*, the x-value in rSig is an integer mod p, the underlying"]
-    #[doc = " * prime defining the finite field. In principle this means that to convert a"]
+    #[doc = " * prime defining the finite field. In principle, this means that to convert a"]
     #[doc = " * signature from form compressed-y-\\* to form x-only, the converter checks "]
     #[doc = " * the x-value to see if it lies between n and p and reduces it mod n if so. "]
-    #[doc = " * In practice this check is unnecessary: Haase's Theorem states that "]
+    #[doc = " * In practice, this check is unnecessary: Haase's Theorem states that "]
     #[doc = " * difference between n and p is always less than 2*square-root(p), and so the "]
     #[doc = " * chance that an integer lies between n and p, for a 256-bit curve, is "]
     #[doc = " * bounded above by approximately square-root(p)/p or 2^(-128). For the "]
@@ -3320,7 +2304,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @brief This structure represents an ECDSA signature. The signature is"]
     #[doc = " * generated as specified in 5.3.1."]
     #[doc = " *"]
-    #[doc = " * If the signature process followed the specification of FIPS 186-4"]
+    #[doc = " * If the signature process followed the specification of FIPS 186-5"]
     #[doc = " * and output the integer r, r is represented as an EccP384CurvePoint"]
     #[doc = " * indicating the selection x-only."]
     #[doc = " *"]
@@ -3337,10 +2321,10 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * @note When the signature is of form x-only, the x-value in rSig is"]
     #[doc = " * an integer mod n, the order of the group; when the signature is of form"]
     #[doc = " * compressed-y-\\*, the x-value in rSig is an integer mod p, the underlying"]
-    #[doc = " * prime defining the finite field. In principle this means that to convert a "]
+    #[doc = " * prime defining the finite field. In principle, this means that to convert a "]
     #[doc = " * signature from form compressed-y-* to form x-only, the converter checks the"]
     #[doc = " * x-value to see if it lies between n and p and reduces it mod n if so. In"]
-    #[doc = " * practice this check is unnecessary: Haase's Theorem states that difference"]
+    #[doc = " * practice, this check is unnecessary: Haase's Theorem states that difference"]
     #[doc = " * between n and p is always less than 2*square-root(p), and so the chance"]
     #[doc = " * that an integer lies between n and p, for a 384-bit curve, is bounded"]
     #[doc = " * above by approximately square-root(p)/p or 2^(-192). For the 384-bit curve"]
@@ -3891,7 +2875,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " *"]
     #[doc = " * @note Consistency with signed SPDU: As noted in 5.1.1,"]
     #[doc = " * consistency between the SSP and the signed SPDU is defined by rules"]
-    #[doc = " * specific to the given PSID and is out of scope for this standard."]
+    #[doc = " * specific to the given PSID and is outside the scope of this standard."]
     #[doc = " *"]
     #[doc = " * @note Consistency with issuing certificate: If a certificate has an"]
     #[doc = " * appPermissions entry A for which the ssp field is omitted, A is consistent"]
@@ -4002,7 +2986,7 @@ pub mod ieee1609_dot2_base_types {
         ecsigSm2(EccP256CurvePoint),
     }
     #[doc = "*"]
-    #[doc = " * @brief This structure specifies a “rectangle” on the surface of the WGS84 ellipsoid where the "]
+    #[doc = " * @brief This structure specifies a �rectangle� on the surface of the WGS84 ellipsoid where the "]
     #[doc = " * sides are given by lines of constant latitude or longitude. "]
     #[doc = " * A point which contains an elevation component is considered to be within the rectangular region "]
     #[doc = " * if its horizontal projection onto the reference ellipsoid lies within the region. "]
@@ -4036,9 +3020,9 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * to as the \"enclosing country\". If this structure is used in a "]
     #[doc = " * CountryAndSubregions structure, the enclosing country is the one indicated "]
     #[doc = " * by the country field in the CountryAndSubregions structure. If other uses "]
-    #[doc = " * are defined for this structure in future, it is expected that that "]
-    #[doc = " * definition will include a specification of how the enclosing country can "]
-    #[doc = " * be determined."]
+    #[doc = " * are defined for this structure in the future, it is anticipated (in the"]
+    #[doc = " * sense of 4.4) that that definition will include a specification of how the"]
+    #[doc = " * enclosing country can be determined."]
     #[doc = " * If the enclosing country is the United States of America:"]
     #[doc = " * - The region field identifies the state or statistically equivalent "]
     #[doc = " * entity using the integer version of the 2010 FIPS codes as provided by the"]
@@ -4069,7 +3053,7 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * geographic information. Informally, if the recognized values in the "]
     #[doc = " * certificate allow the SDS to determine that the SPDU is valid, then it "]
     #[doc = " * can make that determination even if there are also unrecognized values "]
-    #[doc = " * in the certificate. This field is therefore not not a \"critical "]
+    #[doc = " * in the certificate. This field is therefore not a \"critical "]
     #[doc = " * information field\" as defined in 5.2.6, because unrecognized values are "]
     #[doc = " * permitted so long as the validity of the SPDU can be established with the "]
     #[doc = " * recognized values. However, as discussed in 5.2.6, the presence of an "]
@@ -4293,12 +3277,12 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * for future use, and bit 1 and bit 0 denote the confidence."]
     #[doc = " *"]
     #[doc = " * The specification of these assurance levels as well as the"]
-    #[doc = " * encoding of the confidence levels is outside the scope of the present"]
+    #[doc = " * encoding of the confidence levels is outside the scope of this"]
     #[doc = " * standard. It can be assumed that a higher assurance value indicates that"]
     #[doc = " * the holder is more trusted than the holder of a certificate with lower"]
     #[doc = " * assurance value and the same confidence value."]
     #[doc = " *"]
-    #[doc = " * @note This field was originally specified in ETSI TS 103 097 and"]
+    #[doc = " * @note This field was originally specified in ETSI TS 103 097, and"]
     #[doc = " * future uses of this field are anticipated to be consistent with future"]
     #[doc = " * versions of that standard."]
     #[doc = " "]
@@ -4336,8 +3320,7 @@ pub mod ieee1609_dot2_base_types {
         sm4Ccm(OctetString),
     }
     #[doc = "*"]
-    #[doc = " * @brief This structure contains an estimate of 3D location. The details of"]
-    #[doc = " * the structure are given in the definitions of the individual fields below."]
+    #[doc = " * @brief This structure contains an estimate of 3D location. "]
     #[doc = " *"]
     #[doc = " * @note The units used in this data structure are consistent with the "]
     #[doc = " * location data structures used in \tSAE J2735 [B26], though the encoding is"]
@@ -4364,14 +3347,14 @@ pub mod ieee1609_dot2_base_types {
     #[doc = "***************************************************************************"]
     #[doc = "*"]
     #[doc = " * @brief This type gives the number of (TAI) seconds since 00:00:00 UTC, 1"]
-    #[doc = " * January, 2004."]
+    #[doc = " * January 2004."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct Time32(pub Uint32);
     #[doc = "*"]
     #[doc = " * @brief This data structure is a 64-bit integer giving an estimate of the "]
-    #[doc = " * number of (TAI) microseconds since 00:00:00 UTC, 1 January, 2004."]
+    #[doc = " * number of (TAI) microseconds since 00:00:00 UTC, 1 January 2004."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
@@ -4446,8 +3429,8 @@ pub mod ieee1609_dot2_base_types {
     #[doc = " * area identifier as defined by the United Nations Statistics Division in "]
     #[doc = " * October 2013 (see normative references in Clause 0)."]
     #[doc = " * A conformant implementation that implements IdentifiedRegion shall "]
-    #[doc = " * recognize (in the sense of “be able to determine whether a two dimensional "]
-    #[doc = " * location lies inside or outside the borders identified by”) at least one "]
+    #[doc = " * recognize (in the sense of �be able to determine whether a two dimensional "]
+    #[doc = " * location lies inside or outside the borders identified by�) at least one "]
     #[doc = " * value of UnCountryId. The Protocol Implementation Conformance Statement "]
     #[doc = " * (PICS) provided in Annex A allows an implementation to state which "]
     #[doc = " * UnCountryId values it recognizes."]
@@ -4511,14 +3494,11 @@ pub mod ieee1609_dot2_base_types {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
+    clippy::too_many_arguments
 )]
 pub mod ieee1609_dot2_crl {
     extern crate alloc;
     use super::ieee1609_dot2::Ieee1609Dot2Data;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
     use super::ieee1609_dot2_base_types::{Opaque, Psid};
     use super::ieee1609_dot2_crl_base_types::CrlContents;
     use core::borrow::Borrow;
@@ -4543,14 +3523,11 @@ pub mod ieee1609_dot2_crl {
     non_snake_case,
     non_upper_case_globals,
     unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
+    clippy::too_many_arguments
 )]
 pub mod ieee1609_dot2_crl_base_types {
     extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    pub use super::ieee1609_dot2_base_types::{
+    use super::ieee1609_dot2_base_types::{
         CrlSeries, Duration, GeographicRegion, HashedId10, HashedId8, IValue, LaId, LinkageSeed,
         Opaque, Psid, SequenceOfLinkageSeed, Signature, Time32, Uint16, Uint3, Uint32, Uint8,
         ValidityPeriod,
@@ -4811,6 +3788,82 @@ pub mod ieee1609_dot2_crl_base_types {
         }
     }
     #[doc = "*"]
+    #[doc = " * @brief This structure contains information about when future revocation"]
+    #[doc = " * time periods start. Revocation time periods are discussed in 5.1.3.4."]
+    #[doc = " * Linkage value based CRLs contain linkage seeds which can be used to"]
+    #[doc = " * calculate the linkage values that will appear in certificates for"]
+    #[doc = " * revocation time periods that are in the future relative to the issuance"]
+    #[doc = " * time of the CRL; the IPeriodInfo structure allows the CRL signer to"]
+    #[doc = " * communicate the start time for future time periods, so that a CRL recipient"]
+    #[doc = " * can calculate the linkage values before the relevant time period starts."]
+    #[doc = " * The CRL contains a SEQUENCE of IPeriodInfo to support the case where the"]
+    #[doc = " * CRL issuer knows that the duration of the time periods is going to change"]
+    #[doc = " * at some point in the future; the number of IPeriodInfo in the sequence"]
+    #[doc = " * should be the minimum necessary to convey the information, e.g. if the"]
+    #[doc = " * duration of the time periods is not going to change, the CRL should contain"]
+    #[doc = " * a single IPeriodInfo."]
+    #[doc = " * "]
+    #[doc = " * @note The information about the duration of future time periods can be"]
+    #[doc = " * assumed to be available to the CRL signer, because pseudonym certificates"]
+    #[doc = " * that use linkage values are typically issued for future time periods rather"]
+    #[doc = " * than only the current time period, and so the length of future time periods"]
+    #[doc = " * had to be known to the CA at the time of certificate issuance and can be"]
+    #[doc = " * provided to the CRL signer. This creates a requirement that if multiple CAs"]
+    #[doc = " * issue certificates that use the same CRL Series and CRACA Id values, all of"]
+    #[doc = " * those CAs will be expected to implement any time period length changes in"]
+    #[doc = " * synch with each other so that all certificates on the same CRL will have"]
+    #[doc = " * synchronized time period starts and ends. How these CAs are synchronized"]
+    #[doc = " * with each other is out of scope for this document."]
+    #[doc = " * "]
+    #[doc = " * An IPeriodInfo appears in a CRL that has an iRev field. The CRL contains a"]
+    #[doc = " * SEQUENCE of IPeriodInfo. Each IPeriodInfo makes use of the previous iRev"]
+    #[doc = " * value, prevI. For the first IPeriodInfo in the SEQUENCE, prevI is the value"]
+    #[doc = " * of iRev in the CRL. For each subsequent IPeriodInfo in the SEQUENCE, prevI"]
+    #[doc = " * is the value of guaranteedToIValue in the previous IPeriodInfo. "]
+    #[doc = " * "]
+    #[doc = " * In this structure:"]
+    #[doc = " *"]
+    #[doc = " * @param startOfNextIPeriod is the start time of the i-period with i = prevI +"]
+    #[doc = " * 1. This is the earliest time at which certificates with i-period equal to"]
+    #[doc = " * prevI + 1 will be valid, i.e. if a certificate with the cracaId and"]
+    #[doc = " * crlSeries corresponding to this CRL has"]
+    #[doc = " * ToBeSignedCertificate.id.linkageData.iCert = prevI + 1, then"]
+    #[doc = " * ToBeSignedCertificate.validityPeriod.start will be no earlier than this"]
+    #[doc = " * startOfNextIPeriod value."]
+    #[doc = " *"]
+    #[doc = " * @param iPeriodLength is the length of all time periods from prevI + 1 to"]
+    #[doc = " * guaranteedToIValue inclusive, i.e., each time period starts exactly"]
+    #[doc = " * iPeriodLength after the previous time period started."]
+    #[doc = " *"]
+    #[doc = " * @param guaranteedToIValue is last i-period which is guaranteed to have the"]
+    #[doc = " * indicated duration, i.e., all time periods from prevI + 1 to"]
+    #[doc = " * guaranteedToIValue are guaranteed to have that duration and time period"]
+    #[doc = " * guaranteedToIValue +1 is not guaranteed to have that duration."]
+    #[doc = " "]
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct IPeriodInfo {
+        #[rasn(identifier = "startOfNextIPeriod")]
+        pub start_of_next_iperiod: Time32,
+        #[rasn(identifier = "iPeriodLength")]
+        pub i_period_length: Duration,
+        #[rasn(identifier = "guaranteedToIValue")]
+        pub guaranteed_to_ivalue: IValue,
+    }
+    impl IPeriodInfo {
+        pub fn new(
+            start_of_next_iperiod: Time32,
+            i_period_length: Duration,
+            guaranteed_to_ivalue: IValue,
+        ) -> Self {
+            Self {
+                start_of_next_iperiod,
+                i_period_length,
+                guaranteed_to_ivalue,
+            }
+        }
+    }
+    #[doc = "*"]
     #[doc = " * @brief In this structure:"]
     #[doc = " *"]
     #[doc = " * @param linkageSeed1 is the value LinkageSeed1 used in the algorithm given "]
@@ -4927,6 +3980,9 @@ pub mod ieee1609_dot2_crl_base_types {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate)]
     pub struct SequenceOfIMaxGroup(pub SequenceOf<IMaxGroup>);
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(delegate)]
+    pub struct SequenceOfIPeriodInfo(pub SequenceOf<IPeriodInfo>);
     #[doc = "*"]
     #[doc = " * @brief This type is used for clarity of definitions."]
     #[doc = " "]
@@ -4950,7 +4006,9 @@ pub mod ieee1609_dot2_crl_base_types {
     #[doc = " * certificate."]
     #[doc = " *"]
     #[doc = " * @param crlSerial: is a counter that increments by 1 every time a new full"]
-    #[doc = " * or delta CRL is issued for the indicated crlCraca and crlSeries values."]
+    #[doc = " * or delta CRL is issued for the indicated crlCraca and crlSeries values.  A"]
+    #[doc = " * \"new full or delta CRL\" is a CRL with a new issueDate, whether or not the"]
+    #[doc = " * contents of the CRL have changed."]
     #[doc = " *"]
     #[doc = " * @param entries: contains the individual revocation information items."]
     #[doc = " *"]
@@ -5000,6 +4058,11 @@ pub mod ieee1609_dot2_crl_base_types {
     #[doc = " *"]
     #[doc = " * @param groupsSingleSeed: contains group linkage data generated with a single "]
     #[doc = " * seed."]
+    #[doc = " *"]
+    #[doc = " * @param iPeriodInfo contains information about the duration of the revocation"]
+    #[doc = " * time periods, to allow a receiver to determine at what point it will be"]
+    #[doc = " * necessary to have calculated the linkage values associated with future time"]
+    #[doc = " * periods."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
@@ -5013,6 +4076,8 @@ pub mod ieee1609_dot2_crl_base_types {
         pub groups: Option<SequenceOfGroupCrlEntry>,
         #[rasn(extension_addition, identifier = "groupsSingleSeed")]
         pub groups_single_seed: Option<SequenceOfGroupSingleSeedCrlEntry>,
+        #[rasn(extension_addition, identifier = "iPeriodInfo")]
+        pub i_period_info: Option<SequenceOfIPeriodInfo>,
     }
     impl ToBeSignedLinkageValueCrl {
         pub fn new(
@@ -5021,6 +4086,7 @@ pub mod ieee1609_dot2_crl_base_types {
             individual: Option<SequenceOfJMaxGroup>,
             groups: Option<SequenceOfGroupCrlEntry>,
             groups_single_seed: Option<SequenceOfGroupSingleSeedCrlEntry>,
+            i_period_info: Option<SequenceOfIPeriodInfo>,
         ) -> Self {
             Self {
                 i_rev,
@@ -5028,6 +4094,7 @@ pub mod ieee1609_dot2_crl_base_types {
                 individual,
                 groups,
                 groups_single_seed,
+                i_period_info,
             }
         }
     }
@@ -5039,7 +4106,9 @@ pub mod ieee1609_dot2_crl_base_types {
     #[doc = " * either indvidual or groups."]
     #[doc = " * "]
     #[doc = " * @param indexWithinI is a counter that is set to 0 for the first CRL issued "]
-    #[doc = " * for the indicated combination of crlCraca, crlSeries, and iRev, and increments by 1 every time a new full or delta CRL is issued for the indicated crlCraca and crlSeries values without changing iRev."]
+    #[doc = " * for the indicated combination of crlCraca, crlSeries, and iRev, and increments"]
+    #[doc = " * by 1 every time a new full or delta CRL is issued for the indicated crlCraca "]
+    #[doc = " * and crlSeries values without changing iRev."]
     #[doc = " * "]
     #[doc = " * @param seedEvolution contains an identifier for the seed evolution "]
     #[doc = " * function, used as specified in  5.1.3.4."]
@@ -5054,6 +4123,11 @@ pub mod ieee1609_dot2_crl_base_types {
     #[doc = " * "]
     #[doc = " * @param groupsSingleSeed contains group linkage data for linkage value "]
     #[doc = " * generation with one seed."]
+    #[doc = " *"]
+    #[doc = " * @param iPeriodInfo contains information about the duration of the "]
+    #[doc = " * revocation time periods, to allow a receiver to determine at what point"]
+    #[doc = " * it will be necessary to have calculated the linkage values associated"]
+    #[doc = " * with future time periods."]
     #[doc = " "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
@@ -5100,8 +4174,7 @@ pub mod ieee1609_dot2_crl_base_types {
     #[doc = " * hashes of all certificates that:"]
     #[doc = " *  - contain the indicated cracaId and crlSeries values, and"]
     #[doc = " *  - are revoked by hash, and"]
-    #[doc = " *  - have been revoked, and"]
-    #[doc = " *  - have not expired."]
+    #[doc = " *  - have been revoked"]
     #[doc = " *"]
     #[doc = " * @param deltaHashCrl: contains a delta hash-based CRL, i.e., a listing of"]
     #[doc = " * the hashes of all certificates that:"]
@@ -5110,13 +4183,23 @@ pub mod ieee1609_dot2_crl_base_types {
     #[doc = " *  - have been revoked since the previous CRL that contained the indicated"]
     #[doc = " * cracaId and crlSeries values."]
     #[doc = " *"]
+    #[doc = " * A Hash-based CRL should not include any certificates that had expired at the"]
+    #[doc = " * time the CRL was generated; however, the inclusion of expired certificates"]
+    #[doc = " * does not make a CRL invalid, and there is no expectation that receivers of a"]
+    #[doc = " * CRL will check whether any of the certificates on the CRL have expired. "]
+    #[doc = " *"]
+    #[doc = " * @note Since a recipient of a hash-based CRLonly receives the hash, they"]
+    #[doc = " * cannot directly establish the validity period of any certificate on the CRL"]
+    #[doc = " * without obtaining the certificate itself; this would render impractical any"]
+    #[doc = " * validity check for CRLs based on the expiry status of the revoked"]
+    #[doc = " * certificates."]
+    #[doc = " *"]
     #[doc = " * @param fullLinkedCrl and fullLinkedCrlWithAlg: contain a full linkage"]
     #[doc = " * ID-based CRL, i.e., a listing of the individual and/or group linkage data"]
     #[doc = " * for all certificates that:"]
     #[doc = " *  - contain the indicated cracaId and crlSeries values, and"]
     #[doc = " *  - are revoked by linkage value, and"]
-    #[doc = " *  - have been revoked, and"]
-    #[doc = " *  - have not expired."]
+    #[doc = " *  - have been revoked"]
     #[doc = " * The difference between fullLinkedCrl and fullLinkedCrlWithAlg is in how"]
     #[doc = " * the cryptographic algorithms to be used in the seed evolution function and"]
     #[doc = " * linkage value generation function of 5.1.3.4 are communicated to the"]
@@ -5172,3266 +4255,4 @@ pub mod ieee1609_dot2_crl_base_types {
         #[rasn(extension_addition)]
         deltaLinkedCrlWithAlg(ToBeSignedLinkageValueCrlWithAlgIdentifier),
     }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_aca_ee_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::Certificate;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{Time32, Uint8};
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains a certificate and associated data as"]
-    #[doc = " * generated by the ACA for the EE that will be the holder of that"]
-    #[doc = " * certificate. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note In the case where the butterfly expansion function is used"]
-    #[doc = " * to set certEncKey in RaAcaCertRequest, the value j is not communicated to"]
-    #[doc = " * the ACA. However, the EE that receives the certificate response can only"]
-    #[doc = " * decrypt the response if it knows j. The RA is therefore anticipated to"]
-    #[doc = " * store j so that it can be associated with the appropriate certificate"]
-    #[doc = " * response. The RA encodes j in the filename."]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of AcaEeCertResponse."]
-    #[doc = " *"]
-    #[doc = " * @param certificate: contains an authorization certificate generated by the"]
-    #[doc = " * ACA. It is of the type indicated by the type field in the corresponding"]
-    #[doc = " * request (if the requester requested an incorrect type, the response would"]
-    #[doc = " * be an error not an instance of this structure)."]
-    #[doc = " *"]
-    #[doc = " * @param privateKeyInfo: shall be:"]
-    #[doc = " *   - Present and contain the private key randomization value, if the field"]
-    #[doc = " * certificate.type is explicit and the butterfly key mechanism was used to"]
-    #[doc = " * generate the certificate. This is used by the EE in deriving the butterfly"]
-    #[doc = " * private key for explicit certificates as specified in 9.3."]
-    #[doc = " *   - Present and contain the private key reconstruction value, if the field"]
-    #[doc = " * certificate.type is implicit. This is used by the EE as specified in 5.3.2"]
-    #[doc = " * of IEEE Std 1609.2a-2017 (also 9.3 if the butterfly key mechanism is used)."]
-    #[doc = " *   - Absent otherwise."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct AcaEeCertResponse {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        pub certificate: Certificate,
-        #[rasn(size("32"), identifier = "privateKeyInfo")]
-        pub private_key_info: Option<OctetString>,
-    }
-    impl AcaEeCertResponse {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            certificate: Certificate,
-            private_key_info: Option<OctetString>,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                certificate,
-                private_key_info,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the parent structure for all structures exchanged between"]
-    #[doc = " * the ACA and the EE. The ACA - EE interface is a logical interface rather"]
-    #[doc = " * than a direct communications interface in that there is no direct message"]
-    #[doc = " * flow between the ACA and the EE: Messages from the ACA are stored"]
-    #[doc = " * by the RA and subsequently forwarded to the EE. The PDUs are identified as"]
-    #[doc = " * ACA-EE PDUs even though the RA acts as a forwarder for them because those"]
-    #[doc = " * PDUs are created by the ACA and encrypted for the EE, and not modified and"]
-    #[doc = " * frequently not read by the RA. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param acaEeCertResponse: contains the ACA's response to"]
-    #[doc = " * RaAcaCertRequestSPDU, which is meant for the EE and sent via the RA."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum AcaEeInterfacePdu {
-        acaEeCertResponse(AcaEeCertResponse),
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_aca_la_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure is not used by EEs, so it is defined as NULL for"]
-    #[doc = " * purposes of this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(delegate)]
-    pub struct AcaLaInterfacePdu(pub ());
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_aca_ma_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure is not used by EEs, so it is defined as NULL for"]
-    #[doc = " * purposes of this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(delegate)]
-    pub struct AcaMaInterfacePdu(pub ());
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_aca_ra_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2::{CertificateType, ToBeSignedCertificate};
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{
-        HashAlgorithm, HashedId8, LaId, PublicEncryptionKey, Time32, Uint8,
-    };
-    use super::ieee1609_dot2_dot1_protocol::{
-        AcaEeCertResponseCubkSpdu, AcaEeCertResponsePlainSpdu, AcaEeCertResponsePrivateSpdu,
-        Ieee1609Dot2DataSymmEncryptedSingleRecipient,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains a certificate response by the ACA,"]
-    #[doc = " * encapsulated for consumption by the EE, as well as associated data for"]
-    #[doc = " * consumption by the RA. The response is of form AcaEeCertResponsePlainSpdu,"]
-    #[doc = " * AcaEeCertResponsePrivateSpdu, or AcaEeCertResponseCubkSpdu, and is"]
-    #[doc = " * generated in response to a successful RaAcaCertRequestSpdu. In this"]
-    #[doc = " * structure:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of AcaRaCertResponse."]
-    #[doc = " *"]
-    #[doc = " * @param requestHash: contains the hash of the corresponding"]
-    #[doc = " * RaAcaCertRequestSPDU."]
-    #[doc = " *"]
-    #[doc = " * @param acaResponse: contains the certificate for the EE in a suitable form"]
-    #[doc = " * as determined from the corresponding RaAcaCertRequestSPDU."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct AcaRaCertResponse {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "requestHash")]
-        pub request_hash: HashedId8,
-        #[rasn(identifier = "acaResponse")]
-        pub aca_response: AcaResponse,
-    }
-    impl AcaRaCertResponse {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            request_hash: HashedId8,
-            aca_response: AcaResponse,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                request_hash,
-                aca_response,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the parent structure for all structures exchanged between"]
-    #[doc = " * the ACA and the RA. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param raAcaCertRequest: contains the request for an authorization"]
-    #[doc = " * certificate from the RA to the ACA on behalf of the EE."]
-    #[doc = " *"]
-    #[doc = " * @param acaRaCertResponse: contains the ACA's response to RaAcaCertRequest."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum AcaRaInterfacePdu {
-        raAcaCertRequest(RaAcaCertRequest),
-        acaRaCertResponse(AcaRaCertResponse),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the certificate for the EE in a suitable"]
-    #[doc = " * form as determined from the corresponding RaAcaCertRequestSPDU. In this"]
-    #[doc = " * structure:"]
-    #[doc = " *"]
-    #[doc = " * @param plain: contains the certificate for the EE in plain, that is, without"]
-    #[doc = " * encryption or signature. This choice is used only when the field"]
-    #[doc = " * certEncKey is absent and flags.cubk is not set in the corresponding"]
-    #[doc = " * RaAcaCertRequest."]
-    #[doc = " *"]
-    #[doc = " * @param private: contains the certificate for the EE in an encrypted then"]
-    #[doc = " * signed form to protect the EE's privacy from the RA. This choice is used"]
-    #[doc = " * only when the field certEncKey is present and flags.cubk is not set in the"]
-    #[doc = " * corresponding RaAcaCertRequest."]
-    #[doc = " *"]
-    #[doc = " * @param cubk: contains the certificate for the EE in an encrypted form. This"]
-    #[doc = " * choice is used only when the field certEncKey is absent and flags.cubk is"]
-    #[doc = " * set in the corresponding RaAcaCertRequest."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum AcaResponse {
-        plain(AcaEeCertResponsePlainSpdu),
-        private(AcaEeCertResponsePrivateSpdu),
-        cubk(AcaEeCertResponseCubkSpdu),
-    }
-    #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EncryptedIndividualPLVEncPlv {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EncryptedIndividualPLVEncPlv {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains an individual prelinkage value encrypted by"]
-    #[doc = " * the LA for the ACA using the shared secret key. An overview of this"]
-    #[doc = " * structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note How the ACA obtains the shared symmetric key and how the RA"]
-    #[doc = " * associates the encPlv1 and encPlv2 with the correct certificate request are"]
-    #[doc = " * outside the scope of this document."]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param laId: contains the ID of the LA that created the prelinkage value."]
-    #[doc = " * See Annex D for further discussion of LA IDs."]
-    #[doc = " *"]
-    #[doc = " * @param encPlv: contains the encrypted individual prelinkage value, that is,"]
-    #[doc = " * the ciphertext field decrypts to a PreLinkageValue. It contains a pointer"]
-    #[doc = " * (hash of the shared symmetric key) to the used shared secret encryption key."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EncryptedIndividualPLV {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "laId")]
-        pub la_id: LaId,
-        #[rasn(identifier = "encPlv")]
-        pub enc_plv: EncryptedIndividualPLVEncPlv,
-    }
-    impl EncryptedIndividualPLV {
-        pub fn new(version: Uint8, la_id: LaId, enc_plv: EncryptedIndividualPLVEncPlv) -> Self {
-            Self {
-                version,
-                la_id,
-                enc_plv,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters needed to generate a linkage"]
-    #[doc = " * value for a given (EE, i, j). An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note See Annex D for further discussion of LAs."]
-    #[doc = " *"]
-    #[doc = " * @param encPlv1: contains the EncryptedIndividualPLV from one of the LAs."]
-    #[doc = " *"]
-    #[doc = " * @param encPlv2: contains the EncryptedIndividualPLV from the other LA."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct LinkageInfo {
-        #[rasn(identifier = "encPlv1")]
-        pub enc_plv1: EncryptedIndividualPLV,
-        #[rasn(identifier = "encPlv2")]
-        pub enc_plv2: EncryptedIndividualPLV,
-    }
-    impl LinkageInfo {
-        pub fn new(enc_plv1: EncryptedIndividualPLV, enc_plv2: EncryptedIndividualPLV) -> Self {
-            Self { enc_plv1, enc_plv2 }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains an individual prelinkage value. It is an"]
-    #[doc = " * octet string of length 9 octets."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct PreLinkageValue(pub FixedOctetString<9usize>);
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters needed to request an individual"]
-    #[doc = " * authorization certificate. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note:"]
-    #[doc = " *   - In the case where the butterfly key mechanism is used to set"]
-    #[doc = " * certEncKey, the value of j is not communicated to the ACA. However, the EE"]
-    #[doc = " * that receives the certificate response can only decrypt the response if it"]
-    #[doc = " * knows j. The RA is therefore anticipated to store j so that it can be"]
-    #[doc = " * associated with the appropriate certificate response."]
-    #[doc = " *"]
-    #[doc = " *   - The cracaId and crlSeries are set to the indicated values"]
-    #[doc = " * in the request. The ACA replaces these values with the appropriate values"]
-    #[doc = " * in the response."]
-    #[doc = " *"]
-    #[doc = " *   - The ACA is not bound by the contents of the request and can"]
-    #[doc = " * issue certificates that are different from those requested, if so directed"]
-    #[doc = " * by policy."]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of RaAcaCertRequest."]
-    #[doc = " *"]
-    #[doc = " * @param type: indicates whether the request is for an explicit or implicit"]
-    #[doc = " * certificate (see 4.1.1, 4.1.3.3.1)."]
-    #[doc = " *"]
-    #[doc = " * @param flags: contains the flags related to the use of the butterfly key"]
-    #[doc = " * mechanism, and provides the following instructions to the ACA as to how"]
-    #[doc = " * to generate the response:"]
-    #[doc = " *   - If the flag butterflyExplicit is set, the request is valid only if"]
-    #[doc = " * the type field is set to explicit. In this case, the ACA uses the"]
-    #[doc = " * butterfly key derivation for explicit certificates as specified in 9.3."]
-    #[doc = " * The field tbsCert.verifyKeyIndicator.verificationKey is used by the ACA as"]
-    #[doc = " * the cocoon public key for signing. The field privateKeyInfo in the"]
-    #[doc = " * corresponding AcaEeCertResponse is used by the EE as the random integer to"]
-    #[doc = " * recover the butterfly private key for signing."]
-    #[doc = " *   - If the flag cubk is set, the request is valid only if the certEncKey"]
-    #[doc = " * field is absent. In this case, the ACA uses the compact unified variation"]
-    #[doc = " * of the butterfly key mechanism as specified in 9.3. This means that the"]
-    #[doc = " * ACA generates an AcaEeCertResponseCubkSpdu instead of an"]
-    #[doc = " * AcaEeCertResponsePrivateSpdu, and the response is valid only if the ACA"]
-    #[doc = " * certificate has the flag cubk set."]
-    #[doc = " *"]
-    #[doc = " * @param linkageInfo: contains the encrypted prelinkage values needed to"]
-    #[doc = " * generate the linkage value for the certificate. If linkageInfo is present,"]
-    #[doc = " * the field tbsCert.id is of type LinkageData, where the iCert field is set"]
-    #[doc = " * to the actual i-period value and the linkage-value field is set to a dummy"]
-    #[doc = " * value to be replaced by the ACA with the actual linkage value. The"]
-    #[doc = " * encrypted prelinkage values are encrypted for the ACA by the LAs."]
-    #[doc = " *"]
-    #[doc = " * @param certEncKey: is used in combination with flags.cubk to indicate"]
-    #[doc = " * the type of response that is expected from the ACA. It is as follows:"]
-    #[doc = " *   - Absent and flags.cubk is not set if the ACA's response doesn't need"]
-    #[doc = " * to be encrypted. In this case, the ACA responds with"]
-    #[doc = " * AcaEeCertResponsePlainSpdu."]
-    #[doc = " *   - Absent and flags.cubk is set if the ACA's response is to be encrypted"]
-    #[doc = " * with the verification key from the request and not signed. In this case,"]
-    #[doc = " * the ACA responds with AcaEeCertResponseCubkSpdu."]
-    #[doc = " *   - Present and flags.cubk is not set if the ACA's response is to be"]
-    #[doc = " * encrypted with certEncKey and then signed by the ACA. In this case, the"]
-    #[doc = " * ACA responds with AcaEeCertResponsePrivateSpdu."]
-    #[doc = " *"]
-    #[doc = " * @param tbsCert: contains parameters of the requested certificate. The"]
-    #[doc = " * certificate type depends on the field type, as follows:"]
-    #[doc = " *   - If type is explicit, the request is valid only if"]
-    #[doc = " * tbsCert.verifyKeyIndicator is a verificationKey."]
-    #[doc = " *   - If type is implicit, the request is valid only if"]
-    #[doc = " * tbsCert.verifyKeyIndicator is a reconstructionValue."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct RaAcaCertRequest {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "type")]
-        pub r_type: CertificateType,
-        pub flags: RaAcaCertRequestFlags,
-        #[rasn(identifier = "linkageInfo")]
-        pub linkage_info: Option<LinkageInfo>,
-        #[rasn(identifier = "certEncKey")]
-        pub cert_enc_key: Option<PublicEncryptionKey>,
-        #[rasn(value("0.."), identifier = "tbsCert")]
-        pub tbs_cert: ToBeSignedCertificate,
-    }
-    impl RaAcaCertRequest {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            r_type: CertificateType,
-            flags: RaAcaCertRequestFlags,
-            linkage_info: Option<LinkageInfo>,
-            cert_enc_key: Option<PublicEncryptionKey>,
-            tbs_cert: ToBeSignedCertificate,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                r_type,
-                flags,
-                linkage_info,
-                cert_enc_key,
-                tbs_cert,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to convey information from the RA to the ACA"]
-    #[doc = " * about operations to be carried out when generating the certificate. For"]
-    #[doc = " * more details see the specification of RaAcaCertRequest. An overview of"]
-    #[doc = " * this structure is as follows:"]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct RaAcaCertRequestFlags(pub FixedBitString<8usize>);
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_acpc {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{HashAlgorithm, IValue, Psid, Time32, Uint8};
-    use super::ieee1609_dot2_dot1_protocol::{Ieee1609Dot2DataSigned, Ieee1609Dot2DataUnsecured};
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This is a 16 byte string that represents the value of a node in the"]
-    #[doc = " * ACPC tree."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct AcpcNodeValue(pub FixedOctetString<16usize>);
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains an APrV structure produced by the CAM. An"]
-    #[doc = " * overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param tree: contains an AprvBinaryTree."]
-    #[doc = " *"]
-    #[doc = " * @param aprv: contains a single IndividualAprv."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum AcpcPdu {
-        tree(AprvBinaryTree),
-        aprv(IndividualAprv),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the PSID used to indicate activities in ACPC as specified in"]
-    #[doc = " * this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, value("2113696"))]
-    pub struct AcpcPsid(pub Psid);
-    #[doc = "*"]
-    #[doc = " * @brief This is an 8 byte string that identifies an ACPC tree series. It is"]
-    #[doc = " * required to be globally unique within the system and is the same for all"]
-    #[doc = " * ACPC tree instances within the ACPC tree series. Registration of AcpcTreeId"]
-    #[doc = " * values is managed by the IEEE RA; see http://standards.ieee.org/regauth. A"]
-    #[doc = " * list of assigned AcpcTreeId values is provided in L.2."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct AcpcTreeId(pub FixedOctetString<8usize>);
-    #[doc = "*"]
-    #[doc = " * @brief This structure encodes a binary tree. An overview of this structure"]
-    #[doc = " * is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of AprvBinaryTree."]
-    #[doc = " *"]
-    #[doc = " * @param currentI: contains the i-value associated with the batch of"]
-    #[doc = " * certificates."]
-    #[doc = " *"]
-    #[doc = " * @param acpcTreeId: contains an identifier for the CAM creating this binary"]
-    #[doc = " * tree."]
-    #[doc = " *"]
-    #[doc = " * @param hashAlgorithmId: contains the identifier of the hash algorithm used"]
-    #[doc = " * inside the binary tree."]
-    #[doc = " *"]
-    #[doc = " * @param tree: contains a bit string indicating which nodes of the tree are"]
-    #[doc = " * present. It is calculated as specified in 9.5.4.2, and can be used by the"]
-    #[doc = " * EE to determine which entry in nodeValueList to use to derive that EE's"]
-    #[doc = " * APrV as specified in 9.5.2."]
-    #[doc = " *"]
-    #[doc = " * @param nodeValueList: contains the values of the nodes that are present in"]
-    #[doc = " * the order indicated by tree."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct AprvBinaryTree {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "currentI")]
-        pub current_i: IValue,
-        #[rasn(identifier = "acpcTreeId")]
-        pub acpc_tree_id: AcpcTreeId,
-        #[rasn(identifier = "hashAlgorithmId")]
-        pub hash_algorithm_id: HashAlgorithm,
-        pub tree: BitString,
-        #[rasn(size("1.."), identifier = "nodeValueList")]
-        pub node_value_list: SequenceOf<AcpcNodeValue>,
-    }
-    impl AprvBinaryTree {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            current_i: IValue,
-            acpc_tree_id: AcpcTreeId,
-            hash_algorithm_id: HashAlgorithm,
-            tree: BitString,
-            node_value_list: SequenceOf<AcpcNodeValue>,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                current_i,
-                acpc_tree_id,
-                hash_algorithm_id,
-                tree,
-                node_value_list,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure, C-OER encoded, is the input to the hash function to"]
-    #[doc = " * calculate child node values from a parent node. By including the ID fields"]
-    #[doc = " * it \"firewalls\" the hash function so that an attacker who inverts the hash"]
-    #[doc = " * has only found the hash preimage for a specific node, in a specific tree,"]
-    #[doc = " * for a specific time period. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param acpcTreeId: contains an identifier for this ACPC tree series."]
-    #[doc = " *"]
-    #[doc = " * @param acpcPeriod: contains an identifier for the time period for this tree."]
-    #[doc = " * If the certificates for which this set of APrVs are intended have an IValue"]
-    #[doc = " * field, acpcPeriod in this structure shall be the IValue field in the"]
-    #[doc = " * certificates. How the RA and the CAM synchronize on this value is outside"]
-    #[doc = " * the scope of this document."]
-    #[doc = " *"]
-    #[doc = " * @param childNodeId: contains a bit string of length l encoding the node"]
-    #[doc = " * location within the l'th level."]
-    #[doc = " *"]
-    #[doc = " * @param parentNodeValue: contains the value of the parent node."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct AprvHashCalculationInput {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "acpcTreeId")]
-        pub acpc_tree_id: AcpcTreeId,
-        #[rasn(identifier = "acpcPeriod")]
-        pub acpc_period: IValue,
-        #[rasn(identifier = "childNodeId")]
-        pub child_node_id: BitString,
-        #[rasn(size("16"), identifier = "parentNodeValue")]
-        pub parent_node_value: OctetString,
-    }
-    impl AprvHashCalculationInput {
-        pub fn new(
-            version: Uint8,
-            acpc_tree_id: AcpcTreeId,
-            acpc_period: IValue,
-            child_node_id: BitString,
-            parent_node_value: OctetString,
-        ) -> Self {
-            Self {
-                version,
-                acpc_tree_id,
-                acpc_period,
-                child_node_id,
-                parent_node_value,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains an individual APrV. An overview of this"]
-    #[doc = " * structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of IndividualAprv."]
-    #[doc = " *"]
-    #[doc = " * @param currentI: contains the i-value associated with the batch of"]
-    #[doc = " * certificates."]
-    #[doc = " *"]
-    #[doc = " * @param acpcTreeId: contains an identifier for the CAM creating this binary"]
-    #[doc = " * tree."]
-    #[doc = " *"]
-    #[doc = " * @param nodeId: contains the identifier of the node."]
-    #[doc = " *"]
-    #[doc = " * @param nodeValue: contains the value of the node."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct IndividualAprv {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "currentI")]
-        pub current_i: IValue,
-        #[rasn(identifier = "acpcTreeId")]
-        pub acpc_tree_id: AcpcTreeId,
-        #[rasn(identifier = "nodeId")]
-        pub node_id: BitString,
-        #[rasn(identifier = "nodeValue")]
-        pub node_value: AcpcNodeValue,
-    }
-    impl IndividualAprv {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            current_i: IValue,
-            acpc_tree_id: AcpcTreeId,
-            node_id: BitString,
-            node_value: AcpcNodeValue,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                current_i,
-                acpc_tree_id,
-                node_id,
-                node_value,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is used to wrap an AprvBinaryTree in an Ieee1609Dot2Data for"]
-    #[doc = " * transmission if the policy is that the AprvBinaryTree be signed. See 9.5.6"]
-    #[doc = " * for discussion."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct SignedAprvBinaryTree {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl SignedAprvBinaryTree {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is used to wrap an IndividualAprv in an Ieee1609Dot2Data for"]
-    #[doc = " * transmission if the policy is that the IndividualAprv be signed. See 9.5.6"]
-    #[doc = " * for discussion."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct SignedIndividualAprv {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl SignedIndividualAprv {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is used to wrap an AprvBinaryTree in an Ieee1609Dot2Data for"]
-    #[doc = " * transmission if the policy is that the AprvBinaryTree need not be signed."]
-    #[doc = " * See 9.5.6 for discussion."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct UnsecuredAprvBinaryTree {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl UnsecuredAprvBinaryTree {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_cam_ra_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{EccP256CurvePoint, HashedId8, IValue, Uint8};
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This is a blinded ACPC encryption key produced by the CAM."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct BlindedKey(pub EccP256CurvePoint);
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains a blinded batch of keys for the EE during"]
-    #[doc = " * ACPC enrollment. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param requestHash: contains the hash of the corresponding request"]
-    #[doc = " * RaCamBatchRequest."]
-    #[doc = " *"]
-    #[doc = " * @param batch: contains a sequence of blinded keys, each mapped to one"]
-    #[doc = " * IValue from the periodList field of the request."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CamRaBatchResponse {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "requestHash")]
-        pub request_hash: HashedId8,
-        pub batch: SequenceOf<BlindedKey>,
-    }
-    impl CamRaBatchResponse {
-        pub fn new(version: Uint8, request_hash: HashedId8, batch: SequenceOf<BlindedKey>) -> Self {
-            Self {
-                version,
-                request_hash,
-                batch,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the parent structure for all structures exchanged between"]
-    #[doc = " * the CAM and the RA during ACPC enrollment. An overview of this structure"]
-    #[doc = " * is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param raCamBatchRequest: contains the ACPC blinded key batch request sent"]
-    #[doc = " * by the RA to the CAM."]
-    #[doc = " *"]
-    #[doc = " * @param camRaBatchResponse: contains the CAM's response to RaCamBatchRequest."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum CamRaInterfacePdu {
-        raCamBatchRequest(RaCamBatchRequest),
-        camRaBatchResponse(CamRaBatchResponse),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters needed to request a blinded batch"]
-    #[doc = " * of keys for the EE during ACPC enrollment. An overview of this structure"]
-    #[doc = " * is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param eeId: contains the EE's ID generated by the RA for the production of"]
-    #[doc = " * ACPC batch keys by the CAM."]
-    #[doc = " *"]
-    #[doc = " * @param periodList: contains the list of i-periods covered by the batch."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct RaCamBatchRequest {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(size("5"), identifier = "eeId")]
-        pub ee_id: OctetString,
-        #[rasn(identifier = "periodList")]
-        pub period_list: SequenceOf<IValue>,
-    }
-    impl RaCamBatchRequest {
-        pub fn new(version: Uint8, ee_id: OctetString, period_list: SequenceOf<IValue>) -> Self {
-            Self {
-                version,
-                ee_id,
-                period_list,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_cert_management {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2::{Certificate, SequenceOfCertificate};
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{HashedId32, HashedId48, HashedId8, Time32, Uint8};
-    use super::ieee1609_dot2_crl::SecuredCrl;
-    use super::ieee1609_dot2_crl_base_types::CrlSeries;
-    use super::ieee1609_dot2_dot1_protocol::{
-        CtlSignatureSpdu, MultiSignedCtlSpdu, SequenceOfPsid,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This is the parent structure for all SCMS component certificate"]
-    #[doc = " * management structures. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param compositeCrl: contains zero or more SecuredCrl as defined in IEEE"]
-    #[doc = " * Std 1609.2, and the CTL."]
-    #[doc = " *"]
-    #[doc = " * @param certificateChain: contains a collection of certificates and the CTL."]
-    #[doc = " *"]
-    #[doc = " * @param multiSignedCtl: contains the CTL signed by multiple"]
-    #[doc = " * signers, the electors."]
-    #[doc = " *"]
-    #[doc = " * @param tbsCtlSignature: contains the CTL-instance-specific information used"]
-    #[doc = " * to generate a signature on the CTL."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum CertManagementPdu {
-        compositeCrl(CompositeCrl),
-        certificateChain(CertificateChain),
-        multiSignedCtl(MultiSignedCtl),
-        tbsCtlSignature(ToBeSignedCtlSignature),
-        infoStatus(CertificateManagementInfoStatus),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to encapsulate certificates and a CTL. An"]
-    #[doc = " * overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param homeCtl: contains a CTL. If the certificate chain was requested via"]
-    #[doc = " * the mechanisms given in 6.3.5.7, the CtlSeriesId in this CTL is the"]
-    #[doc = " * same as the CtlSeriesId provided in the request. The intent is that"]
-    #[doc = " * this is the \"home\" CTL of the requester, but this field can in practice be"]
-    #[doc = " * used to provide any CTL."]
-    #[doc = " *"]
-    #[doc = " * @param others: contains additional valid certificates of the CAs and the"]
-    #[doc = " * MAs chosen by means outside the scope of this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CertificateChain {
-        #[rasn(identifier = "homeCtl")]
-        pub home_ctl: MultiSignedCtlSpdu,
-        pub others: SequenceOf<Certificate>,
-    }
-    impl CertificateChain {
-        pub fn new(home_ctl: MultiSignedCtlSpdu, others: SequenceOf<Certificate>) -> Self {
-            Self { home_ctl, others }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the status of different certificate"]
-    #[doc = " * management information, including CRLs, CTLs, and individual certificates"]
-    #[doc = " * of CAs, MAs, and the RA."]
-    #[doc = " *"]
-    #[doc = " * @param crl: contains the status information for CRLs."]
-    #[doc = " *"]
-    #[doc = " * @param ctl: contains the status information for CTLs."]
-    #[doc = " *"]
-    #[doc = " * @param caCcf: contains the time of the last update of any of the CA"]
-    #[doc = " * certificates in the CCF."]
-    #[doc = " *"]
-    #[doc = " * @param ma: contains the status information for MA certificates."]
-    #[doc = " *"]
-    #[doc = " * @param ra: shall be present and contain the time of last update of the RA's"]
-    #[doc = " * certificate, if this structure is sent by an RA."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CertificateManagementInfoStatus {
-        pub crl: SequenceOfCrlInfoStatus,
-        pub ctl: SequenceOfCtlInfoStatus,
-        #[rasn(identifier = "caCcf")]
-        pub ca_ccf: Time32,
-        pub ma: SequenceOfMaInfoStatus,
-        pub ra: Option<Time32>,
-    }
-    impl CertificateManagementInfoStatus {
-        pub fn new(
-            crl: SequenceOfCrlInfoStatus,
-            ctl: SequenceOfCtlInfoStatus,
-            ca_ccf: Time32,
-            ma: SequenceOfMaInfoStatus,
-            ra: Option<Time32>,
-        ) -> Self {
-            Self {
-                crl,
-                ctl,
-                ca_ccf,
-                ma,
-                ra,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to encapsulate CRLs and a CTL. An overview"]
-    #[doc = " * of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param crl: contains a list of signed CRLs for different (CRACA ID, CRL"]
-    #[doc = " * series) pairs. The CRLs are signed individually, and this document does not"]
-    #[doc = " * specify the order in which they should appear."]
-    #[doc = " *"]
-    #[doc = " * @param homeCtl: contains a CTL. If the composite CRL was requested via the"]
-    #[doc = " * mechanisms given in 6.3.5.8, the CtlSeriesId in this CTL is the same as"]
-    #[doc = " * the CtlSeriesId provided in the request. The intent is that this is the"]
-    #[doc = " * \"home\" CTL of the requester, but this field can in practice be used to"]
-    #[doc = " * provide any CTL with any CtlSeriesId value."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CompositeCrl {
-        pub crl: SequenceOf<SecuredCrl>,
-        #[rasn(identifier = "homeCtl")]
-        pub home_ctl: MultiSignedCtlSpdu,
-    }
-    impl CompositeCrl {
-        pub fn new(crl: SequenceOf<SecuredCrl>, home_ctl: MultiSignedCtlSpdu) -> Self {
-            Self { crl, home_ctl }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the status information for a CRL."]
-    #[doc = " *"]
-    #[doc = " * @param cracaId: contains the CRACA ID of the CRL."]
-    #[doc = " *"]
-    #[doc = " * @param series: contains the CRL series of the CRL."]
-    #[doc = " *"]
-    #[doc = " * @param issueDate: contains the time of the last update of the CRL."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CrlInfoStatus {
-        #[rasn(identifier = "cracaId")]
-        pub craca_id: HashedId8,
-        pub series: CrlSeries,
-        #[rasn(identifier = "issueDate")]
-        pub issue_date: Time32,
-    }
-    impl CrlInfoStatus {
-        pub fn new(craca_id: HashedId8, series: CrlSeries, issue_date: Time32) -> Self {
-            Self {
-                craca_id,
-                series,
-                issue_date,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the hash of an elector certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CtlElectorEntry(pub HashedId48);
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the status information for a CTL."]
-    #[doc = " *"]
-    #[doc = " * @param ctlSeriesId: contains the elector group ID of the CTL."]
-    #[doc = " *"]
-    #[doc = " * @param sequenceNumber: contains the sequence number of the CTL."]
-    #[doc = " *"]
-    #[doc = " * @param lastUpdate: contains the time of the last update of the CTL."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CtlInfoStatus {
-        #[rasn(identifier = "ctlSeriesId")]
-        pub ctl_series_id: CtlSeriesId,
-        #[rasn(identifier = "sequenceNumber")]
-        pub sequence_number: CtlSequenceNumber,
-        #[rasn(identifier = "lastUpdate")]
-        pub last_update: Time32,
-    }
-    impl CtlInfoStatus {
-        pub fn new(
-            ctl_series_id: CtlSeriesId,
-            sequence_number: CtlSequenceNumber,
-            last_update: Time32,
-        ) -> Self {
-            Self {
-                ctl_series_id,
-                sequence_number,
-                last_update,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the hash of a root CA certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CtlRootCaEntry(pub HashedId32);
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to encode the CTL sequence number. This"]
-    #[doc = " * document does not specify semantics of this type once it reaches its"]
-    #[doc = " * maximum value."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, value("0..=65535"))]
-    pub struct CtlSequenceNumber(pub u16);
-    #[doc = "*"]
-    #[doc = " * @brief This structure identifies a group of electors that sign a series of"]
-    #[doc = " * CTLs for a specific purpose. Registration of CtlSeriesId values is"]
-    #[doc = " * managed by the IEEE RA; see http://standards.ieee.org/regauth. A list of"]
-    #[doc = " * assigned CtlSeriesId values is provided in K.1."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CtlSeriesId(pub FixedOctetString<8usize>);
-    #[doc = "*"]
-    #[doc = " * @brief This structure specifies a CTL that contains information about the"]
-    #[doc = " * complete set of certificates trusted by the electors that sign the CTL. An"]
-    #[doc = " * overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note:"]
-    #[doc = " *   - If in future CTL types are defined that contain the same"]
-    #[doc = " * information as, or a subset of the information in, the fullIeeeCtl, those"]
-    #[doc = " * types are anticipated to contain the same sequence number as the"]
-    #[doc = " * corresponding fullIeeeCtl."]
-    #[doc = " *"]
-    #[doc = " *   - Any root CA or elector certificate that is not on the CTL is"]
-    #[doc = " * not trusted. The electorRemove and rootCaRemove are intended to be used"]
-    #[doc = " * only if the SCMS manager wants to explicitly indicate that a previously"]
-    #[doc = " * trusted entity (elector or root CA) is now not trusted even though that"]
-    #[doc = " * entity's certificate is still within its validity period. In practice, it"]
-    #[doc = " * is anticipated that the remove fields (electorRemove and rootCaRemove)"]
-    #[doc = " * will almost always be sequences of length 0."]
-    #[doc = " *"]
-    #[doc = " * @param type: contains the type of the CTL. It is identical to the type"]
-    #[doc = " * field that appears in the enclosing MultiSignedCtl. The field is included"]
-    #[doc = " * here as well to provide the simplest mechanism to help ensure that the"]
-    #[doc = " * type is included in the calculated CTL hash."]
-    #[doc = " *"]
-    #[doc = " * @param CtlSeriesId: contains the group of electors that have signed the"]
-    #[doc = " * CTL. It plays a role similar to CrlSeries in a CRL. This field is intended"]
-    #[doc = " * to be globally unique in the universe of all systems that use the"]
-    #[doc = " * MultiSignedCtl. See the specification of CtlSeriesId for discussion of"]
-    #[doc = " * a convention that can be followed to enable uniqueness."]
-    #[doc = " *"]
-    #[doc = " * @param sequenceNumber: contains the sequence number of the CTL. This is"]
-    #[doc = " * incremented by 1 every time a new FullIeeeTbsCtl is issued."]
-    #[doc = " *"]
-    #[doc = " * @param effectiveDate: contains the time when the CTL is to take effect."]
-    #[doc = " * This is to be greater than or equal to the effectiveDate field in the CTL"]
-    #[doc = " * with the same CtlSeriesId and the previous sequence number."]
-    #[doc = " *"]
-    #[doc = " * @param electorApprove: contains the list of hashes of the elector"]
-    #[doc = " * certificates that are approved as of the effective date. The hash is"]
-    #[doc = " * calculated with the same hash algorithm that is used to hash the elector"]
-    #[doc = " * certificate for signing."]
-    #[doc = " *"]
-    #[doc = " * @param electorRemove: contains the list of hashes of the elector"]
-    #[doc = " * certificates that are valid (that is, not expired) on the effective date and"]
-    #[doc = " * are not approved, as of the effective date, to sign a CTL. The hash is"]
-    #[doc = " * calculated with the same hash algorithm that is used to hash the elector"]
-    #[doc = " * certificate for signing. This field is to be considered informational as a"]
-    #[doc = " * certificate that is not included in electorApprove is not valid even if it"]
-    #[doc = " * does not appear in electorRemove."]
-    #[doc = " *"]
-    #[doc = " * @param rootCaApprove: contains the list of root CA certificates that are"]
-    #[doc = " * approved as of the effective date. The hash is calculated with the same"]
-    #[doc = " * hash algorithm that is used to hash the root certificate for signing. If"]
-    #[doc = " * the root certificate is signed with a hash function with a 48 octet"]
-    #[doc = " * output, this is truncated to the low-order 32 bytes for inclusion in the"]
-    #[doc = " * CTL."]
-    #[doc = " *"]
-    #[doc = " * @param rootCaRemove: contains the list of root CA certificates that are"]
-    #[doc = " * valid (that is, not expired) on the effective date and are not approved, as"]
-    #[doc = " * of the effective date, to issue certificates or carry out other"]
-    #[doc = " * activities. If the root certificate is signed with a hash function"]
-    #[doc = " * with a 48 octet output, this is truncated to the low-order 32 bytes for"]
-    #[doc = " * inclusion in the CTL. This field is to be considered informational as a"]
-    #[doc = " * certificate that is not included in rootCaApprove is not valid even if it"]
-    #[doc = " * does not appear in rootCaRemove."]
-    #[doc = " *"]
-    #[doc = " * @param quorum: contains the quorum, that is, the number of the electors"]
-    #[doc = " * required to sign the next CTL with the same CtlSeriesId value for that"]
-    #[doc = " * CTL to be trusted. If this field is absent, the quorum for the next CTL"]
-    #[doc = " * shall be the quorum for the current CTL."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct FullIeeeTbsCtl {
-        #[rasn(value("1"), identifier = "type")]
-        pub r_type: Ieee1609dot2dot1MsctlType,
-        #[rasn(identifier = "ctlSeriesId")]
-        pub ctl_series_id: CtlSeriesId,
-        #[rasn(identifier = "sequenceNumber")]
-        pub sequence_number: CtlSequenceNumber,
-        #[rasn(identifier = "effectiveDate")]
-        pub effective_date: Time32,
-        #[rasn(identifier = "electorApprove")]
-        pub elector_approve: SequenceOf<CtlElectorEntry>,
-        #[rasn(identifier = "electorRemove")]
-        pub elector_remove: SequenceOf<CtlElectorEntry>,
-        #[rasn(identifier = "rootCaApprove")]
-        pub root_ca_approve: SequenceOf<CtlRootCaEntry>,
-        #[rasn(identifier = "rootCaRemove")]
-        pub root_ca_remove: SequenceOf<CtlRootCaEntry>,
-        #[rasn(extension_addition)]
-        pub quorum: Integer,
-    }
-    impl FullIeeeTbsCtl {
-        pub fn new(
-            r_type: Ieee1609dot2dot1MsctlType,
-            ctl_series_id: CtlSeriesId,
-            sequence_number: CtlSequenceNumber,
-            effective_date: Time32,
-            elector_approve: SequenceOf<CtlElectorEntry>,
-            elector_remove: SequenceOf<CtlElectorEntry>,
-            root_ca_approve: SequenceOf<CtlRootCaEntry>,
-            root_ca_remove: SequenceOf<CtlRootCaEntry>,
-            quorum: Integer,
-        ) -> Self {
-            Self {
-                r_type,
-                ctl_series_id,
-                sequence_number,
-                effective_date,
-                elector_approve,
-                elector_remove,
-                root_ca_approve,
-                root_ca_remove,
-                quorum,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the integer used to identify the type of the CTL."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, value("0..=255"))]
-    pub struct Ieee1609dot2dot1MsctlType(pub u8);
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the status information for an MA's"]
-    #[doc = " * certificate."]
-    #[doc = " *"]
-    #[doc = " * @param psids: contains the PSIDs associated with the misbehavior that is to"]
-    #[doc = " * be reported to that MA."]
-    #[doc = " *"]
-    #[doc = " * @param updated: contains the time of the last update of the MA's certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct MaInfoStatus {
-        pub psids: SequenceOfPsid,
-        pub updated: Time32,
-    }
-    impl MaInfoStatus {
-        pub fn new(psids: SequenceOfPsid, updated: Time32) -> Self {
-            Self { psids, updated }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure a certificate trust list (CTL) signed by multiple"]
-    #[doc = " * signers, the electors. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param type: contains the type of the multi-signed CTL. Only one type of"]
-    #[doc = " * multi-signed CTL is supported in this version of this document."]
-    #[doc = " *"]
-    #[doc = " * @param tbsCtl: contains the CTL contents."]
-    #[doc = " *"]
-    #[doc = " * @param unsigned: contains data that are associated with the CTL and that"]
-    #[doc = " * are not included directly in tbsCtl. For example, if the type is"]
-    #[doc = " * fullIeeeCtlType, the FullIeeeTbsCtl contains the hashes of the"]
-    #[doc = " * certificates, and the certificates themselves are contained in unsigned."]
-    #[doc = " *"]
-    #[doc = " * @param signatures: contains the signatures. How the signatures are"]
-    #[doc = " * calculated is specified in the definition of ToBeSignedCtlSignature. The"]
-    #[doc = " * number of signatures shall be no more than the number of electors. Each"]
-    #[doc = " * signature shall have been generated by a distinct elector."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct MultiSignedCtl {
-        #[rasn(identifier = "type")]
-        pub r_type: Ieee1609dot2dot1MsctlType,
-        #[rasn(identifier = "tbsCtl")]
-        pub tbs_ctl: Any,
-        pub unsigned: Any,
-        #[rasn(size("1.."))]
-        pub signatures: SequenceOf<CtlSignatureSpdu>,
-    }
-    impl MultiSignedCtl {
-        pub fn new(
-            r_type: Ieee1609dot2dot1MsctlType,
-            tbs_ctl: Any,
-            unsigned: Any,
-            signatures: SequenceOf<CtlSignatureSpdu>,
-        ) -> Self {
-            Self {
-                r_type,
-                tbs_ctl,
-                unsigned,
-                signatures,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This type is used for clarity of definitions."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct SequenceOfCrlInfoStatus(pub SequenceOf<CrlInfoStatus>);
-    #[doc = "*"]
-    #[doc = " * @brief This type is used for clarity of definitions."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct SequenceOfCtlInfoStatus(pub SequenceOf<CtlInfoStatus>);
-    #[doc = "*"]
-    #[doc = " * @brief This type is used for clarity of definitions."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct SequenceOfMaInfoStatus(pub SequenceOf<MaInfoStatus>);
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains the CTL-instance-specific information used"]
-    #[doc = " * to generate a signature on the CTL. An overview of this structure is as"]
-    #[doc = " * follows:"]
-    #[doc = " *"]
-    #[doc = " * @param ctlSeriesId: contains the CtlSeriesId that appears in the CTL."]
-    #[doc = " *"]
-    #[doc = " * @param ctlType: identifies the type of the CTL."]
-    #[doc = " *"]
-    #[doc = " * @param sequenceNumber: contains the sequence number of the CTL being signed."]
-    #[doc = " *"]
-    #[doc = " * @param tbsCtlHash: contains the hash of the C-OER encoded tbsCtl field"]
-    #[doc = " * in the MultiSignedCtl. The hash is calculated using the same hash"]
-    #[doc = " * algorithm that is used to generate the signature on this structure when it"]
-    #[doc = " * is contained in a CtlSignatureSpdu. This algorithm can be determined from"]
-    #[doc = " * the headers of the CtlSignatureSpdu."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ToBeSignedCtlSignature {
-        #[rasn(identifier = "ctlSeriesId")]
-        pub ctl_series_id: CtlSeriesId,
-        #[rasn(identifier = "ctlType")]
-        pub ctl_type: Ieee1609dot2dot1MsctlType,
-        #[rasn(identifier = "sequenceNumber")]
-        pub sequence_number: CtlSequenceNumber,
-        #[rasn(identifier = "tbsCtlHash")]
-        pub tbs_ctl_hash: HashedId48,
-    }
-    impl ToBeSignedCtlSignature {
-        pub fn new(
-            ctl_series_id: CtlSeriesId,
-            ctl_type: Ieee1609dot2dot1MsctlType,
-            sequence_number: CtlSequenceNumber,
-            tbs_ctl_hash: HashedId48,
-        ) -> Self {
-            Self {
-                ctl_series_id,
-                ctl_type,
-                sequence_number,
-                tbs_ctl_hash,
-            }
-        }
-    }
-    pub const FULL_IEEE_CTL: Ieee1609dot2dot1MsctlType = Ieee1609dot2dot1MsctlType(1);
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_eca_ee_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2::{Certificate, CertificateType, SequenceOfCertificate};
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{EccP256CurvePoint, HashedId8, Time32, Uint8};
-    use super::ieee1609_dot2_dot1_protocol::{PublicVerificationKey, ToBeSignedCertificate};
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used by the ECA to respond to an EE's enrollment"]
-    #[doc = " * certificate request. Additional bootstrapping information including the"]
-    #[doc = " * RA's certificate are provided by the DCM. The specification of the DCM is"]
-    #[doc = " * outside the scope of this document. An overview of this structure is as"]
-    #[doc = " * follows:"]
-    #[doc = " *"]
-    #[doc = " *  The definition of validity for a certificate request, including"]
-    #[doc = " * constraints on the fields in this structure, is specified in 10.1."]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of EcaEeCertResponse."]
-    #[doc = " *"]
-    #[doc = " * @param requestHash: contains the following hash:"]
-    #[doc = " *   - EeEcaCertRequestSPDU, if the corresponding request was"]
-    #[doc = " * EeEcaCertRequestSPDU. This is calculated without \"canonicalizing\" the"]
-    #[doc = " * signature, i.e., it is calculated over the signature as given in the"]
-    #[doc = " * EeEcaCertRequestSpdu without re-encoding the signature's r component in"]
-    #[doc = " * x-coordinate-only form. See IEEE Std 1609.2 for further details on"]
-    #[doc = " * canonicalization."]
-    #[doc = " *   - EeRaSuccessorEnrollmentCertRequestSpd, if the corresponding request"]
-    #[doc = " * was EeRaSuccessorEnrollmentCertRequestSpd."]
-    #[doc = " *"]
-    #[doc = " * @param ecaCertChain: contains the ECA's currently valid certificate and the"]
-    #[doc = " * certificate chain, up to and including the root CA."]
-    #[doc = " *"]
-    #[doc = " * @param certificate: contains the enrollment certificate generated by the"]
-    #[doc = " * ECA, which shall be of the type indicated by the type field in the"]
-    #[doc = " * corresponding request."]
-    #[doc = " *"]
-    #[doc = " * @param privateKeyInfo: shall be present and contain the private key"]
-    #[doc = " * reconstruction value, if certificate.type is implicit. This is used by the"]
-    #[doc = " * EE as specified in 9.3.5.1."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct EcaEeCertResponse {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "requestHash")]
-        pub request_hash: HashedId8,
-        #[rasn(identifier = "ecaCertChain")]
-        pub eca_cert_chain: SequenceOfCertificate,
-        pub certificate: Certificate,
-        #[rasn(size("32"), identifier = "privateKeyInfo")]
-        pub private_key_info: Option<OctetString>,
-    }
-    impl EcaEeCertResponse {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            request_hash: HashedId8,
-            eca_cert_chain: SequenceOfCertificate,
-            certificate: Certificate,
-            private_key_info: Option<OctetString>,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                request_hash,
-                eca_cert_chain,
-                certificate,
-                private_key_info,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the parent structure for all structures exchanged between"]
-    #[doc = " * the ECA and the EE. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param eeEcaCertRequest: contains the enrollment certificate request sent"]
-    #[doc = " * by the EE to the ECA."]
-    #[doc = " *"]
-    #[doc = " * @param ecaEeCertResponse: contains the enrollment certificate response sent"]
-    #[doc = " * by the ECA to the EE."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum EcaEeInterfacePdu {
-        eeEcaCertRequest(EeEcaCertRequest),
-        ecaEeCertResponse(EcaEeCertResponse),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters needed to request an enrollment"]
-    #[doc = " * certificate from the ECA. The ECA may, subject to policy, issue an"]
-    #[doc = " * enrollment certificate with different contents than the contents requested."]
-    #[doc = " * An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note:"]
-    #[doc = " *   - The tbsCert.cracaId and tbsCert.crlSeries are set to the"]
-    #[doc = " * indicated values in the corresponding EeEcaCertRequest. In the issued"]
-    #[doc = " * enrollment certificate, they may have different values, set by the ECA."]
-    #[doc = " *   - The EE uses the type field to indicate whether it is"]
-    #[doc = " * requesting an explicit or an implicit enrollment certificate. A policy is"]
-    #[doc = " * anticipated that determines what type of certificate is appropriate for a"]
-    #[doc = " * given set of circumstances (such as PSIDs, other end entity information,"]
-    #[doc = " * and locality) and that if the EE has requested a kind of certificate that"]
-    #[doc = " * is not allowed by policy, the ECA returns an error to the EE."]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of EeEcaCertRequest."]
-    #[doc = " *"]
-    #[doc = " * @param type: indicates whether the request is for an explicit or implicit"]
-    #[doc = " * certificate (see 4.1.1, 4.1.4.3.1)."]
-    #[doc = " *"]
-    #[doc = " * @param tbsCert: contains the parameters used by the ECA to generate the"]
-    #[doc = " * enrollment certificate. tbsCert.verifyKeyIndicator.verificationKey"]
-    #[doc = " * contains the public key information sent by the requester. The"]
-    #[doc = " * verifyKeyIndicator field indicates the choice verificationKey even if type"]
-    #[doc = " * is implicit, as this allows the requester to indicate which signature"]
-    #[doc = " * algorithm and curve they are requesting. The value in this field is used"]
-    #[doc = " * as the verification key in the certificate if the certificate issued in"]
-    #[doc = " * response to this request is explicit, and as the input public key value"]
-    #[doc = " * for implicit certificate generation if the certificate issued in response"]
-    #[doc = " * to this request is implicit."]
-    #[doc = " *"]
-    #[doc = " * @param canonicalId: shall be present and contain the canonical identifier"]
-    #[doc = " * for the device per 4.1.4.2, if the enclosing EeEcaCertRequestSpdu was"]
-    #[doc = " * signed by the canonical private key. The receiver is intended to use the"]
-    #[doc = " * canonicalId to look up the canonical public key to verify the certificate"]
-    #[doc = " * request."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct EeEcaCertRequest {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "type")]
-        pub r_type: CertificateType,
-        #[rasn(value("0.."), identifier = "tbsCert")]
-        pub tbs_cert: ToBeSignedCertificate,
-        #[rasn(identifier = "canonicalId")]
-        pub canonical_id: Option<Ia5String>,
-    }
-    impl EeEcaCertRequest {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            r_type: CertificateType,
-            tbs_cert: ToBeSignedCertificate,
-            canonical_id: Option<Ia5String>,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                r_type,
-                tbs_cert,
-                canonical_id,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_ee_ma_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure is currently being defined outside of this document,"]
-    #[doc = " * so it is defined as NULL for purposes of this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(delegate)]
-    pub struct EeMaInterfacePdu(pub ());
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_ee_ra_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::CertificateType;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use super::ieee1609_dot2_base_types::{HashedId8, IValue, PublicEncryptionKey, Time32, Uint8};
-    use super::ieee1609_dot2_dot1_acpc::AcpcTreeId;
-    use super::ieee1609_dot2_dot1_protocol::{
-        EeEcaCertRequestSpdu, PublicVerificationKey, ToBeSignedCertificate,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters for the butterfly key mechanism."]
-    #[doc = " * An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param original: contains the parameters for the original variant."]
-    #[doc = " *"]
-    #[doc = " * @param unified: contains the expansion function for signing to be used for"]
-    #[doc = " * the unified variant. The caterpillar public key and expansion function for"]
-    #[doc = " * encryption are the same as those for signing."]
-    #[doc = " *"]
-    #[doc = " * @param compactUnified: contains the expansion function for signing to be"]
-    #[doc = " * used for the compact unified variant. The caterpillar public key and"]
-    #[doc = " * expansion function for encryption are the same as those for signing."]
-    #[doc = " *"]
-    #[doc = " * @param encryptionKey: contains the public key for encrypting the"]
-    #[doc = " * certificate if the butterfly key mechanism is not used."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum AdditionalParams {
-        original(ButterflyParamsOriginal),
-        unified(ButterflyExpansion),
-        compactUnified(ButterflyExpansion),
-        encryptionKey(PublicEncryptionKey),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains material used in the butterfly key"]
-    #[doc = " * calculations as specified in 9.3.5.1 and 9.3.5.2. An overview of this"]
-    #[doc = " * structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param aes128: indicates that the symmetric algorithm used in the expansion"]
-    #[doc = " * function is AES-128 with the indicated 16 byte string used as the key."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum ButterflyExpansion {
-        #[rasn(size("16"))]
-        aes128(OctetString),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters for the original variation of the"]
-    #[doc = " * butterfly key mechanism. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param signingExpansion: contains the expansion function for signing."]
-    #[doc = " *"]
-    #[doc = " * @param encryptionKey: contains the caterpillar public key for encryption."]
-    #[doc = " *"]
-    #[doc = " * @param encryptionExpansion: contains the expansion function for encryption."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ButterflyParamsOriginal {
-        #[rasn(identifier = "signingExpansion")]
-        pub signing_expansion: ButterflyExpansion,
-        #[rasn(identifier = "encryptionKey")]
-        pub encryption_key: PublicEncryptionKey,
-        #[rasn(identifier = "encryptionExpansion")]
-        pub encryption_expansion: ButterflyExpansion,
-    }
-    impl ButterflyParamsOriginal {
-        pub fn new(
-            signing_expansion: ButterflyExpansion,
-            encryption_key: PublicEncryptionKey,
-            encryption_expansion: ButterflyExpansion,
-        ) -> Self {
-            Self {
-                signing_expansion,
-                encryption_key,
-                encryption_expansion,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters needed to request different types"]
-    #[doc = " * of authorization certificates. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " *  The definition of validity for a certificate request, including"]
-    #[doc = " * constraints on the fields in this structure, is specified in 10.1."]
-    #[doc = " *"]
-    #[doc = " * @note:"]
-    #[doc = " *   - In the case where the butterfly key mechanism is used to"]
-    #[doc = " * derive the certificate encryption key, the value j is not communicated to"]
-    #[doc = " * the ACA. However, the EE that receives the certificate response can only"]
-    #[doc = " * decrypt the response if it knows j. The RA is therefore anticipated to"]
-    #[doc = " * store j so that it can be associated with the appropriate certificate"]
-    #[doc = " * response."]
-    #[doc = " *   - If the type of id is LinkageData, the contents of the"]
-    #[doc = " * field in the request are replaced by random data by the RA when it sends"]
-    #[doc = " * the individual certificate requests to the ACA. The ACA then in turn"]
-    #[doc = " * replaces that data with the linkage values generated with the help of the"]
-    #[doc = " * LAs; see Annex D."]
-    #[doc = " *   - This document does not specify a method to include an"]
-    #[doc = " * encryptionKey in the requested certificates, if the butterfly key"]
-    #[doc = " * mechanism is used. The EE using such a certificate to sign a message"]
-    #[doc = " * cannot request that the response is encrypted to the certificate. Instead,"]
-    #[doc = " * it can request an encrypted response using the"]
-    #[doc = " * tbsData.headerInfo.encryptionKey field of the SignedData; see 6.3.9,"]
-    #[doc = " * 6.3.33, 6.3.34, and 6.3.36 of IEEE Std 1609.2 for more details."]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of EeRaCertRequest."]
-    #[doc = " *"]
-    #[doc = " * @param type: indicates whether the request is for an explicit or implicit"]
-    #[doc = " * certificate (see 4.1.1 and 4.1.4.3.1)."]
-    #[doc = " *"]
-    #[doc = " * @param tbsCert: contains the parameters to be used by the ACA to generate"]
-    #[doc = " * authorization certificate(s)."]
-    #[doc = " *   - id contains the identity information sent by the requester. If the"]
-    #[doc = " * type is LinkageData, the contents of the field are chosen by the EE using"]
-    #[doc = " * any appropriate means. RA replaces that in the certificates with the"]
-    #[doc = " * linkage values generated with the help of the LAs and the ACA; see Annex D."]
-    #[doc = " *   - validityPeriod contains the requested validity period of the first"]
-    #[doc = " * batch of certificates."]
-    #[doc = " *   - region, assuranceLevel, canRequestRollover, and encryptionKey, if"]
-    #[doc = " * present, contain the information sent by the requester for the requested"]
-    #[doc = " * certificates."]
-    #[doc = " *   - verifyKeyIndicator.verificationKey contains the public key"]
-    #[doc = " * information sent by the requester. The verifyKeyIndicator field indicates"]
-    #[doc = " * the choice verificationKey even if type is implicit, as this allows the"]
-    #[doc = " * requester to indicate which signature algorithm and curve they are"]
-    #[doc = " * requesting."]
-    #[doc = " *     - If the certificate issued in response to this request is explicit and"]
-    #[doc = " * butterfly expansion is not used, the value in this field is the"]
-    #[doc = " * verification key that appears in that certificate."]
-    #[doc = " *     - If the certificate issued in response to this request is implicit and"]
-    #[doc = " * butterfly expansion is not used, the value in this field is the input"]
-    #[doc = " * public key value for implicit certificate generation."]
-    #[doc = " *     - If butterfly expansion is used, that is, if one of (original, unified,"]
-    #[doc = " * compactUnified) options is present in the field additionalParams, the"]
-    #[doc = " * value in this field is combined with the values in the additionalParams"]
-    #[doc = " * field as specified in 9.3."]
-    #[doc = " *"]
-    #[doc = " * @param additionalParams: shall be present and contain relevant parameters if"]
-    #[doc = " * the requested certificates are to be generated using the butterfly key"]
-    #[doc = " * mechanism as specified in 9.3, or if the requested certificates are to be"]
-    #[doc = " * encrypted without using the butterfly key mechanism. If present, the field"]
-    #[doc = " * tbsCert.verifyKeyIndicator shall be used as the caterpillar public key for"]
-    #[doc = " * signing in the butterfly key mechanism."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct EeRaCertRequest {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "type")]
-        pub r_type: CertificateType,
-        #[rasn(value("0.."), identifier = "tbsCert")]
-        pub tbs_cert: ToBeSignedCertificate,
-        #[rasn(identifier = "additionalParams")]
-        pub additional_params: Option<AdditionalParams>,
-    }
-    impl EeRaCertRequest {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            r_type: CertificateType,
-            tbs_cert: ToBeSignedCertificate,
-            additional_params: Option<AdditionalParams>,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                r_type,
-                tbs_cert,
-                additional_params,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains parameters needed to request the download of"]
-    #[doc = " * certificates from the RA. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of EeRaDownloadRequest."]
-    #[doc = " *"]
-    #[doc = " * @param filename: contains the name of the file requested for download,"]
-    #[doc = " * formed as specified in 8.2.2."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct EeRaDownloadRequest {
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        pub filename: Utf8String,
-    }
-    impl EeRaDownloadRequest {
-        pub fn new(generation_time: Time32, filename: Utf8String) -> Self {
-            Self {
-                generation_time,
-                filename,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the parent structure for all structures exchanged between"]
-    #[doc = " * the EE and the RA. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note This CHOICE does not include a PDU type for encrypted"]
-    #[doc = " * misbehavior report upload; see 4.1.5."]
-    #[doc = " *"]
-    #[doc = " * @param eeRaCertRequest: contains the certificate generation request sent by"]
-    #[doc = " * the EE to the RA."]
-    #[doc = " *"]
-    #[doc = " * @param raEeCertAck: contains the RA's acknowledgement of the receipt of"]
-    #[doc = " * EeRaCertRequestSpdu."]
-    #[doc = " *"]
-    #[doc = " * @param raEeCertInfo: contains the information about certificate download."]
-    #[doc = " *"]
-    #[doc = " * @param eeRaDownloadRequest: contains the download request sent by the EE to"]
-    #[doc = " * the RA."]
-    #[doc = " *"]
-    #[doc = " * @param eeRaSuccessorEnrollmentCertRequest: contains a self-signed request"]
-    #[doc = " * for an enrollment certificate, identical in format to the one submitted"]
-    #[doc = " * for an initial enrollment certificate. (This becomes a request for a"]
-    #[doc = " * successor enrollment certificate by virtue of being signed by the current"]
-    #[doc = " * enrollment certificate.)"]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum EeRaInterfacePdu {
-        eeRaCertRequest(EeRaCertRequest),
-        raEeCertAck(RaEeCertAck),
-        raEeCertInfo(RaEeCertInfo),
-        eeRaDownloadRequest(EeRaDownloadRequest),
-        eeRaSuccessorEnrollmentCertRequest(EeEcaCertRequestSpdu),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to create the acknowledgement for certificate"]
-    #[doc = " * requests. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of RaEeCertAck."]
-    #[doc = " *"]
-    #[doc = " * @param requestHash: contains the hash of the corresponding"]
-    #[doc = " * EeRaCertRequestSpdu."]
-    #[doc = " *"]
-    #[doc = " * @param firstI: shall be present and contain the i-value that will be"]
-    #[doc = " * associated with the first certificate or the certificate batch that will be"]
-    #[doc = " * made available to the EE, if the corresponding EeRaCertRequest uses the"]
-    #[doc = " * butterfly key mechanism as indicated in the field additionalParams. The EE"]
-    #[doc = " * uses this to form the download filename for the download request as"]
-    #[doc = " * specified in 8.2.2."]
-    #[doc = " *"]
-    #[doc = " * @param nextDlTime: contains the time after which the EE should connect to"]
-    #[doc = " * the RA to download the certificates."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct RaEeCertAck {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "requestHash")]
-        pub request_hash: HashedId8,
-        #[rasn(identifier = "firstI")]
-        pub first_i: Option<IValue>,
-        #[rasn(identifier = "nextDlTime")]
-        pub next_dl_time: Time32,
-    }
-    impl RaEeCertAck {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            request_hash: HashedId8,
-            first_i: Option<IValue>,
-            next_dl_time: Time32,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                request_hash,
-                first_i,
-                next_dl_time,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to create the info file that accompanies a"]
-    #[doc = " * batch of certificates for download as specified in 8.2.3. It is used when"]
-    #[doc = " * certificates were generated using the butterfly key expansion mechanism"]
-    #[doc = " * specified in 9.3. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " *"]
-    #[doc = " * @param generationTime: contains the generation time of RaEeCertInfo."]
-    #[doc = " *"]
-    #[doc = " * @param currentI: contains the i-value associated with the batch of"]
-    #[doc = " * certificates."]
-    #[doc = " *"]
-    #[doc = " * @param requestHash: contains the hash of the corresponding"]
-    #[doc = " * EeRaCertRequestSpdu."]
-    #[doc = " *"]
-    #[doc = " * @param nextDlTime: contains the time after which the EE should connect to"]
-    #[doc = " * the RA to download the certificates."]
-    #[doc = " *"]
-    #[doc = " * @param acpcTreeId: shall be present and contain the ACPC Tree Id, if the"]
-    #[doc = " * certificates were generated using ACPC as specified in 9.5."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct RaEeCertInfo {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "generationTime")]
-        pub generation_time: Time32,
-        #[rasn(identifier = "currentI")]
-        pub current_i: IValue,
-        #[rasn(identifier = "requestHash")]
-        pub request_hash: HashedId8,
-        #[rasn(identifier = "nextDlTime")]
-        pub next_dl_time: Time32,
-        #[rasn(identifier = "acpcTreeId")]
-        pub acpc_tree_id: Option<AcpcTreeId>,
-    }
-    impl RaEeCertInfo {
-        pub fn new(
-            version: Uint8,
-            generation_time: Time32,
-            current_i: IValue,
-            request_hash: HashedId8,
-            next_dl_time: Time32,
-            acpc_tree_id: Option<AcpcTreeId>,
-        ) -> Self {
-            Self {
-                version,
-                generation_time,
-                current_i,
-                request_hash,
-                next_dl_time,
-                acpc_tree_id,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_la_ma_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure is not used by EEs, so it is defined as NULL for"]
-    #[doc = " * purposes of this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(delegate)]
-    pub struct LaMaInterfacePdu(pub ());
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_la_ra_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure is not used by EEs, so it is defined as NULL for"]
-    #[doc = " * purposes of this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(delegate)]
-    pub struct LaRaInterfacePdu(pub ());
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_ma_ra_interface {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    use super::ieee1609_dot2_base_types::*;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure is not used by EEs, so it is defined as NULL for"]
-    #[doc = " * purposes of this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(delegate)]
-    pub struct MaRaInterfacePdu(pub ());
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments,
-    clippy::large_enum_variant
-)]
-pub mod ieee1609_dot2_dot1_protocol {
-    extern crate alloc;
-    use super::ieee1609_dot2::*;
-    pub use super::ieee1609_dot2::{
-        Certificate, CertificateId, Ieee1609Dot2Data, SequenceOfCertificate,
-        SequenceOfPsidGroupPermissions, SignerIdentifier, ToBeSignedCertificate,
-        VerificationKeyIndicator,
-    };
-    use super::ieee1609_dot2_base_types::*;
-    pub use super::ieee1609_dot2_base_types::{
-        CrlSeries, EccP256CurvePoint, EccP384CurvePoint, EcdsaP256Signature, EcdsaP384Signature,
-        GeographicRegion, HashAlgorithm, HashedId3, Psid, PublicEncryptionKey,
-        PublicVerificationKey, SequenceOfPsid, SequenceOfPsidSsp, Signature, SubjectAssurance,
-        Uint16, Uint8, ValidityPeriod,
-    };
-    use super::ieee1609_dot2_dot1_aca_ee_interface::AcaEeInterfacePdu;
-    use super::ieee1609_dot2_dot1_aca_la_interface::AcaLaInterfacePdu;
-    use super::ieee1609_dot2_dot1_aca_ma_interface::AcaMaInterfacePdu;
-    use super::ieee1609_dot2_dot1_aca_ra_interface::AcaRaInterfacePdu;
-    use super::ieee1609_dot2_dot1_acpc::AcpcTreeId;
-    use super::ieee1609_dot2_dot1_cert_management::CertManagementPdu;
-    use super::ieee1609_dot2_dot1_eca_ee_interface::EcaEeInterfacePdu;
-    use super::ieee1609_dot2_dot1_ee_ma_interface::EeMaInterfacePdu;
-    use super::ieee1609_dot2_dot1_ee_ra_interface::EeRaInterfacePdu;
-    use super::ieee1609_dot2_dot1_la_ma_interface::LaMaInterfacePdu;
-    use super::ieee1609_dot2_dot1_la_ra_interface::LaRaInterfacePdu;
-    use super::ieee1609_dot2_dot1_ma_ra_interface::MaRaInterfacePdu;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains a certificate response for consumption by"]
-    #[doc = " * the EE. In the architecture of this document, although it is created by"]
-    #[doc = " * the ACA, it is made available to the EE via the RA as described in 8.2."]
-    #[doc = " *"]
-    #[doc = " * The ACA creates a certificate response in this form when the"]
-    #[doc = " * compact unified butterfly key mechanism is being used. If the"]
-    #[doc = " * RaAcaCertRequest structure was used to communicate between the RA and the"]
-    #[doc = " * ACA, the RA indicated use of compact unified butterfly keys by setting the"]
-    #[doc = " * cubk (1) bit in the bkType field in the corresponding RaAcaCertRequest."]
-    #[doc = " *"]
-    #[doc = " * The AcaEeCertResponse is encrypted by the ACA using the cocoon"]
-    #[doc = " * public key for encryption. See 9.3.4.2 for how the ACA derives the cocoon"]
-    #[doc = " * public key for encryption, using the tbsCert.verifyKeyIndicator field in the"]
-    #[doc = " * corresponding RaAcaCertRequest as the input cocoon public key for signing"]
-    #[doc = " * Bt. See 9.3.4.1 for how the EE derives the corresponding cocoon private"]
-    #[doc = " * key for encryption."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AcaEeCertResponseCubkSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AcaEeCertResponseCubkSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "***************************************************************************"]
-    #[doc = "                             ACA - EE Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains a certificate response for consumption by"]
-    #[doc = " * the EE. In the architecture of this document, although it is created by the"]
-    #[doc = " * ACA, it is made available to the EE via the RA as described in 8.2."]
-    #[doc = " *"]
-    #[doc = " * The ACA creates this response when 1) the compact unified"]
-    #[doc = " * butterfly key mechanism is not being used (that is, some other flavor of"]
-    #[doc = " * butterfly key is being used, or butterfly keys are not being used) and 2)"]
-    #[doc = " * it is not necessary to protect the EE's privacy from the RA, for example,"]
-    #[doc = " * when the certificate being returned is not a pseudonym certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AcaEeCertResponsePlainSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AcaEeCertResponsePlainSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum AcaEeCertResponsePrivateSpduContent {
-        unsecuredData(Opaque),
-        signedData(SignedData),
-        encryptedData(EncryptedData),
-        signedCertificateRequest(Opaque),
-        #[rasn(extension_addition)]
-        signedX509CertificateRequest(Opaque),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains a certificate response for consumption by"]
-    #[doc = " * the EE. In the architecture of this document, although it is created by the"]
-    #[doc = " * ACA, it is made available to the EE via the RA as described in 8.2."]
-    #[doc = " *"]
-    #[doc = " * The ACA creates this response when 1) the compact unified"]
-    #[doc = " * butterfly key mechanism is not being used (that is, some other flavor of"]
-    #[doc = " * butterfly key is being used, or butterfly keys are not being used) and 2)"]
-    #[doc = " * it is necessary to protect the EE's privacy from the RA, for example when"]
-    #[doc = " * the certificate being returned is a pseudonym certificate."]
-    #[doc = " *"]
-    #[doc = " * The structure consists of a signed SPDU containing an encrypted"]
-    #[doc = " * SPDU."]
-    #[doc = " *"]
-    #[doc = " * The encrypted SPDU is encrypted with the response"]
-    #[doc = " * encryption key that was provided to the ACA for that purpose. This key is"]
-    #[doc = " * determined as follows:"]
-    #[doc = " *   - If the original EeRaCertRequest from the end entity indicated a single"]
-    #[doc = " * response encryption key, that is, if the additionalParams.encryptionKey"]
-    #[doc = " * field was present in the request, then the response is encrypted with that"]
-    #[doc = " * key."]
-    #[doc = " *   - If the original EeRaCertRequest from the end entity indicated a"]
-    #[doc = " * response encryption key generated with the \"original\" butterfly key"]
-    #[doc = " * mechanism, that is, the additionalParams.original field was provided in the"]
-    #[doc = " * request, then the response is encrypted with the cocoon encryption key"]
-    #[doc = " * derived from additionalParams.original.encryptionKey and"]
-    #[doc = " * additionalParams.original.encryptionExpansion as specified in 9.3.4.2"]
-    #[doc = " * and the corresponding decryption private key is derived as specified in"]
-    #[doc = " * 9.3.4.1."]
-    #[doc = " *   - If the original EeRaCertRequest from the end entity indicated a"]
-    #[doc = " * response encryption key generated with the \"unified\" butterfly key"]
-    #[doc = " * mechanism, that is, the additionalParams.unified field was provided in the"]
-    #[doc = " * request, then the response is encrypted with the cocoon encryption key"]
-    #[doc = " * derived from tbsCert.verifyKeyIndicator and additionalParams.unified as"]
-    #[doc = " * specified in 9.3.4.2 and the corresponding decryption private key is"]
-    #[doc = " * derived as specified in 9.3.4.1."]
-    #[doc = " *"]
-    #[doc = " * See 9.3 for more material about butterfly keys."]
-    #[doc = " *"]
-    #[doc = " * The resulting Ieee1609Dot2Data of content type encryptedData is"]
-    #[doc = " * signed by the same ACA certificate that was used to issue the certificate"]
-    #[doc = " * field in the AcaEeCertResponse. If this structure is signed by a different"]
-    #[doc = " * ACA certificate, it is invalid. The ACA certificate shall follow the ACA"]
-    #[doc = " * certificate profile given in 7.7.3.2."]
-    #[doc = " *"]
-    #[doc = " * @note:"]
-    #[doc = " *   - Other potential responses to an authorization certificate"]
-    #[doc = " * request: If the original request indicated the use of \"compact unified\""]
-    #[doc = " * butterfly key mechanism by including the additionalParams.compactUnified"]
-    #[doc = " * field, the response shall be a AcaEeCertResponseCubkSpdu, not a"]
-    #[doc = " * AcaEeCertResponsePrivateSpdu."]
-    #[doc = " *"]
-    #[doc = " *   - How the ACA obtains the response encryption key: This"]
-    #[doc = " * document provides the RaAcaCertRequest structure to allow the RA to"]
-    #[doc = " * indicate whether the original or unified butterfly key mechanism is to be"]
-    #[doc = " * used via the flags field. The encryption key for encrypting"]
-    #[doc = " * AcaEeCertResponse is calculated by the indicated method even if the RA"]
-    #[doc = " * does not use an RaAcaCertRequest as defined in this document to"]
-    #[doc = " * communicate the certificate request to the ACA."]
-    #[doc = " *"]
-    #[doc = " *   - Consistency between inner and outer signers, and the IEEE"]
-    #[doc = " * Std 1609.2 model. This SPDU introduces a new type of validity condition"]
-    #[doc = " * by requiring that the ACA that signs the outer signed SPDU is also the ACA"]
-    #[doc = " * that issued the certificate inside the encrypted SPDU. This requires that"]
-    #[doc = " * to verify the inner \"SPDU\", that is, the certificate, the verifier"]
-    #[doc = " * needs to store the information from the outer SPDU. This is not a violation"]
-    #[doc = " * of the IEEE 1609.2 model: Subclause 4.2.2.3 of IEEE Std 1609.2 considers all"]
-    #[doc = " * operations carried out on received data to be atomic and does not put any"]
-    #[doc = " * restrictions on the information that is stored between operations. However,"]
-    #[doc = " * it should be noted that because the IEEE 1609.2 approach enables SPDUs to"]
-    #[doc = " * be nested within one another as Ieee1609Dot2Data, in principle an"]
-    #[doc = " * implementation could be built that iterated through the layers of a nested"]
-    #[doc = " * SPDU within a single call from the invoking application instance. (And it"]
-    #[doc = " * should also be noted that IEEE Std 1609.2 was consciously designed to"]
-    #[doc = " * enable this approach: Although the primitives provided in IEEE Std 1609.2"]
-    #[doc = " * only support the series-of-single-operations approach, an implementation"]
-    #[doc = " * could layer this \"one-invocation processing\" on top of the IEEE 1609.2"]
-    #[doc = " * interface as an optimization.) A \"one-invocation processing\" implementation"]
-    #[doc = " * of that type would have to anticipate situations of coupling between inner"]
-    #[doc = " * and outer SPDUs like the one created by this AcaEeCertResponsePrivateSpdu,"]
-    #[doc = " * and allow the invoking certificate management service to check consistency"]
-    #[doc = " * at the application layer, perhaps by (for example) returning the signing"]
-    #[doc = " * certificates for all nested signed SPDUs. How this is to be implemented is"]
-    #[doc = " * implementation specific; this note is intended as a notification of this"]
-    #[doc = " * potential issue to implementers planning to implement one-invocation"]
-    #[doc = " * processing."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AcaEeCertResponsePrivateSpdu {
-        #[rasn(value("0..=255"), identifier = "protocolVersion")]
-        pub protocol_version: u8,
-        pub content: AcaEeCertResponsePrivateSpduContent,
-    }
-    impl AcaEeCertResponsePrivateSpdu {
-        pub fn new(protocol_version: u8, content: AcaEeCertResponsePrivateSpduContent) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed AcaRaCertResponse."]
-    #[doc = " * For the signature to be valid the signing certificate shall contain a PSID"]
-    #[doc = " * equal to SecurityMgmtPsid and a corresponding SSP containing the C-OER"]
-    #[doc = " * encoding of a SecurityMgmtSsp indicating AcaSsp."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AcaRaCertResponseSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl AcaRaCertResponseSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for an authorization CA when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct AcaSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl AcaSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is a container for ACPC-related SSPs, specifying one SSP for"]
-    #[doc = " * each role. The only SSP defined in this document is the CamSsp, used in"]
-    #[doc = " * the CAM certificate that signs a SignedAprvBinaryTree or a"]
-    #[doc = " * SignedIndividualAprv. The SSP shall be C-OER encoded for inclusion in the"]
-    #[doc = " * CAM certificate. New versions of the CAM SSP should be handled by"]
-    #[doc = " * extending this structure rather than by use of a version number in the"]
-    #[doc = " * CamSsp structure."]
-    #[doc = " *"]
-    #[doc = " * The AcpcSsp is associated with the AcpcPsid in the CAM certificate's"]
-    #[doc = " * appPermissions field."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum AcpcSsp {
-        cam(CamSsp),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is a list of the ACPC Tree IDs for which the containing CAM"]
-    #[doc = " * certificate is entitled to sign a SignedAprvBinaryTree or a"]
-    #[doc = " * SignedIndividualAprv. The SSP entitles the certificate holder to sign"]
-    #[doc = " * either of these structures."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, size("1.."))]
-    pub struct CamSsp(pub SequenceOf<AcpcTreeId>);
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send an unsecured"]
-    #[doc = " * CertificateChain. It is used to create certificate chain files as"]
-    #[doc = " * specified in 8.4."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct CertificateChainSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl CertificateChainSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed"]
-    #[doc = " * CertManagementInfoStatus. For the signature to be valid the signing"]
-    #[doc = " * certificate shall conform to the RA certificate profile given in 7.7.3.9 or"]
-    #[doc = " * the DC certificate profile given in 7.7.3.10."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct CertificateManagementInformationStatusSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl CertificateManagementInformationStatusSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "***************************************************************************"]
-    #[doc = "                           Certificate Management                          "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send an unsecured CompositeCrl."]
-    #[doc = " * It is used to create composite CRL files as specified in 8.5."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct CompositeCrlSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl CompositeCrlSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a CRL signer when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " *"]
-    #[doc = " * @note The SSP for a CRL signer when signing CRLs is associated with"]
-    #[doc = " * PSID 0x0100 and is defined in IEEE Std 1609.2."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct CrlSignerSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl CrlSignerSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed"]
-    #[doc = " * ToBeSignedCtlSignature. For the signature to be valid, the signing"]
-    #[doc = " * certificate shall match the elector certificate profile in 7.7.3.7. This"]
-    #[doc = " * means that the signature is calculated as specified in IEEE Std 1609.2,"]
-    #[doc = " * with the data input to the hash process consisting of the C-OER encoding"]
-    #[doc = " * of the tbsData that includes the ToBeSignedCtlSignature."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct CtlSignatureSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl CtlSignatureSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a distribution center when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct DcSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl DcSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a device configuration manager"]
-    #[doc = " * when it is authorizing SecurityMgmtPsid messages. It has no parameters"]
-    #[doc = " * other than the version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct DcmSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl DcmSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed EcaEeCertResponse."]
-    #[doc = " * For the signature to be valid, the signing certificate shall contain a PSID"]
-    #[doc = " * equal to SecurityMgmtPsid and a corresponding SSP containing the C-OER"]
-    #[doc = " * encoding of a SecurityMgmtSsp indicating EcaSsp."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EcaEeCertResponseSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EcaEeCertResponseSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for an enrollment CA when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct EcaSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl EcaSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "***************************************************************************"]
-    #[doc = "                             ECA - EE Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed EeEcaCertRequest,"]
-    #[doc = " * as follows:"]
-    #[doc = " *   - If eeEcaCertRequest.canonicalId is not present, the EE signs this"]
-    #[doc = " * structure using the private key corresponding to the"]
-    #[doc = " * tbsCert.verifyKeyIndicator field of the EeEcaCertRequest."]
-    #[doc = " *   - If eeEcaCertRequest.canonicalId is present, the EE signs this"]
-    #[doc = " * structure using the canonical private key as specified in 4.1.4.2."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EeEcaCertRequestSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EeEcaCertRequestSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum EeRa1609Dot2AuthenticatedCertRequestSpduContent {
-        unsecuredData(Opaque),
-        signedData(SignedData),
-        encryptedData(EncryptedData),
-        signedCertificateRequest(Opaque),
-        #[rasn(extension_addition)]
-        signedX509CertificateRequest(Opaque),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed then encrypted IEEE"]
-    #[doc = " * 1609.2 authenticated certificate request. The EE signs this structure"]
-    #[doc = " * using its enrollment certificate. The enrollment certificate shall conform"]
-    #[doc = " * to the enrollment certificate profile given in 7.7.3.5. The EE encrypts"]
-    #[doc = " * the signed structure using the encryptionKey from the RA's certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EeRa1609Dot2AuthenticatedCertRequestSpdu {
-        #[rasn(value("0..=255"), identifier = "protocolVersion")]
-        pub protocol_version: u8,
-        pub content: EeRa1609Dot2AuthenticatedCertRequestSpduContent,
-    }
-    impl EeRa1609Dot2AuthenticatedCertRequestSpdu {
-        pub fn new(
-            protocol_version: u8,
-            content: EeRa1609Dot2AuthenticatedCertRequestSpduContent,
-        ) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "***************************************************************************"]
-    #[doc = "                              EE - MA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "***************************************************************************"]
-    #[doc = "                              EE - RA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed then encrypted"]
-    #[doc = " * EeRaCertRequest. It is a choice of the IEEE 1609.2 authenticated"]
-    #[doc = " * certificate request, which may be any kind of EE-RA certificate request,"]
-    #[doc = " * and the ITU-T X.509 certificate request, which is required to be an"]
-    #[doc = " * authorization certificate request."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct EeRaCertRequestSpdu(pub Ieee1609Dot2Data);
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send an unsecured"]
-    #[doc = " * EeRaDownloadRequest."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EeRaDownloadRequestPlainSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EeRaDownloadRequestPlainSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum EeRaDownloadRequestSpduContent {
-        unsecuredData(Opaque),
-        signedData(SignedData),
-        encryptedData(EncryptedData),
-        signedCertificateRequest(Opaque),
-        #[rasn(extension_addition)]
-        signedX509CertificateRequest(Opaque),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed then encrypted"]
-    #[doc = " * EeRaDownloadRequest. The EE signs this structure using its enrollment"]
-    #[doc = " * certificate. The enrollment certificate shall conform to the enrollment"]
-    #[doc = " * certificate profile given in 7.7.3.5. The EE encrypts the signed"]
-    #[doc = " * structure using the encryptionKey from the RA's certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EeRaDownloadRequestSpdu {
-        #[rasn(value("0..=255"), identifier = "protocolVersion")]
-        pub protocol_version: u8,
-        pub content: EeRaDownloadRequestSpduContent,
-    }
-    impl EeRaDownloadRequestSpdu {
-        pub fn new(protocol_version: u8, content: EeRaDownloadRequestSpduContent) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum EeRaSuccessorEnrollmentCertRequestSpduContent {
-        unsecuredData(Opaque),
-        signedData(SignedData),
-        encryptedData(EncryptedData),
-        signedCertificateRequest(Opaque),
-        #[rasn(extension_addition)]
-        signedX509CertificateRequest(Opaque),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed then encrypted"]
-    #[doc = " * EeEcaCertRequestSpdu. The EE signs this structure using its enrollment"]
-    #[doc = " * certificate. The enrollment certificate shall conform to the enrollment"]
-    #[doc = " * certificate profile given in 7.7.3.5. The EE encrypts the signed"]
-    #[doc = " * structure using the encryptionKey from the RA's certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EeRaSuccessorEnrollmentCertRequestSpdu {
-        #[rasn(value("0..=255"), identifier = "protocolVersion")]
-        pub protocol_version: u8,
-        pub content: EeRaSuccessorEnrollmentCertRequestSpduContent,
-    }
-    impl EeRaSuccessorEnrollmentCertRequestSpdu {
-        pub fn new(
-            protocol_version: u8,
-            content: EeRaSuccessorEnrollmentCertRequestSpduContent,
-        ) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed then encrypted ITU-T"]
-    #[doc = " * X.509authenticated certificate request. The EE signs this structure"]
-    #[doc = " * using its enrollment certificate. The enrollment certificate shall conform"]
-    #[doc = " * to the enrollment certificate profile given in 7.7.3.6. The EE encrypts"]
-    #[doc = " * the signed structure using the encryptionKey from the RA's certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EeRaX509AuthenticatedCertRequestSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl EeRaX509AuthenticatedCertRequestSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for an end entity when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct EeSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl EeSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for an elector when it is authorizing"]
-    #[doc = " * SecurityMgmtPsid messages. It has no parameters other than the version"]
-    #[doc = " * number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct ElectorSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl ElectorSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for an intermediate CA when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct IcaSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl IcaSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a linkage authority when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct LaSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "laId")]
-        pub la_id: Uint16,
-    }
-    impl LaSsp {
-        pub fn new(version: Uint8, la_id: Uint16) -> Self {
-            Self { version, la_id }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a location obscurer proxy (LOP)"]
-    #[doc = " * when it is authorizing SecurityMgmtPsid messages. It has no parameters"]
-    #[doc = " * other than the version number."]
-    #[doc = " *"]
-    #[doc = " * @note The LOP is in the SSP for backward compatibility reasons, and"]
-    #[doc = " * in practice, in this design the LOP does not have a certificate."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct LopSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl LopSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a misbehavior authority when it"]
-    #[doc = " * is authorizing SecurityMgmtPsid messages. Its parameters"]
-    #[doc = " * indicate the PSIDs associated with the misbehavior that is to be reported"]
-    #[doc = " * to that MA (see 4.1.5 for further details). The certificate containing"]
-    #[doc = " * this SSP is the MA Certificate to which an end entity should encrypt"]
-    #[doc = " * misbehavior reports related to the indicated PSIDs."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct MaSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        #[rasn(identifier = "relevantPsids")]
-        pub relevant_psids: SequenceOfPsid,
-    }
-    impl MaSsp {
-        pub fn new(version: Uint8, relevant_psids: SequenceOfPsid) -> Self {
-            Self {
-                version,
-                relevant_psids,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send an unsecured MultiSignedCtl."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct MultiSignedCtlSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl MultiSignedCtlSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a policy generator when it is"]
-    #[doc = " * authorizing SecurityMgmtPsid messages. It has no parameters other than the"]
-    #[doc = " * version number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct PgSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl PgSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "***************************************************************************"]
-    #[doc = "                             ACA - LA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "***************************************************************************"]
-    #[doc = "                             ACA - MA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "***************************************************************************"]
-    #[doc = "                             ACA - RA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed RaAcaCertRequest."]
-    #[doc = " * For the signature to be valid the signing certificate shall conform to the"]
-    #[doc = " * RA certificate profile given in 7.7.3.9, contain a PSID equal to"]
-    #[doc = " * SecurityMgmtPsid and a corresponding SSP containing the C-OER encoding of a"]
-    #[doc = " * SecurityMgmtSsp indicating RaSsp. The toBeSigned.certRequestPermissions"]
-    #[doc = " * field of the RA certificate shall permit the requested permissions in the"]
-    #[doc = " * raAcaCertRequest.tbsCert.appPermissions field."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct RaAcaCertRequestSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl RaAcaCertRequestSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed RaEeCertAck to"]
-    #[doc = " * acknowledge the receipt of an EeRaCertRequestSpdu. For the signature to be"]
-    #[doc = " * valid the signing certificate shall conform to the RA certificate profile"]
-    #[doc = " * given in 7.7.3.9."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct RaEeCertAckSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl RaEeCertAckSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to create a signed .info file to"]
-    #[doc = " * be included in a certificate batch zip file as specified in 8.2. This"]
-    #[doc = " * SPDU is used if the RaEeCertInfo contains an acpcTreeId field. For the"]
-    #[doc = " * signature to be valid the signing certificate shall conform to the RA"]
-    #[doc = " * certificate profile given in 7.7.3.9."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct RaEeCertAndAcpcInfoSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl RaEeCertAndAcpcInfoSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to create an unsigned .info file"]
-    #[doc = " * to be included in a certificate batch zip file as specified in 8.2. This"]
-    #[doc = " * SPDU is used if the RaEeCertInfo does not contain an acpcTreeId field."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct RaEeCertInfoSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl RaEeCertInfoSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is the SPDU used to send a signed RaEeCertInfo. For"]
-    #[doc = " * the signature to be valid the signing certificate shall conform to the RA"]
-    #[doc = " * certificate profile given in 7.7.3.9."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct RaEeEnrollmentCertAckSpdu {
-        #[rasn(value("3"), identifier = "protocolVersion")]
-        pub protocol_version: Uint8,
-        pub content: Ieee1609Dot2Content,
-    }
-    impl RaEeEnrollmentCertAckSpdu {
-        pub fn new(protocol_version: Uint8, content: Ieee1609Dot2Content) -> Self {
-            Self {
-                protocol_version,
-                content,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for an RA when it is authorizing"]
-    #[doc = " * SecurityMgmtPsid messages. It has no parameters other than the version"]
-    #[doc = " * number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct RaSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl RaSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the SSP for a root CA when it is authorizing"]
-    #[doc = " * SecurityMgmtPsid messages. It has no parameters other than the version"]
-    #[doc = " * number."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    #[non_exhaustive]
-    pub struct RootCaSsp {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-    }
-    impl RootCaSsp {
-        pub fn new(version: Uint8) -> Self {
-            Self { version }
-        }
-    }
-    #[doc = " Inner type "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum ScmsPduContent {
-        #[rasn(identifier = "aca-ee")]
-        aca_ee(AcaEeInterfacePdu),
-        #[rasn(identifier = "aca-la")]
-        aca_la(AcaLaInterfacePdu),
-        #[rasn(identifier = "aca-ma")]
-        aca_ma(AcaMaInterfacePdu),
-        #[rasn(identifier = "aca-ra")]
-        aca_ra(AcaRaInterfacePdu),
-        cert(CertManagementPdu),
-        #[rasn(identifier = "eca-ee")]
-        eca_ee(EcaEeInterfacePdu),
-        #[rasn(identifier = "ee-ma")]
-        ee_ma(EeMaInterfacePdu),
-        #[rasn(identifier = "ee-ra")]
-        ee_ra(EeRaInterfacePdu),
-        #[rasn(identifier = "la-ma")]
-        la_ma(LaMaInterfacePdu),
-        #[rasn(identifier = "la-ra")]
-        la_ra(LaRaInterfacePdu),
-        #[rasn(identifier = "ma-ra")]
-        ma_ra(MaRaInterfacePdu),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This is the parent structure that encompasses all parent structures"]
-    #[doc = " * of interfaces defined in the SCMS. An overview of this structure is as"]
-    #[doc = " * follows:"]
-    #[doc = " *   - aca-ee contains the interface structures defined for interaction"]
-    #[doc = " * between the ACA and the EE."]
-    #[doc = " *   - aca-la contains the interface structures defined for interaction"]
-    #[doc = " * between the ACA and the LA."]
-    #[doc = " *   - aca-ma contains the interface structures defined for interaction"]
-    #[doc = " * between the ACA and the MA."]
-    #[doc = " *   - aca-ra contains the interface structures defined for interaction"]
-    #[doc = " * between the ACA and the RA."]
-    #[doc = " *   - cert contains the interface structures defined for certificate"]
-    #[doc = " * management."]
-    #[doc = " *   - eca-ee contains the interface structures defined for interaction"]
-    #[doc = " * between the ECA and the EE."]
-    #[doc = " *   - ee-ma contains the interface structures defined for interaction"]
-    #[doc = " * between the EE and the MA."]
-    #[doc = " *   - ee-ra contains the interface structures defined for interaction"]
-    #[doc = " * between the EE and the RA."]
-    #[doc = " *   - la-ma contains the interface structures defined for interaction"]
-    #[doc = " * between the LA and the MA."]
-    #[doc = " *   - la-ra contains the interface structures defined for interaction"]
-    #[doc = " * between the LA and the RA."]
-    #[doc = " *   - ma-ra contains the interface structures defined for interactions"]
-    #[doc = " * between the MA and the RA."]
-    #[doc = " *"]
-    #[doc = " * @param version: contains the current version of the structure."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ScmsPdu {
-        #[rasn(value("2"))]
-        pub version: Uint8,
-        pub content: ScmsPduContent,
-    }
-    impl ScmsPdu {
-        pub fn new(version: Uint8, content: ScmsPduContent) -> Self {
-            Self { version, content }
-        }
-    }
-    #[doc = "***************************************************************************"]
-    #[doc = "                            Certificate Requests                           "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the all certificate request structures as a"]
-    #[doc = " * scoped version of the ScmsPdu."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct ScopedCertificateRequest(pub ScmsPdu);
-    #[doc = "*"]
-    #[doc = " * @brief This PSID, 0x23, identifies security management activities as"]
-    #[doc = " * defined in this document."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, value("35"))]
-    pub struct SecurityMgmtPsid(pub Psid);
-    #[doc = "***************************************************************************"]
-    #[doc = "                              LA - MA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "***************************************************************************"]
-    #[doc = "                              LA - RA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "***************************************************************************"]
-    #[doc = "                              MA - RA Interface                            "]
-    #[doc = "***************************************************************************"]
-    #[doc = "***************************************************************************"]
-    #[doc = "                        Service Specific Permissions                       "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This parent structure defines the SSP for SecurityMgmtPsid and"]
-    #[doc = " * encompasses all SSP structures defined in this document. An overview of"]
-    #[doc = " * this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * @note The LOP is in the SSP for backward compatibility reasons,"]
-    #[doc = " * and in practice, in this design the LOP does not have a certificate."]
-    #[doc = " *"]
-    #[doc = " * @param elector: contains the SSP defined for an elector."]
-    #[doc = " *"]
-    #[doc = " * @param root: contains the SSP defined for a root CA."]
-    #[doc = " *"]
-    #[doc = " * @param pg: contains the SSP defined for a policy generator."]
-    #[doc = " *"]
-    #[doc = " * @param ica: contains the SSP defined for an intermediate CA."]
-    #[doc = " *"]
-    #[doc = " * @param eca: contains the SSP defined for an enrollment CA."]
-    #[doc = " *"]
-    #[doc = " * @param aca: contains the SSP defined for an authorization CA."]
-    #[doc = " *"]
-    #[doc = " * @param crl: contains the SSP defined for a CRL signer."]
-    #[doc = " *"]
-    #[doc = " * @param dcm: contains the SSP defined for a device configuration manager."]
-    #[doc = " *"]
-    #[doc = " * @param la: contains the SSP defined for a linkage authority."]
-    #[doc = " *"]
-    #[doc = " * @param lop: contains the SSP defined for a location obscurer proxy."]
-    #[doc = " *"]
-    #[doc = " * @param ma: contains the SSP defined for a misbehavior authority."]
-    #[doc = " *"]
-    #[doc = " * @param ra: contains the SSP defined for a registration authority."]
-    #[doc = " *"]
-    #[doc = " * @param ee: contains the SSP defined for an end entity."]
-    #[doc = " *"]
-    #[doc = " * @param dc: contains the SSP defined for a distribution center."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum SecurityMgmtSsp {
-        elector(ElectorSsp),
-        root(RootCaSsp),
-        pg(PgSsp),
-        ica(IcaSsp),
-        eca(EcaSsp),
-        aca(AcaSsp),
-        crl(CrlSignerSsp),
-        dcm(DcmSsp),
-        la(LaSsp),
-        lop(LopSsp),
-        ma(MaSsp),
-        ra(RaSsp),
-        ee(EeSsp),
-        #[rasn(extension_addition)]
-        dc(DcSsp),
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This type is used for clarity of definitions."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, size("1.."))]
-    pub struct SequenceOfX509Certificate(pub SequenceOf<X509Certificate>);
-    #[doc = "*"]
-    #[doc = " * @brief This structure defines the format of a signed certificate request."]
-    #[doc = " * An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * The signature is generated on the hash of this structure, obtained"]
-    #[doc = " * per the rules specified for hashing data objects in 5.3.1 of IEEE Std"]
-    #[doc = " * 1609.2a-2017, where the parameter Data Input shall be the C-OER"]
-    #[doc = " * encoding of tbsRequest, and the parameter Signer Identifier Input"]
-    #[doc = " * depending on whether the request is self-signed or signed using an"]
-    #[doc = " * enrollment certificate:"]
-    #[doc = " *   - If the request is self-signed, the parameter Signer Identifier"]
-    #[doc = " * Input shall be the empty string, i.e., a string of length 0."]
-    #[doc = " *   - If the request is signed using an enrollment certificate, the"]
-    #[doc = " * parameter Signer Identifier Input shall be the signer's enrollment"]
-    #[doc = " * certificate."]
-    #[doc = " *"]
-    #[doc = " * @param hashAlgorithmId: contains the identifier of the hash algorithm used"]
-    #[doc = " * to calculate the hash of tbsRequest."]
-    #[doc = " *"]
-    #[doc = " * @param tbsRequest: contains the certificate request information that is"]
-    #[doc = " * signed by the recipient."]
-    #[doc = " *"]
-    #[doc = " * @param signer: denotes the signing entity's identifier."]
-    #[doc = " *"]
-    #[doc = " * @param signature: contains the request sender's signature."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct SignedCertificateRequest {
-        #[rasn(identifier = "hashAlgorithmId")]
-        pub hash_algorithm_id: HashAlgorithm,
-        #[rasn(identifier = "tbsRequest")]
-        pub tbs_request: ScopedCertificateRequest,
-        pub signer: SignerIdentifier,
-        pub signature: Signature,
-    }
-    impl SignedCertificateRequest {
-        pub fn new(
-            hash_algorithm_id: HashAlgorithm,
-            tbs_request: ScopedCertificateRequest,
-            signer: SignerIdentifier,
-            signature: Signature,
-        ) -> Self {
-            Self {
-                hash_algorithm_id,
-                tbs_request,
-                signer,
-                signature,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure contains a certificate request signed with an ITU-T"]
-    #[doc = " * X.509 certificate. The only type of certificate request signed with an"]
-    #[doc = " * ITU-T X.509 certificate supported in this document is an authorization"]
-    #[doc = " * certificate request. An overview of this structure is as follows:"]
-    #[doc = " *"]
-    #[doc = " * The signature is generated on the hash of this structure, obtained"]
-    #[doc = " * per the rules specified for hashing data objects in 5.3.1 of IEEE Std"]
-    #[doc = " * 1609.2a-2017, where the parameter Data Input shall be  the C-OER"]
-    #[doc = " * encoding of tbsRequest, and the parameter Signer Identifier Input"]
-    #[doc = " * shall be  the signer's certificate, that is, the ITU-T X.509 certificate"]
-    #[doc = " * contained in the OCTET STRING indicated by the first X509Certificate in"]
-    #[doc = " * signer. For example, if the signer is as below, the first 6 bytes are the"]
-    #[doc = " * ASN.1 encoding overhead, where 80 01 01 is the overhead for signer, and"]
-    #[doc = " * then 82 01 AC is the overhead introduced by the OCTET STRING encoding for"]
-    #[doc = " * the first (in this case, the only) X509Certificate; and the first"]
-    #[doc = " * X509Certificate is contained in the next 428 bytes (30 82 01 ... 00 00 00),"]
-    #[doc = " * so the parameter Signer Identifier Input shall be '30 82 01 ... 00 00 00'."]
-    #[doc = " *"]
-    #[doc = " * An example X509SignerIdentifier with one X509Certificate:"]
-    #[doc = " *"]
-    #[doc = " * 80 01 01 82 01 AC 30 82 01 A8 30 82 01 4D A0 03 02 01 02 02 04 90"]
-    #[doc = " * C5 9D 21 30 0A 06 08 2A 86 48 CE 3D 04 03 02 30 24 31 0A 30 08 06 03 55 04"]
-    #[doc = " * 06 13 01 00 31 0A 30 08 06 03 55 04 0A 13 01 00 31 0A 30 08 06 03 55 04 03"]
-    #[doc = " * 13 01 00 30 1E 17 0D 30 30 30 31 30 31 30 30 30 30 30 30 5A 17 0D 30 30 30"]
-    #[doc = " * 31 30 31 30 30 30 30 30 30 5A 30 24 31 0A 30 08 06 03 55 04 06 13 01 00 31"]
-    #[doc = " * 0A 30 08 06 03 55 04 0A 13 01 00 31 0A 30 08 06 03 55 04 03 13 01 00 30 59"]
-    #[doc = " * 30 13 06 07 2A 86 48 CE 3D 02 01 06 08 2A 86 48 CE 3D 03 01 07 03 42 00 00"]
-    #[doc = " * 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"]
-    #[doc = " * 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"]
-    #[doc = " * 00 00 00 00 00 00 00 00 00 00 00 00 00 00 A3 6D 30 6B 30 0A 06 03 55 1D 0E"]
-    #[doc = " * 04 03 04 01 00 30 0A 06 03 55 1D 23 04 03 04 01 00 30 0C 06 03 55 1D 13 01"]
-    #[doc = " * 01 FF 04 02 30 00 30 0E 06 03 55 1D 0F 01 01 FF 04 04 03 02 03 C8 30 0A 06"]
-    #[doc = " * 03 55 1D 25 04 03 04 01 00 30 0A 06 03 55 1D 1F 04 03 04 01 00 30 0F 06 08"]
-    #[doc = " * 2B 06 01 05 05 07 01 01 04 03 04 01 00 30 0A 06 03 55 1D 20 04 03 04 01 00"]
-    #[doc = " * 30 0A 06 08 2A 86 48 CE 3D 04 03 02 03 49 00 00 00 00 00 00 00 00 00 00 00"]
-    #[doc = " * 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"]
-    #[doc = " * 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"]
-    #[doc = " * 00 00 00 00 00 00 00 00 00 00 00 00"]
-    #[doc = " *"]
-    #[doc = " * @param hashAlgorithmId: contains the identifier of the hash algorithm used"]
-    #[doc = " * inside the binary tree."]
-    #[doc = " *"]
-    #[doc = " * @param tbsRequest: contains the certificate request information that is"]
-    #[doc = " * signed by the recipient."]
-    #[doc = " *"]
-    #[doc = " * @param signer: denotes the signing entity's identifier."]
-    #[doc = " *"]
-    #[doc = " * @param signature: contains the request sender's signature."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct SignedX509CertificateRequest {
-        #[rasn(identifier = "hashAlgorithmId")]
-        pub hash_algorithm_id: HashAlgorithm,
-        #[rasn(identifier = "tbsRequest")]
-        pub tbs_request: ScopedCertificateRequest,
-        pub signer: X509SignerIdentifier,
-        pub signature: Signature,
-    }
-    impl SignedX509CertificateRequest {
-        pub fn new(
-            hash_algorithm_id: HashAlgorithm,
-            tbs_request: ScopedCertificateRequest,
-            signer: X509SignerIdentifier,
-            signature: Signature,
-        ) -> Self {
-            Self {
-                hash_algorithm_id,
-                tbs_request,
-                signer,
-                signature,
-            }
-        }
-    }
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to indicate a SignerIdentifier of type self."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct SignerSelf(pub SignerIdentifier);
-    #[doc = "***************************************************************************"]
-    #[doc = "                                Signer Types                               "]
-    #[doc = "***************************************************************************"]
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to indicate a SignerIdentifier with a"]
-    #[doc = " * certificate chain of size 1."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct SignerSingleCert(pub SignerIdentifier);
-    #[doc = "*"]
-    #[doc = " * @brief This structure is used to indicate an X509SignerIdentifier with a"]
-    #[doc = " * certificate chain of size 1."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct SignerSingleX509Cert(pub X509SignerIdentifier);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct TestSecurityMgmtSsp(pub SecurityMgmtSsp);
-    #[doc = "*"]
-    #[doc = " * @brief This structure is a wrapper for an ITU-T X.509 certificate."]
-    #[doc = " *"]
-    #[doc = " * @note ITU-T X.509 certificates are encoded with the ASN.1 DER"]
-    #[doc = " * rather than the OER used in this document and so cannot be \"directly\""]
-    #[doc = " * imported into these structures."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct X509Certificate(pub OctetString);
-    #[doc = "*"]
-    #[doc = " * @brief This structure identifies an ITU-T X.509 certificate used to sign a"]
-    #[doc = " * signed data structure. The only data structure currently defined that can"]
-    #[doc = " * be signed by an ITU-T X.509 certificate is SignedX509CertificateRequest."]
-    #[doc = " "]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    #[non_exhaustive]
-    pub enum X509SignerIdentifier {
-        certificate(SequenceOfX509Certificate),
-    }
-    // Type aliases for WITH COMPONENTS constrained types (constraints removed for rasn compat)
-    pub type Ieee1609Dot2DataSigned = Ieee1609Dot2Data;
-    pub type Ieee1609Dot2DataUnsecured = Ieee1609Dot2Data;
-    pub type Ieee1609Dot2DataSymmEncryptedSingleRecipient = Ieee1609Dot2Data;
-    pub type Ieee1609Dot2DataSignedX509AuthenticatedCertRequest = Ieee1609Dot2Data;
-    pub type ScmsPduScoped = Ieee1609Dot2Data;
 }
