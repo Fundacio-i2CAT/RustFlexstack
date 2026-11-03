@@ -170,6 +170,7 @@ impl Cv2xLinkLayer {
             let rx_fd = match handle_rx.rx_sock_fd() {
                 Some(fd) => fd,
                 None => {
+                    eprintln!("[CV2X RX] Failed to get RX socket fd");
                     return;
                 }
             };
@@ -208,17 +209,25 @@ impl Cv2xLinkLayer {
                     Ok(_) => {
                         // Empty or single-byte frame — skip
                     }
-                    Err(()) => {}
+                    Err(()) => {
+                        eprintln!("[CV2X RX] receive error");
+                    }
                 }
             }
+
+            eprintln!("[CV2X RX] Thread exiting");
         });
 
-        // ── TX thread: GeoNetworking ──► C-V2X radio ─────────────────────
         let tx_join = thread::spawn(move || {
-            while let Ok(gn_payload) = gn_rx.recv() {
+            loop {
                 if stop_flag_tx.load(Ordering::Relaxed) {
                     break;
                 }
+                let gn_payload = match gn_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(p) => p,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                };
 
                 // Build the CV2X frame: [0x03] [GN payload]
                 let mut frame = Vec::with_capacity(1 + gn_payload.len());
@@ -230,12 +239,17 @@ impl Cv2xLinkLayer {
                     .map(sps_classifier)
                     .unwrap_or(true); // Default to SPS for malformed packets
 
-                let _ = if use_sps {
+                let result = if use_sps {
                     handle_tx.send_sps(&frame)
                 } else {
                     handle_tx.send_event(&frame)
                 };
+
+                if result.is_err() {
+                    eprintln!("[CV2X TX] Send error (sps={})", use_sps);
+                }
             }
+            eprintln!("[CV2X TX] Channel closed, thread exiting");
         });
 
         (stop_ret, rx_join, tx_join)

@@ -45,14 +45,32 @@ impl EcdsaBackend {
     }
 
     /// Return the public verification key in IEEE 1609.2 format.
+    /// Defaults to compressed format (compressed_y_0/1) per IEEE 1609.2 / ETSI TS 103 097.
     pub fn get_public_key(&self, id: usize) -> PublicVerificationKey {
+        self.get_public_key_compressed(id, true)
+    }
+
+    /// Return the public verification key in IEEE 1609.2 format, optionally compressed.
+    pub fn get_public_key_compressed(&self, id: usize, compressed: bool) -> PublicVerificationKey {
         let vk = self.keys[&id].verifying_key();
-        let pt = vk.to_encoded_point(false);
-        let x = pt.x().expect("x coord").to_vec().into();
-        let y = pt.y().expect("y coord").to_vec().into();
-        PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::uncompressedP256(
-            EccP256CurvePointUncompressedP256 { x, y },
-        ))
+        if compressed {
+            let pt = vk.to_encoded_point(true);
+            let tag = pt.as_bytes()[0];
+            let x = pt.x().expect("x coord").to_vec().into();
+            let curve_point = if tag == 0x02 {
+                EccP256CurvePoint::compressed_y_0(x)
+            } else {
+                EccP256CurvePoint::compressed_y_1(x)
+            };
+            PublicVerificationKey::ecdsaNistP256(curve_point)
+        } else {
+            let pt = vk.to_encoded_point(false);
+            let x = pt.x().expect("x coord").to_vec().into();
+            let y = pt.y().expect("y coord").to_vec().into();
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::uncompressedP256(
+                EccP256CurvePointUncompressedP256 { x, y },
+            ))
+        }
     }
 
     /// Sign `data` (pre-hash with SHA-256 is done by the `ecdsa` crate).
@@ -71,6 +89,8 @@ impl EcdsaBackend {
 
     /// Verify `data` against `signature` using public key `pk`.
     /// Both come in IEEE 1609.2 format.
+    /// Supports both compressed (compressed_y_0/1) and uncompressed public keys,
+    /// and x_only, compressed_y_0, and compressed_y_1 signature r_sig.
     pub fn verify_with_pk(
         &self,
         data: &[u8],
@@ -80,7 +100,9 @@ impl EcdsaBackend {
         let (r_bytes, s_bytes) = match signature {
             Ieee1609Signature::ecdsaNistP256Signature(sig) => {
                 let r = match &sig.r_sig {
-                    EccP256CurvePoint::x_only(b) => b.as_ref(),
+                    EccP256CurvePoint::x_only(b)
+                    | EccP256CurvePoint::compressed_y_0(b)
+                    | EccP256CurvePoint::compressed_y_1(b) => b.as_ref(),
                     _ => return false,
                 };
                 (r, sig.s_sig.as_ref())
@@ -91,18 +113,36 @@ impl EcdsaBackend {
             PublicVerificationKey::ecdsaNistP256(pt) => pt,
             _ => return false,
         };
-        let (x, y) = match point {
-            EccP256CurvePoint::uncompressedP256(u) => (u.x.as_ref(), u.y.as_ref()),
+        let vk = match point {
+            EccP256CurvePoint::uncompressedP256(u) => {
+                let mut sec1 = Vec::with_capacity(65);
+                sec1.push(0x04);
+                sec1.extend_from_slice(u.x.as_ref());
+                sec1.extend_from_slice(u.y.as_ref());
+                match VerifyingKey::from_sec1_bytes(&sec1) {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                }
+            }
+            EccP256CurvePoint::compressed_y_0(x) => {
+                let mut sec1 = Vec::with_capacity(33);
+                sec1.push(0x02);
+                sec1.extend_from_slice(x.as_ref());
+                match VerifyingKey::from_sec1_bytes(&sec1) {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                }
+            }
+            EccP256CurvePoint::compressed_y_1(x) => {
+                let mut sec1 = Vec::with_capacity(33);
+                sec1.push(0x03);
+                sec1.extend_from_slice(x.as_ref());
+                match VerifyingKey::from_sec1_bytes(&sec1) {
+                    Ok(v) => v,
+                    Err(_) => return false,
+                }
+            }
             _ => return false,
-        };
-        // Reconstruct verifying key from uncompressed point
-        let mut sec1 = Vec::with_capacity(65);
-        sec1.push(0x04);
-        sec1.extend_from_slice(x);
-        sec1.extend_from_slice(y);
-        let vk = match VerifyingKey::from_sec1_bytes(&sec1) {
-            Ok(v) => v,
-            Err(_) => return false,
         };
         // Reconstruct ECDSA signature (r || s)
         let mut sig_bytes = Vec::with_capacity(64);
@@ -170,17 +210,78 @@ mod tests {
     }
 
     #[test]
-    fn get_public_key_uncompressed_p256() {
+    fn get_public_key_compressed_and_uncompressed() {
         let mut backend = EcdsaBackend::new();
         let id = backend.create_key();
+
+        // Default is compressed (compressed_y_0 or compressed_y_1)
         let pk = backend.get_public_key(id);
         match pk {
+            PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::compressed_y_0(x))
+            | PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::compressed_y_1(x)) => {
+                assert_eq!(x.as_ref().len(), 32);
+            }
+            _ => panic!("Expected compressed_y_0 or compressed_y_1"),
+        }
+
+        // Explicit uncompressed
+        let pk_uncomp = backend.get_public_key_compressed(id, false);
+        match pk_uncomp {
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::uncompressedP256(u)) => {
                 assert_eq!(u.x.as_ref().len(), 32);
                 assert_eq!(u.y.as_ref().len(), 32);
             }
             _ => panic!("Expected uncompressedP256"),
         }
+    }
+
+    #[test]
+    fn sign_and_verify_both_key_formats() {
+        let mut backend = EcdsaBackend::new();
+        let id = backend.create_key();
+        let data = b"Hello, ETSI C-ITS!";
+        let signature = backend.sign(data, id);
+
+        // Verify with default (compressed) public key
+        let pk_comp = backend.get_public_key(id);
+        assert!(backend.verify_with_pk(data, &signature, &pk_comp));
+        assert!(!backend.verify_with_pk(b"wrong data", &signature, &pk_comp));
+
+        // Verify with uncompressed public key
+        let pk_uncomp = backend.get_public_key_compressed(id, false);
+        assert!(backend.verify_with_pk(data, &signature, &pk_uncomp));
+        assert!(!backend.verify_with_pk(b"wrong data", &signature, &pk_uncomp));
+    }
+
+    #[test]
+    fn verify_with_compressed_r_sig() {
+        let mut backend = EcdsaBackend::new();
+        let id = backend.create_key();
+        let data = b"Test signature with compressed r_sig";
+        let sig = backend.sign(data, id);
+        let pk = backend.get_public_key(id);
+
+        let (r_bytes, s_bytes) = match sig {
+            Ieee1609Signature::ecdsaNistP256Signature(s) => match s.r_sig {
+                EccP256CurvePoint::x_only(b) => (b, s.s_sig),
+                _ => panic!("Expected x_only"),
+            },
+            _ => panic!("Expected ecdsaNistP256Signature"),
+        };
+
+        // Construct signature with compressed_y_0
+        let sig_y0 = Ieee1609Signature::ecdsaNistP256Signature(EcdsaP256Signature {
+            r_sig: EccP256CurvePoint::compressed_y_0(r_bytes.clone()),
+            s_sig: s_bytes.clone(),
+        });
+        assert!(backend.verify_with_pk(data, &sig_y0, &pk));
+
+        // Construct signature with compressed_y_1
+        let sig_y1 = Ieee1609Signature::ecdsaNistP256Signature(EcdsaP256Signature {
+            r_sig: EccP256CurvePoint::compressed_y_1(r_bytes),
+            s_sig: s_bytes,
+        });
+        assert!(backend.verify_with_pk(data, &sig_y1, &pk));
     }
 
     #[test]

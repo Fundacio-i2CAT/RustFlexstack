@@ -39,6 +39,43 @@ static constexpr int      TX_PRIORITY     = 3;
 using namespace telux::cv2x;
 using namespace telux::common;
 
+namespace telux {
+namespace cv2x {
+class DsiCv2xRadio {
+public:
+    telux::common::Status createTxSpsFlow(
+        TrafficIpType ipType,
+        uint32_t serviceId,
+        const SpsFlowInfo & spsInfo,
+        uint16_t spsSrcPort,
+        bool eventSrcPortValid,
+        uint16_t eventSrcPort,
+        std::function<void(std::shared_ptr<ICv2xTxFlow>,
+                           std::shared_ptr<ICv2xTxFlow>,
+                           telux::common::ErrorCode,
+                           telux::common::ErrorCode)> cb);
+
+    telux::common::Status createRxSubscription(
+        TrafficIpType ipType,
+        uint16_t port,
+        std::function<void(std::shared_ptr<ICv2xRxSubscription>,
+                           telux::common::ErrorCode)> cb,
+        std::shared_ptr<std::vector<uint32_t>> eventList = nullptr);
+
+    telux::common::Status closeTxFlow(
+        std::shared_ptr<ICv2xTxFlow> txFlow,
+        std::function<void(std::shared_ptr<ICv2xTxFlow>,
+                           telux::common::ErrorCode)> cb);
+
+    telux::common::Status closeRxSubscription(
+        std::shared_ptr<ICv2xRxSubscription> rxSub,
+        std::function<void(std::shared_ptr<ICv2xRxSubscription>,
+                           telux::common::ErrorCode)> cb);
+};
+}
+}
+
+
 /* ── Opaque handle ─────────────────────────────────────────────────────── */
 struct cv2x_handle {
     std::shared_ptr<ICv2xRadioManager>   radioManager;
@@ -106,7 +143,7 @@ cv2x_handle_t *rfx_cv2x_init(void)
         cv.notify_all();
     };
 
-    auto &factory = Cv2xFactory::getInstance();
+    auto &factory = Cv2xFactoryImpl::getInstance();
     h->radioManager = factory.getCv2xRadioManager(statusCb);
     if (!h->radioManager) {
         std::cerr << "[cv2x_wrapper] ERROR: getCv2xRadioManager returned null" << std::endl;
@@ -188,7 +225,7 @@ cv2x_handle_t *rfx_cv2x_init(void)
         std::promise<ErrorCode> p;
         auto f = p.get_future();
 
-        auto rc = h->radio->createTxSpsFlow(
+        auto rc = reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->createTxSpsFlow(
             TrafficIpType::TRAFFIC_NON_IP,
             SPS_SERVICE_ID,
             spsInfo,
@@ -237,7 +274,7 @@ cv2x_handle_t *rfx_cv2x_init(void)
         std::promise<ErrorCode> p;
         auto f = p.get_future();
 
-        auto rc = h->radio->createRxSubscription(
+        auto rc = reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->createRxSubscription(
             TrafficIpType::TRAFFIC_NON_IP,
             RX_PORT,
             [h, &p](std::shared_ptr<ICv2xRxSubscription> rxSub, ErrorCode err) {
@@ -309,33 +346,39 @@ void rfx_cv2x_destroy(cv2x_handle_t *h)
         if (h->spsFlow) {
             std::promise<ErrorCode> p;
             auto f = p.get_future();
-            h->radio->closeTxFlow(h->spsFlow,
+            reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->closeTxFlow(h->spsFlow,
                 [&p](std::shared_ptr<ICv2xTxFlow>, ErrorCode err) {
                     p.set_value(err);
                 });
-            f.get();
+            if (f.wait_for(std::chrono::milliseconds(500)) == std::future_status::timeout) {
+                std::cerr << "[cv2x_wrapper] WARNING: closeTxFlow (SPS) timed out" << std::endl;
+            }
             h->spsFlow.reset();
         }
 
         if (h->eventFlow) {
             std::promise<ErrorCode> p;
             auto f = p.get_future();
-            h->radio->closeTxFlow(h->eventFlow,
+            reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->closeTxFlow(h->eventFlow,
                 [&p](std::shared_ptr<ICv2xTxFlow>, ErrorCode err) {
                     p.set_value(err);
                 });
-            f.get();
+            if (f.wait_for(std::chrono::milliseconds(500)) == std::future_status::timeout) {
+                std::cerr << "[cv2x_wrapper] WARNING: closeTxFlow (Event) timed out" << std::endl;
+            }
             h->eventFlow.reset();
         }
 
         if (h->rxSub) {
             std::promise<ErrorCode> p;
             auto f = p.get_future();
-            h->radio->closeRxSubscription(h->rxSub,
+            reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->closeRxSubscription(h->rxSub,
                 [&p](std::shared_ptr<ICv2xRxSubscription>, ErrorCode err) {
                     p.set_value(err);
                 });
-            f.get();
+            if (f.wait_for(std::chrono::milliseconds(500)) == std::future_status::timeout) {
+                std::cerr << "[cv2x_wrapper] WARNING: closeRxSubscription timed out" << std::endl;
+            }
             h->rxSub.reset();
         }
     }

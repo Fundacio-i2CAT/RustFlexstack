@@ -3,6 +3,8 @@
 //! Provides [`Certificate`] (read-only wrapper) and [`OwnCertificate`]
 //! (includes the private-key identifier for signing).
 
+use sha2::{Digest, Sha256};
+
 use crate::security::ecdsa_backend::EcdsaBackend;
 use crate::security::security_asn::etsi_ts103097_module::EtsiTs103097Certificate;
 use crate::security::security_asn::ieee1609_dot2::Certificate as AsnCertificate;
@@ -58,7 +60,7 @@ pub fn compute_hashedid8(cert_bytes: &[u8]) -> [u8; 8] {
 // ─── Certificate (read-only) ─────────────────────────────────────────────
 
 /// Immutable certificate wrapper.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Certificate {
     /// The inner ASN.1 certificate.
     pub inner: EtsiTs103097Certificate,
@@ -105,9 +107,70 @@ impl Certificate {
         &self.encoded
     }
 
-    /// Compute the SHA-256 HashedId8 of the certificate.
+    /// Convert certificate to IEEE 1609.2 / ETSI TS 103 097 canonical form:
+    /// - Public verification key compressed (compressed_y_0/1).
+    /// - Signature r_sig as x_only.
+    pub fn to_canonical(&self) -> Certificate {
+        let mut needs_conversion = false;
+        if let VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+            EccP256CurvePoint::uncompressedP256(_),
+        )) = &self.tbs().verify_key_indicator
+        {
+            needs_conversion = true;
+        }
+        if let Some(Ieee1609Signature::ecdsaNistP256Signature(p256_sig)) = &self.base().signature {
+            if matches!(
+                p256_sig.r_sig,
+                EccP256CurvePoint::compressed_y_0(_) | EccP256CurvePoint::compressed_y_1(_)
+            ) {
+                needs_conversion = true;
+            }
+        }
+
+        if !needs_conversion {
+            return self.clone();
+        }
+
+        let mut new_base = self.base().clone();
+
+        // 1. Convert uncompressed verification key to compressed
+        if let VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+            EccP256CurvePoint::uncompressedP256(ref u),
+        )) = new_base.to_be_signed.verify_key_indicator
+        {
+            let y_bytes = u.y.as_ref();
+            let is_even = y_bytes.last().map(|b| b % 2 == 0).unwrap_or(false);
+            let new_pt = if is_even {
+                EccP256CurvePoint::compressed_y_0(u.x.clone())
+            } else {
+                EccP256CurvePoint::compressed_y_1(u.x.clone())
+            };
+            new_base.to_be_signed.verify_key_indicator = VerificationKeyIndicator::verificationKey(
+                PublicVerificationKey::ecdsaNistP256(new_pt),
+            );
+        }
+
+        // 2. Convert signature r_sig from compressed_y_0/1 to x_only
+        if let Some(Ieee1609Signature::ecdsaNistP256Signature(ref mut p256_sig)) =
+            new_base.signature
+        {
+            match &p256_sig.r_sig {
+                EccP256CurvePoint::compressed_y_0(x) | EccP256CurvePoint::compressed_y_1(x) => {
+                    p256_sig.r_sig = EccP256CurvePoint::x_only(x.clone());
+                }
+                _ => {}
+            }
+        }
+
+        let new_asn = EtsiTs103097Certificate(AsnCertificate(new_base));
+        let issuer = self.issuer.as_ref().map(|i| *i.clone());
+        Certificate::from_asn(new_asn, issuer)
+    }
+
+    /// Compute the SHA-256 HashedId8 of the canonical certificate.
     pub fn as_hashedid8(&self) -> [u8; 8] {
-        compute_hashedid8(&self.encoded)
+        let canon = self.to_canonical();
+        compute_hashedid8(&canon.encoded)
     }
 
     /// Compute the last 3 bytes of HashedId8.
@@ -263,7 +326,19 @@ impl Certificate {
             VerificationKeyIndicator::verificationKey(pk) => pk,
             _ => return false,
         };
-        Certificate::verify_signature_with(backend, self.tbs(), sig, issuer_vk)
+        let tbs_bytes = encode_tbs_certificate(self.tbs());
+        let payload = if matches!(self.base().issuer, IssuerIdentifier::sha256AndDigest(_)) {
+            let tbs_hash = Sha256::digest(&tbs_bytes);
+            let issuer_canon = issuer.to_canonical();
+            let issuer_hash = Sha256::digest(issuer_canon.encode());
+            let mut p = Vec::with_capacity(64);
+            p.extend_from_slice(&tbs_hash);
+            p.extend_from_slice(&issuer_hash);
+            p
+        } else {
+            tbs_bytes
+        };
+        backend.verify_with_pk(&payload, sig, issuer_vk)
     }
 
     /// Verify a self-signed certificate.
@@ -351,7 +426,7 @@ impl Certificate {
 // ─── OwnCertificate ─────────────────────────────────────────────────────
 
 /// A certificate for which we hold the private key.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnCertificate {
     pub cert: Certificate,
     pub key_id: usize,
@@ -361,6 +436,11 @@ impl OwnCertificate {
     /// Wrap an existing `Certificate` together with its key id.
     pub fn new(cert: Certificate, key_id: usize) -> Self {
         Self { cert, key_id }
+    }
+
+    /// Convert inner certificate to canonical form.
+    pub fn to_canonical(&self) -> Certificate {
+        self.cert.to_canonical()
     }
 
     /// Convenience delegations.
@@ -393,7 +473,20 @@ impl OwnCertificate {
     /// with the updated signature.
     pub fn sign_certificate(&self, backend: &EcdsaBackend, target: &Certificate) -> Certificate {
         let tbs_bytes = encode_tbs_certificate(target.tbs());
-        let sig = backend.sign(&tbs_bytes, self.key_id);
+        let payload = if matches!(target.base().issuer, IssuerIdentifier::sha256AndDigest(_)) {
+            // IEEE 1609.2 §5.3.2 / ETSI TS 103 097:
+            // Digest to sign is SHA-256( SHA-256(tbs_bytes) || SHA-256(issuer_cert_bytes) )
+            let tbs_hash = Sha256::digest(&tbs_bytes);
+            let self_canon = self.to_canonical();
+            let issuer_hash = Sha256::digest(self_canon.encode());
+            let mut p = Vec::with_capacity(64);
+            p.extend_from_slice(&tbs_hash);
+            p.extend_from_slice(&issuer_hash);
+            p
+        } else {
+            tbs_bytes
+        };
+        let sig = backend.sign(&payload, self.key_id);
 
         let mut new_base = target.base().clone();
         new_base.signature = Some(sig);
@@ -411,13 +504,11 @@ impl OwnCertificate {
         new_base.issuer =
             IssuerIdentifier::sha256AndDigest(HashedId8(rasn::types::FixedOctetString::from(h8)));
 
-        // Sign
-        let tbs_bytes = encode_tbs_certificate(&new_base.to_be_signed);
-        let sig = backend.sign(&tbs_bytes, self.key_id);
-        new_base.signature = Some(sig);
-
-        let new_asn = EtsiTs103097Certificate(AsnCertificate(new_base));
-        Certificate::from_asn(new_asn, Some(self.cert.clone()))
+        let target_with_issuer = Certificate::from_asn(
+            EtsiTs103097Certificate(AsnCertificate(new_base)),
+            Some(self.cert.clone()),
+        );
+        self.sign_certificate(backend, &target_with_issuer)
     }
 
     /// Create a brand-new self-signed certificate.
@@ -475,21 +566,22 @@ impl OwnCertificate {
             None, // will be filled by sign
         );
 
-        let tbs_bytes = encode_tbs_certificate(&base.to_be_signed);
-        let sig = backend.sign(&tbs_bytes, issuer.key_id);
-
-        let mut final_base = base;
-        final_base.signature = Some(sig);
-
-        let asn = EtsiTs103097Certificate(AsnCertificate(final_base));
-        let cert = Certificate::from_asn(asn, Some(issuer.cert.clone()));
-        OwnCertificate { cert, key_id }
+        let target = Certificate::from_asn(
+            EtsiTs103097Certificate(AsnCertificate(base)),
+            Some(issuer.cert.clone()),
+        );
+        let signed_cert = issuer.sign_certificate(backend, &target);
+        OwnCertificate {
+            cert: signed_cert,
+            key_id,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::security::ecdsa_backend::EcdsaBackend;
     use rasn::prelude::*;
 
@@ -716,5 +808,198 @@ mod tests {
             let cert = Certificate::from_bytes(&bytes, None);
             assert_eq!(cert.base().r_type, CertificateType::explicit);
         }
+    }
+
+    #[test]
+    fn test_to_canonical() {
+        use crate::security::security_asn::ieee1609_dot2_base_types::EccP256CurvePointUncompressedP256;
+
+        let uncompressed_x = vec![1u8; 32];
+        let mut uncompressed_y_even = vec![2u8; 31];
+        uncompressed_y_even.push(2); // even y -> compressed_y_0
+        let mut uncompressed_y_odd = vec![2u8; 31];
+        uncompressed_y_odd.push(3); // odd y -> compressed_y_1
+
+        // 1. Uncompressed verification key (even) and compressed_y_0 r_sig
+        let mut tbs_even = make_root_tbs();
+        tbs_even.verify_key_indicator =
+            VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+                EccP256CurvePoint::uncompressedP256(EccP256CurvePointUncompressedP256 {
+                    x: uncompressed_x.clone().into(),
+                    y: uncompressed_y_even.into(),
+                }),
+            ));
+
+        let sig_even = Ieee1609Signature::ecdsaNistP256Signature(EcdsaP256Signature {
+            r_sig: EccP256CurvePoint::compressed_y_0(vec![5u8; 32].into()),
+            s_sig: vec![6u8; 32].into(),
+        });
+
+        let base_even = CertificateBase::new(
+            Uint8(3),
+            CertificateType::explicit,
+            IssuerIdentifier::R_self(HashAlgorithm::sha256),
+            tbs_even,
+            Some(sig_even),
+        );
+
+        let cert_even =
+            Certificate::from_asn(EtsiTs103097Certificate(AsnCertificate(base_even)), None);
+        let canon_even = cert_even.to_canonical();
+
+        // Check key compressed to compressed_y_0
+        match &canon_even.tbs().verify_key_indicator {
+            VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+                EccP256CurvePoint::compressed_y_0(x),
+            )) => {
+                assert_eq!(x.as_ref(), uncompressed_x.as_slice());
+            }
+            _ => panic!("Expected compressed_y_0 verification key"),
+        }
+
+        // Check signature r_sig converted to x_only
+        match &canon_even.base().signature {
+            Some(Ieee1609Signature::ecdsaNistP256Signature(sig)) => {
+                match &sig.r_sig {
+                    EccP256CurvePoint::x_only(x) => {
+                        assert_eq!(x.as_ref(), vec![5u8; 32].as_slice());
+                    }
+                    _ => panic!("Expected x_only r_sig"),
+                }
+                assert_eq!(sig.s_sig.as_ref(), vec![6u8; 32].as_slice());
+            }
+            _ => panic!("Expected ecdsaNistP256Signature"),
+        }
+
+        // 2. Uncompressed verification key (odd) and compressed_y_1 r_sig
+        let mut tbs_odd = make_root_tbs();
+        tbs_odd.verify_key_indicator =
+            VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+                EccP256CurvePoint::uncompressedP256(EccP256CurvePointUncompressedP256 {
+                    x: uncompressed_x.clone().into(),
+                    y: uncompressed_y_odd.into(),
+                }),
+            ));
+
+        let sig_odd = Ieee1609Signature::ecdsaNistP256Signature(EcdsaP256Signature {
+            r_sig: EccP256CurvePoint::compressed_y_1(vec![7u8; 32].into()),
+            s_sig: vec![8u8; 32].into(),
+        });
+
+        let base_odd = CertificateBase::new(
+            Uint8(3),
+            CertificateType::explicit,
+            IssuerIdentifier::R_self(HashAlgorithm::sha256),
+            tbs_odd,
+            Some(sig_odd),
+        );
+
+        let cert_odd =
+            Certificate::from_asn(EtsiTs103097Certificate(AsnCertificate(base_odd)), None);
+        let canon_odd = cert_odd.to_canonical();
+
+        match &canon_odd.tbs().verify_key_indicator {
+            VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+                EccP256CurvePoint::compressed_y_1(x),
+            )) => {
+                assert_eq!(x.as_ref(), uncompressed_x.as_slice());
+            }
+            _ => panic!("Expected compressed_y_1 verification key"),
+        }
+
+        match &canon_odd.base().signature {
+            Some(Ieee1609Signature::ecdsaNistP256Signature(sig)) => {
+                match &sig.r_sig {
+                    EccP256CurvePoint::x_only(x) => {
+                        assert_eq!(x.as_ref(), vec![7u8; 32].as_slice());
+                    }
+                    _ => panic!("Expected x_only r_sig"),
+                }
+                assert_eq!(sig.s_sig.as_ref(), vec![8u8; 32].as_slice());
+            }
+            _ => panic!("Expected ecdsaNistP256Signature"),
+        }
+
+        // 3. Already canonical remains identical
+        let canon_again = canon_even.to_canonical();
+        assert_eq!(canon_even, canon_again);
+    }
+
+    #[test]
+    fn test_as_hashedid8_canonical_equivalence() {
+        use crate::security::security_asn::ieee1609_dot2_base_types::EccP256CurvePointUncompressedP256;
+
+        let uncompressed_x = vec![1u8; 32];
+        let mut uncompressed_y = vec![2u8; 31];
+        uncompressed_y.push(2); // even -> compressed_y_0
+
+        let mut tbs_uncomp = make_root_tbs();
+        tbs_uncomp.verify_key_indicator =
+            VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+                EccP256CurvePoint::uncompressedP256(EccP256CurvePointUncompressedP256 {
+                    x: uncompressed_x.clone().into(),
+                    y: uncompressed_y.into(),
+                }),
+            ));
+
+        let sig = Ieee1609Signature::ecdsaNistP256Signature(EcdsaP256Signature {
+            r_sig: EccP256CurvePoint::x_only(vec![5u8; 32].into()),
+            s_sig: vec![6u8; 32].into(),
+        });
+
+        let cert_uncompressed = Certificate::from_asn(
+            EtsiTs103097Certificate(AsnCertificate(CertificateBase::new(
+                Uint8(3),
+                CertificateType::explicit,
+                IssuerIdentifier::R_self(HashAlgorithm::sha256),
+                tbs_uncomp,
+                Some(sig.clone()),
+            ))),
+            None,
+        );
+
+        let mut tbs_comp = make_root_tbs();
+        tbs_comp.verify_key_indicator =
+            VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
+                EccP256CurvePoint::compressed_y_0(uncompressed_x.into()),
+            ));
+
+        let cert_compressed = Certificate::from_asn(
+            EtsiTs103097Certificate(AsnCertificate(CertificateBase::new(
+                Uint8(3),
+                CertificateType::explicit,
+                IssuerIdentifier::R_self(HashAlgorithm::sha256),
+                tbs_comp,
+                Some(sig),
+            ))),
+            None,
+        );
+
+        assert_eq!(
+            cert_uncompressed.as_hashedid8(),
+            cert_compressed.as_hashedid8()
+        );
+    }
+
+    #[test]
+    fn test_issued_certificate_digest_verification() {
+        use crate::security::security_asn::ieee1609_dot2::CertificateId;
+        use crate::security::security_asn::ieee1609_dot2_base_types::Hostname;
+
+        let mut backend = EcdsaBackend::new();
+        let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
+        assert!(root.verify(&backend));
+
+        let child = OwnCertificate::initialize_issued(&mut backend, make_at_tbs(), &root);
+        assert!(child.verify(&backend));
+
+        // Tamper with toBeSigned in child cert
+        let mut tampered_base = child.cert.base().clone();
+        tampered_base.to_be_signed.id = CertificateId::name(Hostname("tampered-ee".to_string()));
+        let tampered_cert = Certificate::from_asn(
+            EtsiTs103097Certificate(AsnCertificate(tampered_base)),
+            Some(root.cert.clone()),
+        );
+        assert!(!tampered_cert.verify(&backend));
     }
 }
