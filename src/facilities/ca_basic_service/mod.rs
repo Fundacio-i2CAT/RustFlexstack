@@ -180,6 +180,14 @@ impl CooperativeAwarenessBasicService {
         self.cam_transmission_management.stop();
     }
 
+    /// Set T_GenCam_DCC (§6.1.3) on the transmission management, clamped to
+    /// [T_GenCamMin, T_GenCamMax]. Intended as a
+    /// [`DccEntity`](crate::management::DccEntity) listener target.
+    pub fn set_t_gen_cam_dcc(&self, t_gen_cam_dcc_ms: u64) {
+        self.cam_transmission_management
+            .set_t_gen_cam_dcc(t_gen_cam_dcc_ms);
+    }
+
     /// Update position fix directly via the location service callback (§6.1.3).
     pub fn location_service_callback(&self, fix: GpsFix) {
         self.cam_transmission_management
@@ -234,6 +242,15 @@ mod tests {
 
         service.stop();
         assert!(!service.cam_transmission_management.is_active());
+    }
+
+    #[test]
+    fn test_set_t_gen_cam_dcc_reaches_transmission_management() {
+        let (btp_handle, _) = crate::btp::router::Router::spawn(Mib::new());
+        let (service, _cam_rx) =
+            CooperativeAwarenessBasicService::new(btp_handle, VehicleData::default(), None);
+        service.set_t_gen_cam_dcc(400);
+        assert_eq!(service.cam_transmission_management.t_gen_cam_dcc(), 400);
     }
 
     #[test]

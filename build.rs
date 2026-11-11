@@ -24,6 +24,17 @@ fn main() {
         // Telux SDK headers
         if let Ok(inc_dir) = std::env::var("TELUX_INCLUDE_DIR") {
             build.include(&inc_dir);
+            let factory_hpp = std::path::Path::new(&inc_dir).join("telux/cv2x/Cv2xFactory.hpp");
+            if factory_hpp.exists() {
+                if let Ok(content) = std::fs::read_to_string(&factory_hpp) {
+                    if content.contains("Cv2xFactoryImpl") {
+                        build.define("TELUX_USE_FACTORY_IMPL", "1");
+                    }
+                    if !content.contains("InitResponseCb") {
+                        build.define("TELUX_LEGACY_FACTORY", "1");
+                    }
+                }
+            }
         }
 
         build.compile("cv2x_wrapper_cpp");

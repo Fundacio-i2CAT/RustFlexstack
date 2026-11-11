@@ -132,26 +132,82 @@ jobs:
           files: |
             dist/rustflexstack-*-x86_64-linux.tar.gz
             dist/rustflexstack-*-aarch64-linux.tar.gz
+            install_v2x_flexstack_cli.sh
           body: |
-            ## Precompiled binaries
+            ## Quick Installation (Recommended)
 
-            | Archive | Architecture | Link layer | Contents |
-            |---------|-------------|------------|----------|
-            | `rustflexstack-v0.3.0-x86_64-linux.tar.gz` | x86_64 | Raw Ethernet | v2x_cli, denm_sender_receiver, generate_certificate_chain |
-            | `rustflexstack-v0.3.0-aarch64-linux.tar.gz` | aarch64 | Raw Ethernet | Same as x86_64 (for ARM64 devices without C-V2X) |
-            | `v2x_cli_cv2x` | aarch64 | C-V2X (PC5) | Comprehensive V2X CLI for Cohda MK6 devices |
-            | `cv2x_denm_sender_receiver` | aarch64 | C-V2X (PC5) | DENM sender/receiver for Cohda MK6 devices |
+            Like `rustup`, you can install the V2X FlexStack CLI directly in your terminal using a single command. The installer automatically detects your operating system, CPU architecture, and onboard Qualcomm C-V2X firmware flavour.
 
-            ### C-V2X binaries (Cohda MK6)
+            ### Using `curl` (Linux x86_64, generic AArch64):
+            ```bash
+            curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/Fundacio-i2CAT/RustFlexstack/master/install_v2x_flexstack_cli.sh | sh
+            ```
 
-            The C-V2X binaries are precompiled and attached to this release. They target **Cohda MK6** on-board units (AArch64 / Qualcomm SA515M) and use the C-V2X PC5 radio interface for direct vehicle-to-vehicle communication.
+            ### Using `wget` (Cohda Mk6 / MK6C OBU & RSU):
+            ```bash
+            wget -qO- https://raw.githubusercontent.com/Fundacio-i2CAT/RustFlexstack/master/install_v2x_flexstack_cli.sh | sh
+            ```
+
+            > **What the script does automatically:**
+            > 1. Detects platform (`x86_64` vs `aarch64`).
+            > 2. On Cohda hardware, inspects `libtelux_cv2x.so` and automatically pulls both `v2x_cli_cohda` and the exact matching C-V2X binary (`v2x_cli_cv2x-mk6-fw20`, `v2x_cli_cv2x-mk6-fw19`, or `v2x_cli_cv2x-mk6c`).
+            > 3. On generic Linux PCs, pulls `v2x_cli_x86` or `v2x_cli_aarch64`.
+            > 4. Installs executables into `/usr/local/bin` (`v2x_cli` and `v2x_cli_cv2x`) and performs an automated self-test.
+
+            ---
+
+            ## Release Assets & Precompiled Binaries
+
+            | Asset / Binary | Architecture / Hardware | Link Layer / Purpose |
+            | :--- | :--- | :--- |
+            | `install_v2x_flexstack_cli.sh` | Any Linux (x86_64 / AArch64 / Cohda) | Automated installer script |
+            | `v2x_cli_x86` | Generic Linux x86_64 (PCs, Servers) | Raw Socket / Ethernet / ITS-G5 bench |
+            | `v2x_cli_aarch64` | Generic Linux AArch64 (Raspberry Pi, Jetson) | Raw Socket / Ethernet / ITS-G5 bench |
+            | `v2x_cli` | Generic Linux (Portable) | Raw Socket / Ethernet standalone CLI |
+            | `v2x_cli_cohda` | Cohda Mk6 (Quectel AG550 / SA515M) | Raw Socket / Cohda `cw-llc` link layer |
+            | `v2x_cli_cv2x-mk6-fw20` | Cohda Mk6 Firmware 20 (`Cv2xFactoryImpl`) | C-V2X PC5 Mode 4 Direct Radio |
+            | `v2x_cli_cv2x-mk6-fw19` | Cohda Mk6 Firmware 19 (`Cv2xFactory`) | C-V2X PC5 Mode 4 Direct Radio |
+            | `v2x_cli_cv2x-mk6c` | Cohda MK6C / ag15 (Qualcomm MDM9150) | C-V2X PC5 Mode 4 Direct Radio |
+            | `rustflexstack-${{ github.ref_name }}-x86_64-linux.tar.gz` | x86_64 | Musl static examples archive |
+            | `rustflexstack-${{ github.ref_name }}-aarch64-linux.tar.gz` | aarch64 | Musl static examples archive |
+
+            ### C-V2X Binaries (Cohda MK6 / MK6C)
+
+            The C-V2X binaries target **Cohda MK6 / MK6C** on-board units and use the Qualcomm C-V2X PC5 radio interface for direct vehicle-to-vehicle and vehicle-to-infrastructure communication.
 
             > **Licensing note:** The binaries themselves are provided under AGPL-3.0 and contain only RustFlexstack code. However, the cross-compilation toolchain used to build them depends on the proprietary Qualcomm Telux SDK (headers and shared libraries), which cannot be redistributed. The Telux shared libraries (`libtelux_cv2x.so`, `libtelux_common.so`, etc.) are **not** bundled — they are part of the Qualcomm firmware already present on MK6 devices. If you need to rebuild these binaries, you must obtain the Telux SDK separately from Qualcomm or Cohda Wireless.
 
             #### What do the C-V2X binaries do?
 
             - **`v2x_cli_cv2x`** — A full-featured V2X node that transmits and receives CAM, DENM, and VAM messages over the C-V2X PC5 sidelink radio. Supports ETSI security (IEEE 1609.2 signing and verification), live GPS via GPSD, and a Local Dynamic Map (LDM) for tracking nearby ITS stations. Run with `--help` for all options.
-
             - **`cv2x_denm_sender_receiver`** — A focused DENM (Decentralized Environmental Notification Message) example that sends and receives road hazard warnings over C-V2X.
 
             Both binaries require `cv2x-daemon` to be running on the MK6 device and the `rmnet_data16` network interface to be up.
+
+            ---
+
+            ## Basic Usage
+
+            ### Standard Linux (x86_64 / AArch64 / Cohda Raw Socket):
+            ```bash
+            # Display help and available options
+            v2x_cli --help
+
+            # Transmit signed CAMs over network interface
+            v2x_cli tx --interface eth0 --station-id 101 --frequency 10
+
+            # Receive and verify CAMs with PKI trust store
+            v2x_cli rx --interface eth0 --trust-store /path/to/truststore.json
+            ```
+
+            ### C-V2X Direct Radio on Cohda Mk6 / MK6C:
+            ```bash
+            # Display C-V2X options
+            v2x_cli_cv2x --help
+
+            # Start C-V2X PC5 Mode 4 Station (CAM transmission on ITS band)
+            v2x_cli_cv2x tx --station-id 42 --port 2000
+
+            # Listen and verify C-V2X PC5 Mode 4 packets
+            v2x_cli_cv2x rx --port 2000
+            ```

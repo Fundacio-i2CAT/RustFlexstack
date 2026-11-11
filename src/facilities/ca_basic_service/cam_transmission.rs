@@ -64,7 +64,12 @@ pub const T_GEN_CAM_MIN_MS: u64 = 100;
 pub const T_GEN_CAM_MAX_MS: u64 = 1_000;
 /// T_CheckCamGen [ms]: timer period for condition evaluation (≤ T_GenCamMin).
 pub const T_CHECK_CAM_GEN_MS: u64 = T_GEN_CAM_MIN_MS;
-/// T_GenCam_DCC [ms]: DCC-imposed minimum interval ∈ [T_GenCamMin, T_GenCamMax].
+/// Default T_GenCam_DCC [ms] used until a DCC entity provides a value.
+///
+/// T_GenCam_DCC is the DCC-imposed minimum interval ∈ [T_GenCamMin, T_GenCamMax]
+/// (§6.1.3). Set it at runtime with
+/// [`CAMTransmissionManagement::set_t_gen_cam_dcc`], typically from a
+/// [`DccEntity`](crate::management::DccEntity) listener.
 pub const T_GEN_CAM_DCC_MS: u64 = T_GEN_CAM_MIN_MS;
 
 // ─── Optional-container intervals (§6.1.3) ───────────────────────────────────
@@ -395,6 +400,8 @@ pub struct CAMTransmissionManagement {
     pub ca_basic_service_ldm: Option<CABasicServiceLDM>,
 
     pub t_gen_cam_ms: Arc<AtomicU64>,
+    /// T_GenCam_DCC [ms], provided by the management layer (DCC).
+    pub t_gen_cam_dcc_ms: Arc<AtomicU64>,
     pub n_gen_cam_counter: Arc<AtomicU32>,
 
     pub state: Arc<Mutex<TransmissionState>>,
@@ -415,6 +422,7 @@ impl CAMTransmissionManagement {
             vehicle_data,
             ca_basic_service_ldm,
             t_gen_cam_ms: Arc::new(AtomicU64::new(T_GEN_CAM_MAX_MS)),
+            t_gen_cam_dcc_ms: Arc::new(AtomicU64::new(T_GEN_CAM_DCC_MS)),
             n_gen_cam_counter: Arc::new(AtomicU32::new(0)),
             state: Arc::new(Mutex::new(TransmissionState::default())),
             active: Arc::new(AtomicBool::new(false)),
@@ -458,6 +466,20 @@ impl CAMTransmissionManagement {
     /// Current T_GenCam value in milliseconds.
     pub fn t_gen_cam(&self) -> u64 {
         self.t_gen_cam_ms.load(Ordering::SeqCst)
+    }
+
+    /// Current T_GenCam_DCC value in milliseconds.
+    pub fn t_gen_cam_dcc(&self) -> u64 {
+        self.t_gen_cam_dcc_ms.load(Ordering::SeqCst)
+    }
+
+    /// Set T_GenCam_DCC (§6.1.3), clamped to [T_GenCamMin, T_GenCamMax].
+    ///
+    /// Shared by all clones of this instance, so it may be called from a DCC
+    /// entity thread while the transmission thread is running.
+    pub fn set_t_gen_cam_dcc(&self, t_gen_cam_dcc_ms: u64) {
+        let clamped = t_gen_cam_dcc_ms.clamp(T_GEN_CAM_MIN_MS, T_GEN_CAM_MAX_MS);
+        self.t_gen_cam_dcc_ms.store(clamped, Ordering::SeqCst);
     }
 
     /// Number of CAMs sent since activation.
@@ -659,6 +681,7 @@ impl CAMTransmissionManagement {
                 self.t_gen_cam_ms.load(Ordering::SeqCst),
             )
         };
+        let t_gen_cam_dcc = self.t_gen_cam_dcc_ms.load(Ordering::SeqCst);
 
         // First CAM after activation — send immediately
         if last_time.is_none() {
@@ -668,13 +691,13 @@ impl CAMTransmissionManagement {
         let elapsed_ms = now_ms.saturating_sub(last_time.unwrap());
 
         // Condition 1 (§6.1.3): elapsed ≥ T_GenCam_DCC AND dynamics changed
-        if elapsed_ms.saturating_add(5) >= T_GEN_CAM_DCC_MS && self.check_dynamics(&fix) {
+        if elapsed_ms.saturating_add(5) >= t_gen_cam_dcc && self.check_dynamics(&fix) {
             return self.generate_and_send_cam(&fix, now_ms, 1).ok();
         }
 
         // Condition 2 (§6.1.3): elapsed ≥ T_GenCam AND elapsed ≥ T_GenCam_DCC
         if elapsed_ms.saturating_add(5) >= t_gen_cam
-            && elapsed_ms.saturating_add(5) >= T_GEN_CAM_DCC_MS
+            && elapsed_ms.saturating_add(5) >= t_gen_cam_dcc
         {
             return self.generate_and_send_cam(&fix, now_ms, 2).ok();
         }
@@ -1249,6 +1272,71 @@ mod tests {
         // Condition 2 triggers after t_gen_cam
         assert!(ctm.evaluate_and_maybe_send(1050).is_none());
         assert!(ctm.evaluate_and_maybe_send(2001).is_some());
+    }
+
+    // ─── T_GenCam_DCC (management-layer coupling) tests ─────────────────────
+
+    #[test]
+    fn test_t_gen_cam_dcc_default_and_clamping() {
+        let ctm = make_test_ctm(None, None);
+        assert_eq!(ctm.t_gen_cam_dcc(), T_GEN_CAM_DCC_MS);
+        ctm.set_t_gen_cam_dcc(400);
+        assert_eq!(ctm.t_gen_cam_dcc(), 400);
+        ctm.set_t_gen_cam_dcc(10);
+        assert_eq!(ctm.t_gen_cam_dcc(), T_GEN_CAM_MIN_MS);
+        ctm.set_t_gen_cam_dcc(5_000);
+        assert_eq!(ctm.t_gen_cam_dcc(), T_GEN_CAM_MAX_MS);
+    }
+
+    #[test]
+    fn test_t_gen_cam_dcc_gates_condition1() {
+        let ctm = make_test_ctm(None, None);
+        ctm.set_t_gen_cam_dcc(500);
+        ctm.location_service_callback(make_test_fix(41.0, 2.0, 90.0, 5.0));
+        assert!(ctm.evaluate_and_maybe_send(1_000).is_some());
+
+        // Heading change of 45° satisfies the dynamics check ...
+        ctm.location_service_callback(make_test_fix(41.0, 2.0, 135.0, 5.0));
+        // ... but elapsed (200 ms) < T_GenCam_DCC (500 ms): no CAM.
+        assert!(ctm.evaluate_and_maybe_send(1_200).is_none());
+        // Once elapsed ≥ T_GenCam_DCC the condition-1 CAM is sent.
+        assert!(ctm.evaluate_and_maybe_send(1_500).is_some());
+    }
+
+    #[test]
+    fn test_t_gen_cam_dcc_gates_condition2() {
+        let ctm = make_test_ctm(None, None);
+        ctm.location_service_callback(make_test_fix(41.0, 2.0, 90.0, 5.0));
+        assert!(ctm.evaluate_and_maybe_send(1_000).is_some());
+        ctm.t_gen_cam_ms.store(400, Ordering::SeqCst);
+        ctm.set_t_gen_cam_dcc(800);
+        // elapsed ≥ T_GenCam but < T_GenCam_DCC: no CAM.
+        assert!(ctm.evaluate_and_maybe_send(1_500).is_none());
+        assert!(ctm.evaluate_and_maybe_send(1_800).is_some());
+    }
+
+    #[test]
+    fn test_t_gen_cam_dcc_shared_between_clones() {
+        let ctm = make_test_ctm(None, None);
+        let worker = ctm.clone();
+        ctm.set_t_gen_cam_dcc(700);
+        assert_eq!(worker.t_gen_cam_dcc(), 700);
+    }
+
+    #[test]
+    fn test_dcc_entity_drives_t_gen_cam_dcc() {
+        use crate::management::{DccEntity, DccMode, SharedCbr};
+        let ctm = make_test_ctm(None, None);
+        let cbr = SharedCbr::new();
+        let mut dcc = DccEntity::new(DccMode::reactive(), Box::new(cbr.clone()));
+        let target = ctm.clone();
+        dcc.add_t_gen_cam_dcc_listener(move |ms| target.set_t_gen_cam_dcc(ms));
+
+        cbr.report(0.9); // Restrictive band; reactive DCC steps up one state per evaluation
+        dcc.evaluate();
+        assert_eq!(ctm.t_gen_cam_dcc(), 200); // Active1 T_off
+        dcc.evaluate();
+        assert_eq!(ctm.t_gen_cam_dcc(), 400); // Active2 T_off
     }
 
     // ─── Path History tests ──────────────────────────────────────────────────

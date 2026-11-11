@@ -10,11 +10,23 @@
 //! - Reactive DCC algorithm ([`dcc_reactive`]) per clause 5.3 and Annex A.
 //! - Adaptive DCC algorithm (LIMERIC) and Gate Keeper admission control ([`dcc_adaptive`])
 //!   per clause 5.4 and Annex B.
+//! - Channel Busy Ratio sources from the access layer ([`cbr`]).
+//! - The DCC entity ([`dcc_entity`]) that evaluates the selected algorithm every
+//!   200 ms and provides `T_GenCam_DCC` to the CA basic service.
 
+pub mod cbr;
 pub mod dcc_adaptive;
+pub mod dcc_entity;
 pub mod dcc_reactive;
 
+pub use cbr::{
+    cbr_from_samples, parse_survey_dump, CbrProvider, Nl80211SurveyCbr, SharedCbr, SurveySample,
+};
 pub use dcc_adaptive::{DccAdaptive, DccAdaptiveParameters, GateKeeper};
+pub use dcc_entity::{
+    clamp_t_gen_cam_dcc, DccEntity, DccEntityHandle, DccEntityOutput, DccMode,
+    DCC_EVALUATION_PERIOD_MS, T_GEN_CAM_DCC_MAX_MS, T_GEN_CAM_DCC_MIN_MS,
+};
 pub use dcc_reactive::{DccReactive, DccReactiveOutput, DccState, DccStateConfig};
 
 /// Errors encountered during DCC calculations and validation.

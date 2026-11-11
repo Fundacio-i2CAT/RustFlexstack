@@ -39,6 +39,7 @@ static constexpr int      TX_PRIORITY     = 3;
 using namespace telux::cv2x;
 using namespace telux::common;
 
+#ifndef TELUX_LEGACY_FACTORY
 namespace telux {
 namespace cv2x {
 class DsiCv2xRadio {
@@ -74,6 +75,10 @@ public:
 };
 }
 }
+#define RADIO_INVOKE(radio, method, ...) reinterpret_cast<telux::cv2x::DsiCv2xRadio*>((radio).get())->method(__VA_ARGS__)
+#else
+#define RADIO_INVOKE(radio, method, ...) (radio)->method(__VA_ARGS__)
+#endif
 
 
 /* ── Opaque handle ─────────────────────────────────────────────────────── */
@@ -131,6 +136,18 @@ cv2x_handle_t *rfx_cv2x_init(void)
     /* ── 1. Get Cv2xRadioManager ──────────────────────────────────────── */
     std::cerr << "[cv2x_wrapper] Step 1/4: getting Cv2xRadioManager..." << std::endl;
 
+#ifdef TELUX_LEGACY_FACTORY
+    auto &factory = Cv2xFactory::getInstance();
+    h->radioManager = factory.getCv2xRadioManager();
+    if (!h->radioManager) {
+        std::cerr << "[cv2x_wrapper] ERROR: getCv2xRadioManager returned null" << std::endl;
+        delete h;
+        return nullptr;
+    }
+    while (!h->radioManager->isReady()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+#else
     bool statusUpdated = false;
     ServiceStatus managerStatus = ServiceStatus::SERVICE_UNAVAILABLE;
     std::condition_variable cv;
@@ -143,7 +160,11 @@ cv2x_handle_t *rfx_cv2x_init(void)
         cv.notify_all();
     };
 
+#ifdef TELUX_USE_FACTORY_IMPL
     auto &factory = Cv2xFactoryImpl::getInstance();
+#else
+    auto &factory = Cv2xFactory::getInstance();
+#endif
     h->radioManager = factory.getCv2xRadioManager(statusCb);
     if (!h->radioManager) {
         std::cerr << "[cv2x_wrapper] ERROR: getCv2xRadioManager returned null" << std::endl;
@@ -162,6 +183,7 @@ cv2x_handle_t *rfx_cv2x_init(void)
         delete h;
         return nullptr;
     }
+#endif
 
     std::cerr << "[cv2x_wrapper] Step 1/4: RadioManager ready" << std::endl;
 
@@ -225,7 +247,7 @@ cv2x_handle_t *rfx_cv2x_init(void)
         std::promise<ErrorCode> p;
         auto f = p.get_future();
 
-        auto rc = reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->createTxSpsFlow(
+        auto rc = RADIO_INVOKE(h->radio, createTxSpsFlow,
             TrafficIpType::TRAFFIC_NON_IP,
             SPS_SERVICE_ID,
             spsInfo,
@@ -274,7 +296,7 @@ cv2x_handle_t *rfx_cv2x_init(void)
         std::promise<ErrorCode> p;
         auto f = p.get_future();
 
-        auto rc = reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->createRxSubscription(
+        auto rc = RADIO_INVOKE(h->radio, createRxSubscription,
             TrafficIpType::TRAFFIC_NON_IP,
             RX_PORT,
             [h, &p](std::shared_ptr<ICv2xRxSubscription> rxSub, ErrorCode err) {
@@ -346,7 +368,7 @@ void rfx_cv2x_destroy(cv2x_handle_t *h)
         if (h->spsFlow) {
             std::promise<ErrorCode> p;
             auto f = p.get_future();
-            reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->closeTxFlow(h->spsFlow,
+            RADIO_INVOKE(h->radio, closeTxFlow, h->spsFlow,
                 [&p](std::shared_ptr<ICv2xTxFlow>, ErrorCode err) {
                     p.set_value(err);
                 });
@@ -359,7 +381,7 @@ void rfx_cv2x_destroy(cv2x_handle_t *h)
         if (h->eventFlow) {
             std::promise<ErrorCode> p;
             auto f = p.get_future();
-            reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->closeTxFlow(h->eventFlow,
+            RADIO_INVOKE(h->radio, closeTxFlow, h->eventFlow,
                 [&p](std::shared_ptr<ICv2xTxFlow>, ErrorCode err) {
                     p.set_value(err);
                 });
@@ -372,7 +394,7 @@ void rfx_cv2x_destroy(cv2x_handle_t *h)
         if (h->rxSub) {
             std::promise<ErrorCode> p;
             auto f = p.get_future();
-            reinterpret_cast<telux::cv2x::DsiCv2xRadio*>(h->radio.get())->closeRxSubscription(h->rxSub,
+            RADIO_INVOKE(h->radio, closeRxSubscription, h->rxSub,
                 [&p](std::shared_ptr<ICv2xRxSubscription>, ErrorCode err) {
                     p.set_value(err);
                 });
