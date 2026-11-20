@@ -423,18 +423,18 @@ pub mod cam_pdu_descriptions {
     #[rasn(delegate, value("1..=16", extensible))]
     pub struct ExtensionContainerId(pub Integer);
     #[doc = "*"]
-    #[doc = "* This type represents the generalized lane positions container."]
+    #[doc = "* This type represents the road lane positions container (CAM v2.3; named GeneralizedLanePositionsContainer up to v2.2)."]
     #[doc = "*"]
     #[doc = "* Contains detailed information about the transversal position of the ITS station with respect to the road and potentially about the lane type."]
     #[doc = ""]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     #[non_exhaustive]
-    pub struct GeneralizedLanePositionsContainer {
+    pub struct RoadLanePositionsContainer {
         #[rasn(identifier = "generalizedLanePositions")]
         pub generalized_lane_positions: GeneralizedLanePositions,
     }
-    impl GeneralizedLanePositionsContainer {
+    impl RoadLanePositionsContainer {
         pub fn new(generalized_lane_positions: GeneralizedLanePositions) -> Self {
             Self {
                 generalized_lane_positions,

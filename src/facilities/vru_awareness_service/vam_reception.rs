@@ -18,6 +18,9 @@ use crate::btp::service_access_point::BTPDataIndication;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
+/// ITS-AID of the service (ETSI TS 102 965).
+pub const VAM_ITS_AID: u64 = 638;
+
 /// VAM Reception Management.
 ///
 /// Spawned as a background thread via [`VAMReceptionManagement::spawn`].
@@ -41,6 +44,11 @@ impl VAMReceptionManagement {
 
         thread::spawn(move || {
             while let Ok(indication) = ind_rx.recv() {
+                // A secured VAM shall carry the VAM ITS-AID (ETSI TS 103 097
+                // V2.2.1 clause 7.1.3).
+                if indication.gn_its_aid.is_some_and(|aid| aid != VAM_ITS_AID) {
+                    continue;
+                }
                 if let Ok(vam) = coder.decode(&indication.data) {
                     // Forward to caller; if they dropped the receiver, stop quietly.
                     if vam_tx.send(vam).is_err() {

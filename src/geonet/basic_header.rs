@@ -65,29 +65,23 @@ pub struct LT {
 }
 
 impl LT {
+    /// Encode a lifetime in milliseconds. The largest base not greater than
+    /// the value is used and the 6-bit multiplier is rounded down, so the
+    /// encoded lifetime never exceeds the requested one; values beyond
+    /// 63 x 100 s saturate and values below 50 ms encode as 0 (expired).
     pub fn start_in_milliseconds(value: u32) -> Self {
-        if value >= 100000 {
-            LT {
-                multiplier: (value / 100000) as u8,
-                base: LTBase::OneHundredSeconds,
-            }
+        let (multiplier, base) = if value >= 100000 {
+            ((value / 100000).min(63), LTBase::OneHundredSeconds)
         } else if value >= 10000 {
-            LT {
-                multiplier: (value / 10000) as u8,
-                base: LTBase::TenSeconds,
-            }
+            (value / 10000, LTBase::TenSeconds)
         } else if value >= 1000 {
-            LT {
-                multiplier: (value / 1000) as u8,
-                base: LTBase::OneSecond,
-            }
-        } else if value >= 50 {
-            LT {
-                multiplier: (value / 50) as u8,
-                base: LTBase::FiftyMilliseconds,
-            }
+            (value / 1000, LTBase::OneSecond)
         } else {
-            panic!("Invalid LT Value");
+            (value / 50, LTBase::FiftyMilliseconds)
+        };
+        LT {
+            multiplier: multiplier as u8,
+            base,
         }
     }
     pub fn start_in_seconds(value: u8) -> Self {
@@ -173,6 +167,11 @@ impl BasicHeader {
     }
 
     /// Return a copy with a different remaining hop limit.
+    /// Basic Header with another lifetime (e.g. reduced by a queuing time).
+    pub fn set_lt(self, lt: LT) -> Self {
+        BasicHeader { lt, ..self }
+    }
+
     pub fn set_rhl(self, rhl: u8) -> Self {
         BasicHeader { rhl, ..self }
     }
@@ -269,9 +268,28 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Invalid LT Value")]
-    fn lt_too_small() {
-        LT::start_in_milliseconds(10);
+    fn lt_below_50ms_is_zero() {
+        assert_eq!(LT::start_in_milliseconds(10).get_value_in_milliseconds(), 0);
+    }
+
+    #[test]
+    fn lt_saturates_and_rounds_down() {
+        assert_eq!(
+            LT::start_in_milliseconds(1_000_000).get_value_in_milliseconds(),
+            1_000_000
+        );
+        assert_eq!(
+            LT::start_in_milliseconds(10_000_000).get_value_in_milliseconds(),
+            6_300_000
+        );
+        assert_eq!(
+            LT::start_in_milliseconds(700).get_value_in_milliseconds(),
+            700
+        );
+        assert_eq!(
+            LT::start_in_milliseconds(1500).get_value_in_milliseconds(),
+            1000
+        );
     }
 
     // ── BasicHeader ───────────────────────────────────────────────────

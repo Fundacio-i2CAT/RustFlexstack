@@ -3,7 +3,7 @@
 
 //! Location Table — stores position vectors and PDR for known GeoNetworking peers.
 //!
-//! Implements §8.1 of ETSI EN 302 636-4-1 V1.4.1 (2020-01).
+//! Implements §8.2 of ETSI TS 103 836-4-1 V2.2.1 (2026-04).
 //!
 //! Duplicate Packet Detection (DPD) uses **sequence-number-based** ring
 //! buffers per source (Annex A.2).  SHB/Beacon packets have no SN field
@@ -12,14 +12,13 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
-use std::time::SystemTime;
 
 use super::gbc_extended_header::GBCExtendedHeader;
-use super::gn_address::GNAddress;
+use super::gn_address::{GNAddress, MID};
 use super::guc_extended_header::GUCExtendedHeader;
 use super::ls_extended_header::{LSReplyExtendedHeader, LSRequestExtendedHeader};
 use super::mib::Mib;
-use super::position_vector::{LongPositionVector, Tst};
+use super::position_vector::{LongPositionVector, ShortPositionVector, Tst};
 use super::tsb_extended_header::TSBExtendedHeader;
 
 /// A single row in the Location Table.
@@ -37,6 +36,9 @@ pub struct LocationTableEntry {
     pub tst: Tst,
     /// Smoothed Packet Data Rate in bytes/s (EMA, Annex B.2).
     pub pdr: f64,
+    /// Local time (ms, router clock) of the last update: start of the
+    /// itsGnLifetimeLocTE soft-state timer (clause 8.2.3).
+    pub updated_ms: Option<u64>,
 }
 
 impl LocationTableEntry {
@@ -50,6 +52,7 @@ impl LocationTableEntry {
             dpl_set: HashSet::new(),
             tst: Tst::set_in_normal_timestamp_milliseconds(0),
             pdr: 0.0,
+            updated_ms: None,
         }
     }
 
@@ -147,6 +150,8 @@ impl LocationTableEntry {
 pub struct LocationTable {
     pub mib: Mib,
     pub entries: HashMap<u64, LocationTableEntry>,
+    /// Local time (ms, router clock); see [`LocationTable::set_now`].
+    now_ms: u64,
 }
 
 impl LocationTable {
@@ -154,15 +159,72 @@ impl LocationTable {
         LocationTable {
             mib,
             entries: HashMap::new(),
+            now_ms: 0,
         }
     }
 
+    /// Local time (ms, router clock) used for the LocTE lifetime; the router
+    /// sets it before processing a request, a packet or its timers.
+    pub fn set_now(&mut self, now_ms: u64) {
+        self.now_ms = now_ms;
+    }
+
+    /// Whether the soft-state lifetime of `entry` has not expired (clause
+    /// 8.2.3). Entries of a pending Location Service carry no PV yet; they
+    /// are removed by the LS itself (clause 10.3.7.1.3).
+    fn alive(&self, entry: &LocationTableEntry) -> bool {
+        let lifetime_ms = u64::from(self.mib.itsGnLifetimeLocTE) * 1000;
+        entry.ls_pending
+            || entry
+                .updated_ms
+                .is_none_or(|updated| self.now_ms.saturating_sub(updated) <= lifetime_ms)
+    }
+
     pub fn get_entry(&mut self, gn_address: &GNAddress) -> Option<&mut LocationTableEntry> {
+        self.refresh_table();
         self.entries.get_mut(&gn_address.encode_to_int())
     }
 
+    /// LocTE of `gn_address`; `None` when absent or expired.
     pub fn get_entry_ref(&self, gn_address: &GNAddress) -> Option<&LocationTableEntry> {
-        self.entries.get(&gn_address.encode_to_int())
+        self.entries
+            .get(&gn_address.encode_to_int())
+            .filter(|entry| self.alive(entry))
+    }
+
+    /// Forwarder step 7 of clauses 10.3.8.3 / 10.3.7.2: when the DE LocTE
+    /// does not exist or is not a neighbour, update PV(DE) with the DE PV of
+    /// the packet (clause C.2, only when newer). The DE PV is a Short
+    /// Position Vector: PAI, speed and heading are set to 0 (NOTE 3).
+    pub fn update_with_de_pv(&mut self, de_pv: &ShortPositionVector) {
+        let key = de_pv.gn_address.encode_to_int();
+        let mib = self.mib;
+        let entry = self
+            .entries
+            .entry(key)
+            .or_insert_with(|| LocationTableEntry::new(mib));
+        if entry.is_neighbour {
+            return;
+        }
+        entry.update_position_vector(&LongPositionVector {
+            gn_addr: de_pv.gn_address,
+            tst: de_pv.tst,
+            latitude: de_pv.latitude,
+            longitude: de_pv.longitude,
+            pai: false,
+            s: 0,
+            h: 0,
+        });
+        self.touch(key);
+    }
+
+    /// Restart the lifetime of an updated LocTE, then expire the others.
+    fn touch(&mut self, key: u64) {
+        let now = self.now_ms;
+        if let Some(entry) = self.entries.get_mut(&key) {
+            entry.updated_ms = Some(now);
+        }
+        self.refresh_table();
     }
 
     /// Get or create a LocTE without modifying fields (for Location Service).
@@ -174,17 +236,36 @@ impl LocationTable {
             .or_insert_with(|| LocationTableEntry::new(mib))
     }
 
-    /// Remove expired entries (§8.1.3).
-    pub fn refresh_table(&mut self) {
-        let current_time = Tst::set_in_normal_timestamp_milliseconds(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("Time went backwards")
-                .as_millis() as u64,
-        );
-        let lifetime_ms = (self.mib.itsGnLifetimeLocTE as u32) * 1000;
+    /// LocTE whose GN_ADDR carries the link-layer address `mid` in its MID
+    /// field, used to identify the previous sender of a received packet.
+    pub fn get_entry_by_mid(&self, mid: &[u8; 6]) -> Option<&LocationTableEntry> {
+        let address = MID::new(*mid).encode_to_address();
         self.entries
-            .retain(|_, entry| (current_time - entry.position_vector.tst) <= lifetime_ms);
+            .iter()
+            .find(|(key, entry)| *key & 0xFFFF_FFFF_FFFF == address && self.alive(entry))
+            .map(|(_, entry)| entry)
+    }
+
+    /// Remove the LocTE of `gn_address` (e.g. when a LS does not complete).
+    pub fn remove_entry(&mut self, gn_address: &GNAddress) {
+        self.entries.remove(&gn_address.encode_to_int());
+    }
+
+    /// Remove the entries whose soft-state lifetime itsGnLifetimeLocTE,
+    /// restarted at each update on the local clock, has expired (clause
+    /// 8.2.3). Entries created without update start their lifetime now.
+    pub fn refresh_table(&mut self) {
+        let now = self.now_ms;
+        for entry in self.entries.values_mut() {
+            entry.updated_ms.get_or_insert(now);
+        }
+        let lifetime_ms = u64::from(self.mib.itsGnLifetimeLocTE) * 1000;
+        self.entries.retain(|_, entry| {
+            entry.ls_pending
+                || entry
+                    .updated_ms
+                    .is_none_or(|updated| now.saturating_sub(updated) <= lifetime_ms)
+        });
     }
 
     pub fn new_shb_packet(&mut self, position_vector: &LongPositionVector, packet: &[u8]) {
@@ -195,7 +276,7 @@ impl LocationTable {
             .entry(key)
             .or_insert_with(|| LocationTableEntry::new(mib));
         entry.update_with_shb_packet(position_vector, (packet.len() + 12) as u32);
-        self.refresh_table();
+        self.touch(key);
     }
 
     /// Returns `true` if the packet is a duplicate.
@@ -211,7 +292,11 @@ impl LocationTable {
             .entry(key)
             .or_insert_with(|| LocationTableEntry::new(mib));
         let dup = entry.update_with_gbc_packet(gbc_extended_header, (packet.len() + 12) as u32);
-        self.refresh_table();
+        if dup {
+            self.refresh_table();
+        } else {
+            self.touch(key);
+        }
         dup
     }
 
@@ -237,7 +322,7 @@ impl LocationTable {
         if is_new_entry {
             entry.is_neighbour = false;
         }
-        self.refresh_table();
+        self.touch(key);
         false
     }
 
@@ -259,7 +344,11 @@ impl LocationTable {
             (packet.len() + 12) as u32,
             is_new_entry,
         );
-        self.refresh_table();
+        if dup {
+            self.refresh_table();
+        } else {
+            self.touch(key);
+        }
         dup
     }
 
@@ -286,7 +375,7 @@ impl LocationTable {
         if is_new_entry {
             entry.is_neighbour = false;
         }
-        self.refresh_table();
+        self.touch(key);
         false
     }
 
@@ -312,7 +401,7 @@ impl LocationTable {
         if is_new_entry {
             entry.is_neighbour = false;
         }
-        self.refresh_table();
+        self.touch(key);
         false
     }
 
@@ -338,12 +427,15 @@ impl LocationTable {
         if is_new_entry {
             entry.is_neighbour = false;
         }
-        self.refresh_table();
+        self.touch(key);
         false
     }
 
     pub fn get_neighbours(&self) -> Vec<&LocationTableEntry> {
-        self.entries.values().filter(|e| e.is_neighbour).collect()
+        self.entries
+            .values()
+            .filter(|e| e.is_neighbour && self.alive(e))
+            .collect()
     }
 }
 
@@ -634,5 +726,53 @@ mod tests {
         // Calling again doesn't create a second entry
         let _entry2 = table.ensure_entry(&addr);
         assert_eq!(table.entries.len(), 1);
+    }
+
+    // ── Refresh (clause 8.2) ──────────────────────────────────────────
+
+    fn unix_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    }
+
+    #[test]
+    fn refresh_keeps_ls_pending_placeholder() {
+        let mut table = LocationTable::new(make_mib());
+        let sought = make_lpv([2, 0, 0, 0, 0, 7], 0).gn_addr;
+        table.ensure_entry(&sought).ls_pending = true;
+        table.refresh_table();
+        assert!(table.get_entry_ref(&sought).is_some());
+    }
+
+    /// §8.2.3: the LocTE lifetime runs on the local clock from the last
+    /// update, whatever the sender's TST (a sender clock 60 s behind or 0.5 s
+    /// ahead). Mirrors the Python test of the same name.
+    #[test]
+    fn lifetime_follows_local_clock_not_sender_tst() {
+        let mut table = LocationTable::new(make_mib());
+        let ahead = make_lpv([2, 0, 0, 0, 0, 1], unix_ms() + 500);
+        let behind = make_lpv([2, 0, 0, 0, 0, 2], unix_ms() - 60_000);
+        table.new_shb_packet(&ahead, &[]);
+        table.new_shb_packet(&behind, &[]);
+        assert!(table.get_entry_ref(&ahead.gn_addr).is_some());
+        assert!(table.get_entry_ref(&behind.gn_addr).is_some());
+        table.set_now(20_000);
+        assert!(table.get_entry_ref(&ahead.gn_addr).is_some());
+        table.set_now(20_001);
+        assert!(table.get_entry_ref(&ahead.gn_addr).is_none());
+        assert!(table.get_entry_ref(&behind.gn_addr).is_none());
+    }
+
+    #[test]
+    fn entry_by_mid_and_removal() {
+        let mut table = LocationTable::new(make_mib());
+        let pv = make_lpv([2, 0, 0, 0, 0, 3], unix_ms());
+        table.new_shb_packet(&pv, &[]);
+        assert!(table.get_entry_by_mid(&[2, 0, 0, 0, 0, 3]).is_some());
+        assert!(table.get_entry_by_mid(&[2, 0, 0, 0, 0, 4]).is_none());
+        table.remove_entry(&pv.gn_addr);
+        assert!(table.get_entry_ref(&pv.gn_addr).is_none());
     }
 }

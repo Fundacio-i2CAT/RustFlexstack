@@ -196,8 +196,40 @@ impl CbrProvider for Nl80211SurveyCbr {
     }
 }
 
+/// Transmit power in dBm from the output of `iw dev <iface> info`
+/// (`txpower 20.00 dBm`).
+pub fn parse_tx_power_dbm(text: &str) -> Option<f64> {
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3 && parts[0] == "txpower" && parts[2] == "dBm" {
+            return parts[1].parse().ok();
+        }
+    }
+    None
+}
+
+/// Transmit power of a Linux wireless interface (`iw dev <iface> info`), if
+/// reported; e.g. for the DCC-MCO field of DCC_NET.
+pub fn nl80211_tx_power_dbm(iface: &str) -> Option<f64> {
+    let out = Command::new("iw")
+        .args(["dev", iface, "info"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_tx_power_dbm(&String::from_utf8_lossy(&out.stdout))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parse_iw_info() {
+        let text = "Interface wlan0\n\tifindex 4\n\ttype IBSS\n\tchannel 180 (5900 MHz), width: 10 MHz\n\ttxpower 23.00 dBm\n";
+        assert_eq!(super::parse_tx_power_dbm(text), Some(23.0));
+        assert_eq!(super::parse_tx_power_dbm("Interface wlan0\n"), None);
+    }
+
     use super::*;
 
     const DUMP: &str = "Survey data from wlan0\n\

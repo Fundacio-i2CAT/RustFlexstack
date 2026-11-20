@@ -22,6 +22,11 @@ sha2 = "0.10"
 p256 = { version = "0.13", features = ["ecdsa", "ecdsa-core", "ecdh"] }
 ecdsa = { version = "0.16", features = ["signing", "verifying"] }
 elliptic-curve = { version = "0.13", features = ["sec1"] }
+# Brainpool P-256/P-384 and NIST P-384 verification (ETSI TS 103 097, IEEE 1609.2 clause 5.3.1)
+p384 = { version = "0.13", features = ["ecdsa"] }
+bp256 = { version = "0.14", features = ["ecdsa", "arithmetic"] }
+bp384 = { version = "0.14", features = ["ecdsa", "arithmetic"] }
+ecdsa_v017 = { package = "ecdsa", version = "0.17", features = ["algorithm"] }
 ctrlc = { version = "3", optional = true }
 aes = "0.8"
 ccm = "0.5"

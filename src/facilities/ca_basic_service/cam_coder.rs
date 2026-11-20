@@ -13,11 +13,10 @@
 
 pub use super::cam_bindings::cam_pdu_descriptions::{
     BasicVehicleContainerHighFrequency, BasicVehicleContainerLowFrequency, CamParameters,
-    CamPayload, EHorizonLocationSharingContainer, ExtensionContainerId,
-    GeneralizedLanePositionsContainer, HighFrequencyContainer, LowFrequencyContainer,
-    PathPredictionContainer, SpecialVehicleContainer, TwoWheelerContainer,
-    VehicleMovementControlContainer, VeryLowFrequencyContainer, WrappedExtensionContainer,
-    WrappedExtensionContainers, CAM,
+    CamPayload, EHorizonLocationSharingContainer, ExtensionContainerId, HighFrequencyContainer,
+    LowFrequencyContainer, PathPredictionContainer, RoadLanePositionsContainer,
+    SpecialVehicleContainer, TwoWheelerContainer, VehicleMovementControlContainer,
+    VeryLowFrequencyContainer, WrappedExtensionContainer, WrappedExtensionContainers, CAM,
 };
 pub use super::cam_bindings::etsi_its_cdd::{
     AccelerationComponent, AccelerationConfidence, AccelerationValue, Altitude, AltitudeConfidence,
@@ -34,13 +33,19 @@ pub use super::cam_bindings::etsi_its_cdd::{
 use rasn::prelude::*;
 use std::ops::{Add, Sub};
 
-// ─── Extension container IDs (§6.1.3) ────────────────────────────────────────
+// ─── Extension container IDs (§6.1.2) ────────────────────────────────────────
 
 pub const EXTENSION_CONTAINER_ID_TWO_WHEELER: u8 = 1;
 pub const EXTENSION_CONTAINER_ID_E_HORIZON: u8 = 2;
 pub const EXTENSION_CONTAINER_ID_VLF: u8 = 3;
 pub const EXTENSION_CONTAINER_ID_PATH_PREDICTION: u8 = 4;
-pub const EXTENSION_CONTAINER_ID_GEN_LANE_POS: u8 = 5;
+pub const EXTENSION_CONTAINER_ID_ROAD_LANE_POS: u8 = 5;
+/// Pre-v2.3 name of [`EXTENSION_CONTAINER_ID_ROAD_LANE_POS`].
+#[deprecated(note = "renamed to EXTENSION_CONTAINER_ID_ROAD_LANE_POS in CAM v2.3")]
+pub const EXTENSION_CONTAINER_ID_GEN_LANE_POS: u8 = EXTENSION_CONTAINER_ID_ROAD_LANE_POS;
+/// Pre-v2.3 (TS 103 900 V2.3.1) name of [`RoadLanePositionsContainer`].
+#[deprecated(note = "renamed to RoadLanePositionsContainer in CAM v2.3 (TS 103 900 V2.3.1)")]
+pub type GeneralizedLanePositionsContainer = RoadLanePositionsContainer;
 pub const EXTENSION_CONTAINER_ID_VEHICLE_MOVEMENT_CONTROL: u8 = 6;
 
 /// High-level enum wrapping the six ETSI extension containers.
@@ -50,7 +55,7 @@ pub enum ExtensionContainer {
     EHorizonLocationSharing(EHorizonLocationSharingContainer),
     VeryLowFrequency(VeryLowFrequencyContainer),
     PathPrediction(PathPredictionContainer),
-    GeneralizedLanePositions(GeneralizedLanePositionsContainer),
+    RoadLanePositions(RoadLanePositionsContainer),
     VehicleMovementControl(VehicleMovementControlContainer),
 }
 
@@ -61,7 +66,7 @@ impl ExtensionContainer {
             Self::EHorizonLocationSharing(_) => EXTENSION_CONTAINER_ID_E_HORIZON,
             Self::VeryLowFrequency(_) => EXTENSION_CONTAINER_ID_VLF,
             Self::PathPrediction(_) => EXTENSION_CONTAINER_ID_PATH_PREDICTION,
-            Self::GeneralizedLanePositions(_) => EXTENSION_CONTAINER_ID_GEN_LANE_POS,
+            Self::RoadLanePositions(_) => EXTENSION_CONTAINER_ID_ROAD_LANE_POS,
             Self::VehicleMovementControl(_) => EXTENSION_CONTAINER_ID_VEHICLE_MOVEMENT_CONTROL,
         }
     }
@@ -276,9 +281,9 @@ impl CamCoder {
             ExtensionContainer::PathPrediction(c) => rasn::uper::encode(c)
                 .map(|b| b.to_vec())
                 .map_err(|e| format!("PathPredictionContainer encode error: {e}")),
-            ExtensionContainer::GeneralizedLanePositions(c) => rasn::uper::encode(c)
+            ExtensionContainer::RoadLanePositions(c) => rasn::uper::encode(c)
                 .map(|b| b.to_vec())
-                .map_err(|e| format!("GeneralizedLanePositionsContainer encode error: {e}")),
+                .map_err(|e| format!("RoadLanePositionsContainer encode error: {e}")),
             ExtensionContainer::VehicleMovementControl(c) => rasn::uper::encode(c)
                 .map(|b| b.to_vec())
                 .map_err(|e| format!("VehicleMovementControlContainer encode error: {e}")),
@@ -308,10 +313,10 @@ impl CamCoder {
                     .map(ExtensionContainer::PathPrediction)
                     .map_err(|e| format!("PathPredictionContainer decode error: {e}"))
             }
-            EXTENSION_CONTAINER_ID_GEN_LANE_POS => {
-                rasn::uper::decode::<GeneralizedLanePositionsContainer>(data)
-                    .map(ExtensionContainer::GeneralizedLanePositions)
-                    .map_err(|e| format!("GeneralizedLanePositionsContainer decode error: {e}"))
+            EXTENSION_CONTAINER_ID_ROAD_LANE_POS => {
+                rasn::uper::decode::<RoadLanePositionsContainer>(data)
+                    .map(ExtensionContainer::RoadLanePositions)
+                    .map_err(|e| format!("RoadLanePositionsContainer decode error: {e}"))
             }
             EXTENSION_CONTAINER_ID_VEHICLE_MOVEMENT_CONTROL => {
                 rasn::uper::decode::<VehicleMovementControlContainer>(data)

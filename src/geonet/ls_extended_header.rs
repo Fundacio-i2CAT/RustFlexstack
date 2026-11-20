@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! LS Extended Headers — ETSI EN 302 636-4-1 V1.4.1 (2020-01).
+//! LS Extended Headers — ETSI TS 103 836-4-1 V2.2.1 (2026-04).
 //!
 //! - [`LSRequestExtendedHeader`] — §9.8.7 Table 16, 36 bytes.
 //! - [`LSReplyExtendedHeader`]   — §9.8.8 Table 17, 48 bytes.

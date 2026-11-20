@@ -35,7 +35,7 @@
 
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -57,9 +57,10 @@ use rustflexstack::facilities::location_service::{GpsFix, LocationService};
 use rustflexstack::facilities::vru_awareness_service::{DeviceData, VruAwarenessService};
 use rustflexstack::geonet::basic_header::{BasicHeader, BasicNH};
 use rustflexstack::geonet::gn_address::{GNAddress, M, MID, ST};
-use rustflexstack::geonet::mib::Mib;
+use rustflexstack::geonet::mib::{GnIfType, Mib};
 use rustflexstack::geonet::position_vector::LongPositionVector;
 use rustflexstack::geonet::router::Router as GNRouter;
+use rustflexstack::geonet::service_access_point::SecurityIndication;
 use rustflexstack::link_layer::raw_link_layer::RawLinkLayer;
 
 use rustflexstack::security::certificate::{
@@ -68,11 +69,25 @@ use rustflexstack::security::certificate::{
 use rustflexstack::security::certificate_library::CertificateLibrary;
 use rustflexstack::security::ecdsa_backend::EcdsaBackend;
 use rustflexstack::security::ieee1609_dot2::{Ieee1609Dot2Content, SignerIdentifier};
-use rustflexstack::security::pki_client::PkiClient;
+use rustflexstack::security::pki_client::{load_or_create_canonical_key, PkiClient};
+use rustflexstack::security::security_asn::ieee1609_dot2_base_types::{
+    Psid, PsidSsp, SequenceOfPsidSsp,
+};
 use rustflexstack::security::sign_service::SignService;
 use rustflexstack::security::sn_sap::{ReportVerify, SNSignRequest, SNVerifyRequest};
 use rustflexstack::security::verify_service::{verify_message, VerifyEvent};
 
+/// Application permissions requested in the AT: CAM (36), DENM (37), VAM (638) and
+/// GN-MGMT (141, which signs the secured Beacons; SSP absent, ETSI TS 103 836-4-1
+/// V2.2.1 table 22).
+fn at_permissions() -> SequenceOfPsidSsp {
+    SequenceOfPsidSsp(
+        [36u64, 37, 638, 141]
+            .iter()
+            .map(|&p| PsidSsp::new(Psid(rasn::prelude::Integer::from(p as i128)), None))
+            .collect(),
+    )
+}
 fn print_help() {
     eprintln!(
         r#"v2x_cli — comprehensive V2X node (raw Ethernet link layer)
@@ -85,14 +100,22 @@ OPTIONS:
     --send <cam|vam>       Transmit CAMs or VAMs [default: receive-only]
     --security             Enable ETSI TS 103 097 signing/verification
     --pki                  Obtain certificates dynamically from ETSI TS 102 941 PKI (implies --security)
-    --ea-url <URL>         Enrolment Authority URL [default: http://localhost:8080]
-    --aa-url <URL>         Authorization Authority URL [default: http://localhost:8081]
+    --ea-url <URL>         EA access point, the requests are POSTed to it as given
+                           (ETSI TS 102 941 V2.2.1 Annex C)
+                           [default: http://localhost:8080/ea/v1/enrolment (pythonpki)]
+    --aa-url <URL>         AA access point
+                           [default: http://localhost:8081/aa/v1/authorization (pythonpki)]
     --rca-cert <PATH>      Root CA certificate file [default: <certs-dir>/root_ca.cert or rca.coer]
     --ea-cert <PATH>       EA certificate file [default: <certs-dir>/ea.cert or ea.coer]
     --aa-cert <PATH>       AA certificate file [default: <certs-dir>/aa.cert or aa.coer]
     --reprovision          Force reprovisioning from PKI even if cached AT exists
     --at <1|2>             Authorization Ticket index (static mode) [default: 1]
     --certs-dir <PATH>     Certificate directory [default: certs/]
+    --canonical-key <PATH> Canonical private key (PKCS#8 PEM), created when absent; the run
+                           then stops (exit 2) and prints the command registering its public
+                           key with the EA (ETSI TS 102 941 clause 6.1.2)
+                           [default: <certs-dir>/canonical_key.pem]
+    --its-id <HEX>         Canonical identifier [default: generated from the canonical public key]
     --gpsd <ADDR>          Use real GPS from gpsd [e.g. 127.0.0.1:2947]
     --lat <DEG>            Static GPS latitude [default: 41.552]
     --lon <DEG>            Static GPS longitude [default: 2.134]
@@ -105,8 +128,10 @@ EXAMPLES:
     # Send CAMs with static security on eth0:
     sudo v2x_cli -i eth0 --send cam --security --at 1
 
-    # Send CAMs with PKI certificates on eth0:
-    sudo v2x_cli -i eth0 --send cam --pki --ea-url http://localhost:8080 --aa-url http://localhost:8081
+    # Send CAMs with PKI certificates on eth0 (the first run creates the canonical key
+    # and prints the registration command for the EA; register it, then run again):
+    sudo v2x_cli -i eth0 --send cam --pki --ea-url http://localhost:8080/ea/v1/enrolment \
+        --aa-url http://localhost:8081/aa/v1/authorization
 
     # Send VAMs using real GPS:
     sudo v2x_cli -i wlan0 --send vam --gpsd 127.0.0.1:2947
@@ -195,9 +220,31 @@ fn build_pki_security_stack(
     aa_path: Option<&str>,
     certs_dir: &str,
     reprovision: bool,
-    its_id: [u8; 8],
+    canonical_key_path: Option<&str>,
+    its_id: Option<Vec<u8>>,
 ) -> Result<SignService, Box<dyn std::error::Error>> {
     let cert_dir = Path::new(certs_dir);
+
+    // Canonical key pair (ETSI TS 102 941 V2.2.1 clause 6.1.2): created once; its
+    // public key must be registered with the EA before the first enrolment, so
+    // the run stops after creating it.
+    let canonical_path = canonical_key_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| cert_dir.join("canonical_key.pem"));
+    let canonical = load_or_create_canonical_key(&canonical_path)?;
+    let its_id = its_id.unwrap_or_else(|| canonical.its_id().to_vec());
+    if canonical.created {
+        eprintln!(
+            "[PKI] Canonical key pair created: {}. Register the ITS-S with the EA, then run again:\n    {}",
+            canonical.private_path.display(),
+            canonical.registration_command(Some(&its_id))
+        );
+        std::process::exit(2);
+    }
+    println!(
+        "[PKI] Canonical identifier (itsId): {}",
+        its_id.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    );
 
     let rca_p1 = cert_dir.join("root_ca.cert");
     let rca_p2 = cert_dir.join("rca.coer");
@@ -258,11 +305,19 @@ fn build_pki_security_stack(
         ea_cert.clone(),
         aa_cert.clone(),
         rca_cert.clone(),
-        None,
+        Some(canonical.scalar.clone()),
         cert_dir,
-        Some(its_id),
         None,
-    );
+        None,
+    )
+    .with_its_id(its_id);
+    if let Some(ec) = client.load_ec_from_disk(Some("ec")) {
+        println!(
+            "[PKI] Reusing the EC from disk: {}/ec.cert (HashedId8: {:02x?})",
+            certs_dir,
+            ec.as_hashedid8()
+        );
+    }
 
     let at_own = if !reprovision {
         if let Some(cached) = client.load_at_from_disk(Some("at")) {
@@ -277,14 +332,14 @@ fn build_pki_security_stack(
                 "[PKI] No cached AT found. Starting PKI provisioning (EA: {}, AA: {})...",
                 ea_url, aa_url
             );
-            client.provision(None, None, None)?
+            client.provision(Some(at_permissions()), None, None)?
         }
     } else {
         println!(
             "[PKI] Starting PKI provisioning (EA: {}, AA: {})...",
             ea_url, aa_url
         );
-        client.provision(None, None, None)?
+        client.provision(Some(at_permissions()), None, None)?
     };
 
     println!(
@@ -392,12 +447,17 @@ fn spawn_verify_middleware(
                                 VerifyEvent::UnknownAt(h8) => {
                                     svc.notify_unknown_at(h8);
                                 }
+                                VerifyEvent::KnownAt(h8) => {
+                                    svc.notify_known_at(h8);
+                                }
                                 VerifyEvent::InlineP2pcdRequest(h3s) => {
                                     svc.notify_inline_p2pcd_request(h3s);
                                 }
                                 VerifyEvent::ReceivedCaCertificate(cert) => {
                                     svc.notify_received_ca_certificate(cert.as_ref().clone());
                                 }
+                                // No CRL / CTL distribution service in this example.
+                                VerifyEvent::TrustListRequests(..) => {}
                             }
                         }
                         result
@@ -409,15 +469,18 @@ fn spawn_verify_middleware(
                             signer_type,
                             &confirm.certificate_id[..],
                         );
-                        let mut new_bh = bh;
-                        new_bh.nh = BasicNH::CommonHeader;
-                        let plain_packet: Vec<u8> = new_bh
-                            .encode()
-                            .iter()
-                            .copied()
-                            .chain(confirm.plain_message.iter().copied())
-                            .collect();
-                        gn_handle.send_incoming_packet(plain_packet);
+                        // The router processes the plain message and relays
+                        // the Secured Packet unmodified when forwarding.
+                        gn_handle.send_verified_packet(
+                            packet.clone(),
+                            confirm.plain_message.clone(),
+                            SecurityIndication {
+                                report: confirm.report,
+                                certificate_id: confirm.certificate_id.clone(),
+                                its_aid: confirm.its_aid,
+                                permissions: confirm.permissions.clone(),
+                            },
+                        );
                     } else {
                         eprintln!("[SEC RX] Verification failed: {:?}", confirm.report);
                     }
@@ -437,14 +500,16 @@ fn main() {
     let mut send_mode: Option<String> = None;
     let mut security = false;
     let mut use_pki = false;
-    let mut ea_url = "http://localhost:8080".to_string();
-    let mut aa_url = "http://localhost:8081".to_string();
+    let mut ea_url = "http://localhost:8080/ea/v1/enrolment".to_string();
+    let mut aa_url = "http://localhost:8081/aa/v1/authorization".to_string();
     let mut rca_cert_path: Option<String> = None;
     let mut ea_cert_path: Option<String> = None;
     let mut aa_cert_path: Option<String> = None;
     let mut reprovision = false;
     let mut at_index: usize = 1;
     let mut certs_dir = "certs".to_string();
+    let mut canonical_key_path: Option<String> = None;
+    let mut its_id: Option<Vec<u8>> = None;
     let mut use_gpsd = false;
     let mut gpsd_addr = "127.0.0.1:2947".to_string();
     let mut lat = 41.552_f64;
@@ -511,6 +576,24 @@ fn main() {
             "--certs-dir" => {
                 i += 1;
                 certs_dir = args[i].clone();
+            }
+            "--canonical-key" => {
+                i += 1;
+                canonical_key_path = Some(args[i].clone());
+            }
+            "--its-id" => {
+                i += 1;
+                let hex = &args[i];
+                assert!(
+                    hex.len() % 2 == 0 && !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit()),
+                    "--its-id must be hexadecimal"
+                );
+                its_id = Some(
+                    (0..hex.len())
+                        .step_by(2)
+                        .map(|k| u8::from_str_radix(&hex[k..k + 2], 16).unwrap())
+                        .collect(),
+                );
             }
             "--gpsd" => {
                 use_gpsd = true;
@@ -599,6 +682,7 @@ fn main() {
     };
     let mut mib = Mib::new();
     mib.itsGnLocalGnAddr = GNAddress::new(M::GnMulticast, station_type, MID::new(mac));
+    mib.itsGnIfType = GnIfType::ItsG5;
     mib.itsGnBeaconServiceRetransmitTimer = 0;
 
     // ── Location Service ─────────────────────────────────────────────────
@@ -650,8 +734,6 @@ fn main() {
 
     if security {
         let sign_service = if use_pki {
-            let mut its_id = [0u8; 8];
-            its_id[0..6].copy_from_slice(&mac);
             build_pki_security_stack(
                 &ea_url,
                 &aa_url,
@@ -660,7 +742,8 @@ fn main() {
                 aa_cert_path.as_deref(),
                 &certs_dir,
                 reprovision,
-                its_id,
+                canonical_key_path.as_deref(),
+                its_id.clone(),
             )
             .expect("Failed to initialize PKI security stack")
         } else {
@@ -707,7 +790,19 @@ fn main() {
     }
 
     // Wire link layer
-    let raw_ll = RawLinkLayer::new(ll_to_gn_tx, ll_tx_source, &iface, mac);
+    let mut raw_ll = RawLinkLayer::new(ll_to_gn_tx, ll_tx_source, &iface, mac);
+    if !security {
+        // Unicast forwarding steps to the next hop's MAC address (TS 103 836-4-1
+        // clause E.2). With security, every GN-PDU goes through the sign middleware.
+        let (unicast_tx, unicast_rx) = mpsc::channel();
+        gn_handle.set_unicast_sender(unicast_tx);
+        raw_ll = raw_ll.with_unicast_receiver(unicast_rx);
+    }
+    // ETSI TS 103 836-4-2 clause 6.1: over ITS-G5 the MID is the interface MAC address
+    assert!(
+        mib.media_dependent_address_ok(Some(raw_ll.media_dependent_mid())),
+        "itsGnLocalGnAddr MID must be the MAC address of the link layer"
+    );
     raw_ll.start();
 
     // ── GN ↔ BTP bridging ────────────────────────────────────────────────
@@ -730,12 +825,13 @@ fn main() {
     thread::spawn(move || {
         while let Ok(fix) = gn_gps_rx.recv() {
             let mut epv = LongPositionVector::decode([0u8; 24]);
-            epv.update_from_gps(
+            epv.update_from_gps_at(
                 fix.latitude,
                 fix.longitude,
                 fix.speed_mps,
                 fix.heading_deg,
                 fix.pai,
+                fix.fix_time_ms,
             );
             gn_h3.update_position_vector(epv);
         }
@@ -905,6 +1001,7 @@ fn main() {
                 speed_mps: sim_speed,
                 heading_deg: sim_heading,
                 pai: true,
+                fix_time_ms: None,
             });
         }
     } else {

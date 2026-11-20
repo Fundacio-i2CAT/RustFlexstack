@@ -62,6 +62,7 @@ use rustflexstack::geonet::gn_address::{GNAddress, M, MID, ST};
 use rustflexstack::geonet::mib::Mib;
 use rustflexstack::geonet::position_vector::LongPositionVector;
 use rustflexstack::geonet::router::Router as GNRouter;
+use rustflexstack::geonet::service_access_point::SecurityIndication;
 use rustflexstack::link_layer::cv2x_link_layer::Cv2xLinkLayer;
 
 use rustflexstack::security::certificate::{
@@ -71,10 +72,24 @@ use rustflexstack::security::certificate_library::CertificateLibrary;
 use rustflexstack::security::ecdsa_backend::EcdsaBackend;
 use rustflexstack::security::ieee1609_dot2::{Ieee1609Dot2Content, SignerIdentifier};
 use rustflexstack::security::pki_client::PkiClient;
+use rustflexstack::security::security_asn::ieee1609_dot2_base_types::{
+    Psid, PsidSsp, SequenceOfPsidSsp,
+};
 use rustflexstack::security::sign_service::SignService;
 use rustflexstack::security::sn_sap::{ReportVerify, SNSignRequest, SNVerifyRequest};
 use rustflexstack::security::verify_service::{verify_message, VerifyEvent};
 
+/// Application permissions requested in the AT: CAM (36), DENM (37), VAM (638) and
+/// GN-MGMT (141, which signs the secured Beacons; SSP absent, ETSI TS 103 836-4-1
+/// V2.2.1 table 22).
+fn at_permissions() -> SequenceOfPsidSsp {
+    SequenceOfPsidSsp(
+        [36u64, 37, 638, 141]
+            .iter()
+            .map(|&p| PsidSsp::new(Psid(rasn::prelude::Integer::from(p as i128)), None))
+            .collect(),
+    )
+}
 fn print_help() {
     eprintln!(
         r#"v2x_cli_cv2x — comprehensive V2X node (C-V2X link layer)
@@ -86,8 +101,9 @@ OPTIONS:
     --send <cam|vam>       Transmit CAMs or VAMs [default: receive-only]
     --security             Enable ETSI TS 103 097 signing/verification
     --pki                  Obtain certificates dynamically from ETSI TS 102 941 PKI (implies --security)
-    --ea-url <URL>         Enrolment Authority URL [default: http://localhost:8080]
-    --aa-url <URL>         Authorization Authority URL [default: http://localhost:8081]
+    --ea-url <URL>         EA access point, the requests are POSTed to it as given
+                           (ETSI TS 102 941 V2.2.1 Annex C) [default: http://localhost:8080]
+    --aa-url <URL>         AA access point [default: http://localhost:8081]
     --rca-cert <PATH>      Root CA certificate file [default: <certs-dir>/root_ca.cert or rca.coer]
     --ea-cert <PATH>       EA certificate file [default: <certs-dir>/ea.cert or ea.coer]
     --aa-cert <PATH>       AA certificate file [default: <certs-dir>/aa.cert or aa.coer]
@@ -278,14 +294,14 @@ fn build_pki_security_stack(
                 "[PKI] No cached AT found. Starting PKI provisioning (EA: {}, AA: {})...",
                 ea_url, aa_url
             );
-            client.provision(None, None, None)?
+            client.provision(Some(at_permissions()), None, None)?
         }
     } else {
         println!(
             "[PKI] Starting PKI provisioning (EA: {}, AA: {})...",
             ea_url, aa_url
         );
-        client.provision(None, None, None)?
+        client.provision(Some(at_permissions()), None, None)?
     };
 
     println!(
@@ -391,12 +407,17 @@ fn spawn_verify_middleware(
                                 VerifyEvent::UnknownAt(h8) => {
                                     svc.notify_unknown_at(h8);
                                 }
+                                VerifyEvent::KnownAt(h8) => {
+                                    svc.notify_known_at(h8);
+                                }
                                 VerifyEvent::InlineP2pcdRequest(h3s) => {
                                     svc.notify_inline_p2pcd_request(h3s);
                                 }
                                 VerifyEvent::ReceivedCaCertificate(cert) => {
                                     svc.notify_received_ca_certificate(cert.as_ref().clone());
                                 }
+                                // No CRL / CTL distribution service in this example.
+                                VerifyEvent::TrustListRequests(..) => {}
                             }
                         }
                         result
@@ -408,15 +429,18 @@ fn spawn_verify_middleware(
                             signer_type,
                             &confirm.certificate_id[..],
                         );
-                        let mut new_bh = bh;
-                        new_bh.nh = BasicNH::CommonHeader;
-                        let plain_packet: Vec<u8> = new_bh
-                            .encode()
-                            .iter()
-                            .copied()
-                            .chain(confirm.plain_message.iter().copied())
-                            .collect();
-                        gn_handle.send_incoming_packet(plain_packet);
+                        // The router processes the plain message and relays
+                        // the Secured Packet unmodified when forwarding.
+                        gn_handle.send_verified_packet(
+                            packet.clone(),
+                            confirm.plain_message.clone(),
+                            SecurityIndication {
+                                report: confirm.report,
+                                certificate_id: confirm.certificate_id.clone(),
+                                its_aid: confirm.its_aid,
+                                permissions: confirm.permissions.clone(),
+                            },
+                        );
                     } else {
                         eprintln!("[SEC RX] Verification failed: {:?}", confirm.report);
                     }
@@ -735,12 +759,13 @@ fn main() {
     thread::spawn(move || {
         while let Ok(fix) = gn_gps_rx.recv() {
             let mut epv = LongPositionVector::decode([0u8; 24]);
-            epv.update_from_gps(
+            epv.update_from_gps_at(
                 fix.latitude,
                 fix.longitude,
                 fix.speed_mps,
                 fix.heading_deg,
                 fix.pai,
+                fix.fix_time_ms,
             );
             gn_h3.update_position_vector(epv);
         }
@@ -910,6 +935,7 @@ fn main() {
                 speed_mps: sim_speed,
                 heading_deg: sim_heading,
                 pai: true,
+                fix_time_ms: None,
             });
         }
     } else {

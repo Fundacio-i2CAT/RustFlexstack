@@ -92,8 +92,14 @@ pub struct BTPDataIndication {
     pub gn_security_report: Option<Vec<u8>>,
     pub gn_certificate_id: Option<Vec<u8>>,
     pub gn_permissions: Option<Vec<u8>>,
+    /// ITS-AID (PSID) of a secured packet, which the receiving facility
+    /// checks against its own ITS-AID (e.g. ETSI TS 103 097 clause 7.1.1).
+    pub gn_its_aid: Option<u64>,
     pub gn_traffic_class: TrafficClass,
     pub gn_remaining_packet_lifetime: Option<f64>,
+    /// Destination area of a GeoBroadcast / GeoAnycast packet (the geographical
+    /// "GN destination address" of ETSI TS 103 836-5-1); `None` otherwise.
+    pub gn_destination_area: Option<Area>,
     pub length: u16,
     pub data: Vec<u8>,
 }
@@ -125,12 +131,14 @@ impl BTPDataIndication {
             gn_security_report: None,
             gn_certificate_id: None,
             gn_permissions: None,
+            gn_its_aid: None,
             gn_traffic_class: TrafficClass {
                 scf: false,
                 channel_offload: false,
                 tc_id: 0,
             },
             gn_remaining_packet_lifetime: None,
+            gn_destination_area: None,
             length: 0,
             data: vec![],
         }
@@ -144,22 +152,27 @@ impl BTPDataIndication {
         } else {
             vec![]
         };
+        let security = gn_data_indication.security.as_ref();
         BTPDataIndication {
             source_port: 0,
             destination_port: 0,
             destination_port_info: 0,
             gn_packet_transport_type: gn_data_indication.packet_transport_type.clone(),
-            gn_destination_address: GNAddress {
+            // EN 302 636-5-1 table 7: GN-Data.indication parameter Destination
+            // (GeoUnicast); all zero for the other packet types.
+            gn_destination_address: gn_data_indication.destination.unwrap_or(GNAddress {
                 m: M::GnUnicast,
                 st: ST::Unknown,
                 mid: MID::new([0; 6]),
-            },
+            }),
             gn_source_position_vector: gn_data_indication.source_position_vector,
-            gn_security_report: None,
-            gn_certificate_id: None,
-            gn_permissions: None,
+            gn_security_report: security.map(|s| vec![s.report.code()]),
+            gn_certificate_id: security.map(|s| s.certificate_id.clone()),
+            gn_permissions: security.map(|s| s.permissions.clone()),
+            gn_its_aid: security.map(|s| s.its_aid),
             gn_traffic_class: gn_data_indication.traffic_class,
             gn_remaining_packet_lifetime: gn_data_indication.remaining_packet_lifetime,
+            gn_destination_area: gn_data_indication.destination_area,
             length: payload.len() as u16,
             data: payload,
         }
@@ -236,8 +249,10 @@ mod tests {
                 tc_id: 0,
             },
             destination_area: None,
+            destination: None,
             remaining_packet_lifetime: Some(1.0),
             remaining_hop_limit: None,
+            security: None,
             length: 6,
             data: vec![0x07, 0xD1, 0x00, 0x00, 0xAA, 0xBB],
         };
@@ -247,6 +262,23 @@ mod tests {
         assert_eq!(btp_ind.data, vec![0xAA, 0xBB]);
         assert_eq!(btp_ind.length, 2);
         assert_eq!(btp_ind.gn_remaining_packet_lifetime, Some(1.0));
+        assert_eq!(btp_ind.gn_its_aid, None);
+
+        // GN security results are passed in the BTP indication.
+        let secured = GNDataIndication {
+            security: Some(crate::geonet::service_access_point::SecurityIndication {
+                report: crate::security::sn_sap::ReportVerify::Success,
+                certificate_id: vec![1; 8],
+                its_aid: 36,
+                permissions: vec![2, 2, 0],
+            }),
+            ..gn_ind
+        };
+        let btp_ind = BTPDataIndication::initialize_with_gn_data_indication(&secured);
+        assert_eq!(btp_ind.gn_security_report, Some(vec![0]));
+        assert_eq!(btp_ind.gn_certificate_id, Some(vec![1; 8]));
+        assert_eq!(btp_ind.gn_its_aid, Some(36));
+        assert_eq!(btp_ind.gn_permissions, Some(vec![2, 2, 0]));
     }
 
     #[test]
@@ -264,8 +296,10 @@ mod tests {
                 tc_id: 0,
             },
             destination_area: None,
+            destination: None,
             remaining_packet_lifetime: None,
             remaining_hop_limit: None,
+            security: None,
             length: 2,
             data: vec![0x07, 0xD1], // Only 2 bytes — too short for BTP header
         };

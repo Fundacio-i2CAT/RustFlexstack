@@ -1,11 +1,36 @@
-//! Certificate handling — ETSI TS 103 097 V2.1.1 profiles.
+//! Certificate handling — ETSI TS 103 097 V2.2.1 (2026-03) profiles.
 //!
 //! Provides [`Certificate`] (read-only wrapper) and [`OwnCertificate`]
 //! (includes the private-key identifier for signing).
 
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha384};
 
-use crate::security::ecdsa_backend::EcdsaBackend;
+use crate::security::ecdsa_backend::{
+    key_uses_sha384, reconstruct_public_key, EcdsaBackend, KeyAlgorithm,
+};
+
+/// Input to the ECDSA signing and verification operations (IEEE Std
+/// 1609.2-2016, clause 5.3.1, adopted by ETSI TS 103 097 V2.2.1):
+/// `Hash(Data input) || Hash(Signer identifier input)`, which ECDSA hashes
+/// again. `data` is the COER encoding of the ToBeSignedData or
+/// ToBeSignedCertificate; `signer` is the canonical COER encoding of the
+/// signer's certificate, or empty for self-signed data. `sha384` selects
+/// SHA-384 (384-bit curves) instead of SHA-256.
+pub fn signing_input(data: &[u8], signer: &[u8], sha384: bool) -> Vec<u8> {
+    if sha384 {
+        [
+            Sha384::digest(data).to_vec(),
+            Sha384::digest(signer).to_vec(),
+        ]
+        .concat()
+    } else {
+        [
+            Sha256::digest(data).to_vec(),
+            Sha256::digest(signer).to_vec(),
+        ]
+        .concat()
+    }
+}
 use crate::security::security_asn::etsi_ts103097_module::EtsiTs103097Certificate;
 use crate::security::security_asn::ieee1609_dot2::Certificate as AsnCertificate;
 use crate::security::security_asn::ieee1609_dot2::{
@@ -15,7 +40,8 @@ use crate::security::security_asn::ieee1609_dot2::{
 use crate::security::security_asn::ieee1609_dot2::{SubjectPermissions, VerificationKeyIndicator};
 use crate::security::security_asn::ieee1609_dot2_base_types::Signature as Ieee1609Signature;
 use crate::security::security_asn::ieee1609_dot2_base_types::{
-    EccP256CurvePoint, EcdsaP256Signature, HashAlgorithm, HashedId8, PublicVerificationKey, Uint8,
+    BasePublicEncryptionKey, EccP256CurvePoint, EccP384CurvePoint, EcdsaP256Signature,
+    HashAlgorithm, HashedId8, PublicVerificationKey, Uint8,
 };
 
 // ─── COER encode / decode helpers ────────────────────────────────────────
@@ -36,6 +62,11 @@ pub fn encode_ieee1609_dot2_data(data: &Ieee1609Dot2Data) -> Vec<u8> {
 }
 
 /// COER-decode `Ieee1609Dot2Data`.
+/// COER-decode an `Ieee1609Dot2Data`, `None` when malformed (received data).
+pub fn try_decode_ieee1609_dot2_data(bytes: &[u8]) -> Option<Ieee1609Dot2Data> {
+    rasn::coer::decode::<Ieee1609Dot2Data>(bytes).ok()
+}
+
 pub fn decode_ieee1609_dot2_data(bytes: &[u8]) -> Ieee1609Dot2Data {
     rasn::coer::decode::<Ieee1609Dot2Data>(bytes).expect("Ieee1609Dot2Data COER decode failed")
 }
@@ -55,6 +86,52 @@ pub fn encode_tbs_certificate(tbs: &ToBeSignedCertificate) -> Vec<u8> {
 /// Compute the HashedId8 of a COER-encoded certificate.
 pub fn compute_hashedid8(cert_bytes: &[u8]) -> [u8; 8] {
     EcdsaBackend::hash_to_hashedid8(cert_bytes)
+}
+
+// ─── Canonicalization helpers (IEEE 1609.2 clause 6.4.3) ─────────────────
+
+/// A verification key or reconstruction value point in compressed form.
+fn compress_p256(point: &mut EccP256CurvePoint) {
+    if let EccP256CurvePoint::uncompressedP256(u) = point {
+        let even = u.y.as_ref().last().is_some_and(|b| b % 2 == 0);
+        let x = u.x.clone();
+        *point = if even {
+            EccP256CurvePoint::compressed_y_0(x)
+        } else {
+            EccP256CurvePoint::compressed_y_1(x)
+        };
+    }
+}
+
+fn compress_p384(point: &mut EccP384CurvePoint) {
+    if let EccP384CurvePoint::uncompressedP384(u) = point {
+        let even = u.y.as_ref().last().is_some_and(|b| b % 2 == 0);
+        let x = u.x.clone();
+        *point = if even {
+            EccP384CurvePoint::compressed_y_0(x)
+        } else {
+            EccP384CurvePoint::compressed_y_1(x)
+        };
+    }
+}
+
+/// The r of an ECDSA signature in x-only form.
+fn x_only_p256(r: &mut EccP256CurvePoint) {
+    let x = match r {
+        EccP256CurvePoint::compressed_y_0(x) | EccP256CurvePoint::compressed_y_1(x) => x.clone(),
+        EccP256CurvePoint::uncompressedP256(u) => u.x.clone(),
+        _ => return,
+    };
+    *r = EccP256CurvePoint::x_only(x);
+}
+
+fn x_only_p384(r: &mut EccP384CurvePoint) {
+    let x = match r {
+        EccP384CurvePoint::compressed_y_0(x) | EccP384CurvePoint::compressed_y_1(x) => x.clone(),
+        EccP384CurvePoint::uncompressedP384(u) => u.x.clone(),
+        _ => return,
+    };
+    *r = EccP384CurvePoint::x_only(x);
 }
 
 // ─── Certificate (read-only) ─────────────────────────────────────────────
@@ -111,66 +188,78 @@ impl Certificate {
     /// - Public verification key compressed (compressed_y_0/1).
     /// - Signature r_sig as x_only.
     pub fn to_canonical(&self) -> Certificate {
-        let mut needs_conversion = false;
-        if let VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
-            EccP256CurvePoint::uncompressedP256(_),
-        )) = &self.tbs().verify_key_indicator
-        {
-            needs_conversion = true;
+        let mut new_base = self.base().clone();
+        let indicator = &mut new_base.to_be_signed.verify_key_indicator;
+        match indicator {
+            VerificationKeyIndicator::verificationKey(
+                PublicVerificationKey::ecdsaNistP256(point)
+                | PublicVerificationKey::ecdsaBrainpoolP256r1(point),
+            )
+            | VerificationKeyIndicator::reconstructionValue(point) => compress_p256(point),
+            VerificationKeyIndicator::verificationKey(
+                PublicVerificationKey::ecdsaBrainpoolP384r1(point)
+                | PublicVerificationKey::ecdsaNistP384(point),
+            ) => compress_p384(point),
+            _ => {}
         }
-        if let Some(Ieee1609Signature::ecdsaNistP256Signature(p256_sig)) = &self.base().signature {
-            if matches!(
-                p256_sig.r_sig,
-                EccP256CurvePoint::compressed_y_0(_) | EccP256CurvePoint::compressed_y_1(_)
-            ) {
-                needs_conversion = true;
+        if let Some(key) = &mut new_base.to_be_signed.encryption_key {
+            match &mut key.public_key {
+                BasePublicEncryptionKey::eciesNistP256(point)
+                | BasePublicEncryptionKey::eciesBrainpoolP256r1(point)
+                | BasePublicEncryptionKey::ecencSm2(point) => compress_p256(point),
             }
         }
-
-        if !needs_conversion {
+        match &mut new_base.signature {
+            Some(
+                Ieee1609Signature::ecdsaNistP256Signature(sig)
+                | Ieee1609Signature::ecdsaBrainpoolP256r1Signature(sig),
+            ) => x_only_p256(&mut sig.r_sig),
+            Some(
+                Ieee1609Signature::ecdsaBrainpoolP384r1Signature(sig)
+                | Ieee1609Signature::ecdsaNistP384Signature(sig),
+            ) => x_only_p384(&mut sig.r_sig),
+            _ => {}
+        }
+        if new_base == *self.base() {
             return self.clone();
         }
-
-        let mut new_base = self.base().clone();
-
-        // 1. Convert uncompressed verification key to compressed
-        if let VerificationKeyIndicator::verificationKey(PublicVerificationKey::ecdsaNistP256(
-            EccP256CurvePoint::uncompressedP256(ref u),
-        )) = new_base.to_be_signed.verify_key_indicator
-        {
-            let y_bytes = u.y.as_ref();
-            let is_even = y_bytes.last().map(|b| b % 2 == 0).unwrap_or(false);
-            let new_pt = if is_even {
-                EccP256CurvePoint::compressed_y_0(u.x.clone())
-            } else {
-                EccP256CurvePoint::compressed_y_1(u.x.clone())
-            };
-            new_base.to_be_signed.verify_key_indicator = VerificationKeyIndicator::verificationKey(
-                PublicVerificationKey::ecdsaNistP256(new_pt),
-            );
-        }
-
-        // 2. Convert signature r_sig from compressed_y_0/1 to x_only
-        if let Some(Ieee1609Signature::ecdsaNistP256Signature(ref mut p256_sig)) =
-            new_base.signature
-        {
-            match &p256_sig.r_sig {
-                EccP256CurvePoint::compressed_y_0(x) | EccP256CurvePoint::compressed_y_1(x) => {
-                    p256_sig.r_sig = EccP256CurvePoint::x_only(x.clone());
-                }
-                _ => {}
-            }
-        }
-
         let new_asn = EtsiTs103097Certificate(AsnCertificate(new_base));
         let issuer = self.issuer.as_ref().map(|i| *i.clone());
         Certificate::from_asn(new_asn, issuer)
     }
 
-    /// Compute the SHA-256 HashedId8 of the canonical certificate.
+    /// HashedId8 of the canonical certificate, with the hash for the curve of
+    /// its verification key: SHA-384 for a 384-bit key, SHA-256 otherwise (the
+    /// hashes approved by ETSI TS 103 097 V2.2.1 clause 4.2, paired with the
+    /// curves as in the permutation tables of ETSI TS 103 096-2).
     pub fn as_hashedid8(&self) -> [u8; 8] {
         let canon = self.to_canonical();
-        compute_hashedid8(&canon.encoded)
+        if !self.uses_sha384() {
+            return compute_hashedid8(&canon.encoded);
+        }
+        let digest = Sha384::digest(&canon.encoded);
+        let mut out = [0u8; 8];
+        out.copy_from_slice(&digest[40..48]);
+        out
+    }
+
+    /// SHA-384 is the hash associated with the certificate's verification key
+    /// (384-bit curve), used for its HashedId8, the hashId of data it signs
+    /// and the issuer choice of certificates it issues; SHA-256 otherwise
+    /// (and for implicit certificates).
+    pub fn uses_sha384(&self) -> bool {
+        matches!(&self.tbs().verify_key_indicator,
+            VerificationKeyIndicator::verificationKey(pk) if key_uses_sha384(pk))
+    }
+
+    /// IssuerIdentifier of a certificate issued by this one.
+    pub fn issuer_identifier(&self) -> IssuerIdentifier {
+        let h8 = HashedId8(rasn::types::FixedOctetString::from(self.as_hashedid8()));
+        if self.uses_sha384() {
+            IssuerIdentifier::sha384AndDigest(h8)
+        } else {
+            IssuerIdentifier::sha256AndDigest(h8)
+        }
     }
 
     /// Compute the last 3 bytes of HashedId8.
@@ -227,11 +316,37 @@ impl Certificate {
         )
     }
 
+    /// Is the signature NIST P-256/P-384 or brainpoolP256r1/P384r1?
+    pub fn signature_is_supported(&self) -> bool {
+        matches!(
+            self.base().signature,
+            Some(
+                Ieee1609Signature::ecdsaNistP256Signature(_)
+                    | Ieee1609Signature::ecdsaBrainpoolP256r1Signature(_)
+                    | Ieee1609Signature::ecdsaBrainpoolP384r1Signature(_)
+                    | Ieee1609Signature::ecdsaNistP384Signature(_)
+            )
+        )
+    }
+
+    /// Is the verification key NIST P-256/P-384 or brainpoolP256r1/P384r1?
+    pub fn verification_key_is_supported(&self) -> bool {
+        matches!(
+            &self.tbs().verify_key_indicator,
+            VerificationKeyIndicator::verificationKey(
+                PublicVerificationKey::ecdsaNistP256(_)
+                    | PublicVerificationKey::ecdsaBrainpoolP256r1(_)
+                    | PublicVerificationKey::ecdsaBrainpoolP384r1(_)
+                    | PublicVerificationKey::ecdsaNistP384(_)
+            )
+        )
+    }
+
     /// Is the certificate self-signed?
     pub fn is_self_signed(&self) -> bool {
         matches!(
             &self.base().issuer,
-            IssuerIdentifier::R_self(HashAlgorithm::sha256)
+            IssuerIdentifier::R_self(HashAlgorithm::sha256 | HashAlgorithm::sha384)
         )
     }
 
@@ -245,8 +360,13 @@ impl Certificate {
 
     /// Check whether the issuer's HashedId8 matches the given issuer certificate.
     pub fn check_corresponding_issuer(&self, issuer: &Certificate) -> bool {
+        let choice_matches = match &self.base().issuer {
+            IssuerIdentifier::sha256AndDigest(_) => !issuer.uses_sha384(),
+            IssuerIdentifier::sha384AndDigest(_) => issuer.uses_sha384(),
+            _ => false,
+        };
         match self.get_issuer_hashedid8() {
-            Some(h) => h == issuer.as_hashedid8(),
+            Some(h) => choice_matches && h == issuer.as_hashedid8(),
             None => false,
         }
     }
@@ -289,7 +409,8 @@ impl Certificate {
         needed.iter().all(|n| allowed.contains(n))
     }
 
-    /// Verify the certificate signature.
+    /// Verify the signature of a self-signed certificate: the signer input
+    /// is the empty string (IEEE 1609.2 clause 5.3.1).
     pub fn verify_signature_with(
         backend: &EcdsaBackend,
         tbs: &ToBeSignedCertificate,
@@ -297,7 +418,8 @@ impl Certificate {
         verification_key: &PublicVerificationKey,
     ) -> bool {
         let tbs_bytes = encode_tbs_certificate(tbs);
-        backend.verify_with_pk(&tbs_bytes, signature, verification_key)
+        let payload = signing_input(&tbs_bytes, &[], key_uses_sha384(verification_key));
+        backend.verify_with_pk(&payload, signature, verification_key)
     }
 
     /// Verify an issued certificate (chain to issuer).
@@ -315,29 +437,24 @@ impl Certificate {
         if !self.check_issuer_has_subject_permissions(issuer) {
             return false;
         }
-        if !self.signature_is_nist_p256() || !self.verification_key_is_nist_p256() {
+        if !self.signature_is_supported() || !self.verification_key_is_supported() {
             return false;
         }
         let sig = match &self.base().signature {
             Some(s) => s,
             None => return false,
         };
-        let issuer_vk = match &issuer.tbs().verify_key_indicator {
-            VerificationKeyIndicator::verificationKey(pk) => pk,
-            _ => return false,
+        let Some(issuer_vk_owned) = issuer.verification_key() else {
+            return false;
         };
+        let issuer_vk = &issuer_vk_owned;
+        // IEEE 1609.2 clause 5.3.1: Hash(Hash(tbs) || Hash(issuer certificate))
         let tbs_bytes = encode_tbs_certificate(self.tbs());
-        let payload = if matches!(self.base().issuer, IssuerIdentifier::sha256AndDigest(_)) {
-            let tbs_hash = Sha256::digest(&tbs_bytes);
-            let issuer_canon = issuer.to_canonical();
-            let issuer_hash = Sha256::digest(issuer_canon.encode());
-            let mut p = Vec::with_capacity(64);
-            p.extend_from_slice(&tbs_hash);
-            p.extend_from_slice(&issuer_hash);
-            p
-        } else {
-            tbs_bytes
-        };
+        let payload = signing_input(
+            &tbs_bytes,
+            issuer.to_canonical().encode(),
+            key_uses_sha384(issuer_vk),
+        );
         backend.verify_with_pk(&payload, sig, issuer_vk)
     }
 
@@ -346,7 +463,7 @@ impl Certificate {
         if !self.is_self_signed() {
             return false;
         }
-        if !self.signature_is_nist_p256() || !self.verification_key_is_nist_p256() {
+        if !self.signature_is_supported() || !self.verification_key_is_supported() {
             return false;
         }
         let sig = match &self.base().signature {
@@ -373,12 +490,16 @@ impl Certificate {
                 }
             }
             CertificateType::implicit => {
+                // IEEE 1609.2 clause 6.4.2: reconstruction value and no
+                // signature (IEEE 1609.2 clause 5.3.2)
                 if !matches!(
                     self.tbs().verify_key_indicator,
                     VerificationKeyIndicator::reconstructionValue(_)
-                ) {
+                ) || self.base().signature.is_some()
+                {
                     return false;
                 }
+                return self.verify_implicit();
             }
         }
         if self.issuer.is_some() && self.is_issued() {
@@ -388,6 +509,55 @@ impl Certificate {
             return self.verify_self_signed(backend);
         }
         false
+    }
+
+    /// An implicit certificate has no signature: it is accepted when it is
+    /// issued by its (known) issuer with the required permissions and its
+    /// public key can be reconstructed. A wrong certificate yields a wrong
+    /// key, so data it signs does not verify (SEC 4 section 3.5).
+    fn verify_implicit(&self) -> bool {
+        let Some(issuer) = &self.issuer else {
+            return false;
+        };
+        self.is_issued()
+            && self.check_corresponding_issuer(issuer)
+            && self.check_issuer_has_subject_permissions(issuer)
+            && self.verification_key().is_some()
+    }
+
+    /// True for an implicit certificate (reconstruction value, no signature).
+    pub fn is_implicit(&self) -> bool {
+        matches!(self.base().r_type, CertificateType::implicit)
+    }
+
+    /// e = Hn(Hash(ToBeSignedCertificate) || Hash(issuer certificate)): the
+    /// leftmost floor(log2 n) = 255 bits of SHA-256 over the 1609.2 hash
+    /// input (IEEE Std 1609.2-2016 clauses 5.3.2 and 6.4.3; SEC 4 section
+    /// 2.3), as a big-endian 32-byte integer. `None` without issuer.
+    pub fn implicit_hash_integer(&self) -> Option<[u8; 32]> {
+        let issuer = self.issuer.as_ref()?;
+        let tbs = encode_tbs_certificate(self.to_canonical().tbs());
+        let digest = Sha256::digest(signing_input(&tbs, issuer.to_canonical().encode(), false));
+        let mut e = [0u8; 32];
+        let mut carry = 0u8;
+        for (i, byte) in digest.iter().enumerate() {
+            e[i] = (byte >> 1) | carry;
+            carry = byte << 7;
+        }
+        Some(e)
+    }
+
+    /// Public verification key: the explicit key, or the key reconstructed
+    /// from the reconstruction value and the issuer key (ECQV, IEEE Std
+    /// 1609.2-2016 clause 5.3.2). `None` when not available.
+    pub fn verification_key(&self) -> Option<PublicVerificationKey> {
+        match &self.tbs().verify_key_indicator {
+            VerificationKeyIndicator::verificationKey(pk) => Some(pk.clone()),
+            VerificationKeyIndicator::reconstructionValue(rv) => {
+                let issuer_key = self.issuer.as_ref()?.verification_key()?;
+                reconstruct_public_key(rv, &issuer_key, &self.implicit_hash_integer()?)
+            }
+        }
     }
 
     // ── Profile checks (§7.2) ────────────────────────────────────────────
@@ -464,28 +634,31 @@ impl OwnCertificate {
         self.cert.verify(backend)
     }
 
-    /// Sign arbitrary data with this certificate's key.
+    /// Sign `data` (the COER ToBeSignedData) with this certificate's key; the
+    /// signer identifier input is this certificate (IEEE 1609.2 clause 5.3.1).
     pub fn sign_message(&self, backend: &EcdsaBackend, data: &[u8]) -> Ieee1609Signature {
-        backend.sign(data, self.key_id)
+        let signer = self.to_canonical().encode().to_vec();
+        backend.sign(
+            &signing_input(data, &signer, self.cert.uses_sha384()),
+            self.key_id,
+        )
     }
 
     /// Sign (or re-sign) `target`'s `toBeSigned` and return a new `Certificate`
     /// with the updated signature.
     pub fn sign_certificate(&self, backend: &EcdsaBackend, target: &Certificate) -> Certificate {
+        // IEEE 1609.2 clause 5.3.1: Hash(Hash(tbs) || Hash(issuer certificate)),
+        // with the empty string as signer input for a self-signed certificate.
         let tbs_bytes = encode_tbs_certificate(target.tbs());
-        let payload = if matches!(target.base().issuer, IssuerIdentifier::sha256AndDigest(_)) {
-            // IEEE 1609.2 §5.3.2 / ETSI TS 103 097:
-            // Digest to sign is SHA-256( SHA-256(tbs_bytes) || SHA-256(issuer_cert_bytes) )
-            let tbs_hash = Sha256::digest(&tbs_bytes);
-            let self_canon = self.to_canonical();
-            let issuer_hash = Sha256::digest(self_canon.encode());
-            let mut p = Vec::with_capacity(64);
-            p.extend_from_slice(&tbs_hash);
-            p.extend_from_slice(&issuer_hash);
-            p
+        let signer = if matches!(
+            target.base().issuer,
+            IssuerIdentifier::sha256AndDigest(_) | IssuerIdentifier::sha384AndDigest(_)
+        ) {
+            self.to_canonical().encode().to_vec()
         } else {
-            tbs_bytes
+            Vec::new()
         };
+        let payload = signing_input(&tbs_bytes, &signer, self.cert.uses_sha384());
         let sig = backend.sign(&payload, self.key_id);
 
         let mut new_base = target.base().clone();
@@ -500,9 +673,7 @@ impl OwnCertificate {
     pub fn issue_certificate(&self, backend: &EcdsaBackend, target: &Certificate) -> Certificate {
         // Set issuer to our HashedId8
         let mut new_base = target.base().clone();
-        let h8 = self.as_hashedid8();
-        new_base.issuer =
-            IssuerIdentifier::sha256AndDigest(HashedId8(rasn::types::FixedOctetString::from(h8)));
+        new_base.issuer = self.cert.issuer_identifier();
 
         let target_with_issuer = Certificate::from_asn(
             EtsiTs103097Certificate(AsnCertificate(new_base)),
@@ -511,10 +682,20 @@ impl OwnCertificate {
         self.sign_certificate(backend, &target_with_issuer)
     }
 
-    /// Create a brand-new self-signed certificate.
+    /// Create a brand-new self-signed certificate (NIST P-256 key).
     pub fn initialize_self_signed(backend: &mut EcdsaBackend, tbs: ToBeSignedCertificate) -> Self {
-        let key_id = backend.create_key();
+        Self::initialize_self_signed_with(backend, tbs, KeyAlgorithm::NistP256)
+    }
+
+    /// Create a brand-new self-signed certificate with a key on `algorithm`.
+    pub fn initialize_self_signed_with(
+        backend: &mut EcdsaBackend,
+        tbs: ToBeSignedCertificate,
+        algorithm: KeyAlgorithm,
+    ) -> Self {
+        let key_id = backend.create_key_with(algorithm);
         let pk = backend.get_public_key(key_id);
+        let sha384 = key_uses_sha384(&pk);
 
         let mut tbs_owned = tbs;
         tbs_owned.verify_key_indicator = VerificationKeyIndicator::verificationKey(pk);
@@ -528,14 +709,19 @@ impl OwnCertificate {
         let base = CertificateBase::new(
             Uint8(3),
             CertificateType::explicit,
-            IssuerIdentifier::R_self(HashAlgorithm::sha256),
+            IssuerIdentifier::R_self(if sha384 {
+                HashAlgorithm::sha384
+            } else {
+                HashAlgorithm::sha256
+            }),
             tbs_owned,
             Some(placeholder_sig),
         );
 
         // Sign the toBeSigned
+        // IEEE 1609.2 clause 5.3.1: self-signed, the signer input is empty
         let tbs_bytes = encode_tbs_certificate(&base.to_be_signed);
-        let sig = backend.sign(&tbs_bytes, key_id);
+        let sig = backend.sign(&signing_input(&tbs_bytes, &[], sha384), key_id);
 
         let mut final_base = base;
         final_base.signature = Some(sig);
@@ -546,22 +732,98 @@ impl OwnCertificate {
     }
 
     /// Create a new certificate issued by `issuer`.
+    /// Issue an implicit certificate with ECQV (SEC 4 sections 3.3 to 3.6,
+    /// as profiled by IEEE Std 1609.2-2016 clause 5.3.2) and return it with
+    /// the reconstructed private key of its holder. The requester and the CA
+    /// role are combined: k_U is the requester key, k the CA ephemeral key,
+    /// P_U = (k_U + k) * G, r = e * k + d_CA and d_U = e * k_U + r.
+    /// Only a NIST P-256 issuer key is supported.
+    pub fn issue_implicit_certificate(
+        &self,
+        backend: &mut EcdsaBackend,
+        tbs: ToBeSignedCertificate,
+    ) -> OwnCertificate {
+        use p256::elliptic_curve::ff::{Field, PrimeField};
+        use p256::elliptic_curve::sec1::ToEncodedPoint;
+        let mut rng = rand::thread_rng();
+        let (k_u, k) = (
+            p256::Scalar::random(&mut rng),
+            p256::Scalar::random(&mut rng),
+        );
+        let p_u = (p256::ProjectivePoint::GENERATOR * (k_u + k)).to_affine();
+        let encoded = p_u.to_encoded_point(true);
+        let x = encoded.x().expect("x").to_vec().into();
+        let rv = if encoded.as_bytes()[0] == 0x02 {
+            EccP256CurvePoint::compressed_y_0(x)
+        } else {
+            EccP256CurvePoint::compressed_y_1(x)
+        };
+        let mut tbs = tbs;
+        tbs.verify_key_indicator = VerificationKeyIndicator::reconstructionValue(rv);
+        let base = CertificateBase::new(
+            Uint8(3),
+            CertificateType::implicit,
+            IssuerIdentifier::sha256AndDigest(HashedId8(rasn::types::FixedOctetString::from(
+                self.as_hashedid8(),
+            ))),
+            tbs,
+            None,
+        );
+        let cert = Certificate::from_asn(
+            EtsiTs103097Certificate(AsnCertificate(base)),
+            Some(self.cert.clone()),
+        );
+        let e_bytes = cert.implicit_hash_integer().expect("issuer set");
+        let e =
+            Option::<p256::Scalar>::from(p256::Scalar::from_repr(e_bytes.into())).expect("e < n");
+        let d_ca_bytes: [u8; 32] = backend
+            .export_signing_key(self.key_id)
+            .try_into()
+            .expect("P-256 key");
+        let d_ca =
+            Option::<p256::Scalar>::from(p256::Scalar::from_repr(d_ca_bytes.into())).expect("key");
+        let d_u = e * k_u + (e * k + d_ca);
+        let key_id = backend.import_signing_key(&d_u.to_repr());
+        OwnCertificate { cert, key_id }
+    }
+
     pub fn initialize_issued(
         backend: &mut EcdsaBackend,
         tbs: ToBeSignedCertificate,
         issuer: &OwnCertificate,
     ) -> Self {
-        let key_id = backend.create_key();
-        let pk = backend.get_public_key(key_id);
+        Self::initialize_issued_with(backend, tbs, issuer, KeyAlgorithm::NistP256)
+    }
+
+    /// Create a new certificate issued by `issuer`, with a key on `algorithm`.
+    pub fn initialize_issued_with(
+        backend: &mut EcdsaBackend,
+        tbs: ToBeSignedCertificate,
+        issuer: &OwnCertificate,
+        algorithm: KeyAlgorithm,
+    ) -> Self {
+        Self::initialize_issued_key(backend, tbs, issuer, algorithm, true)
+    }
+
+    /// Create a new certificate issued by `issuer`, with a key on `algorithm`
+    /// given as a compressed or an uncompressed point.
+    pub fn initialize_issued_key(
+        backend: &mut EcdsaBackend,
+        tbs: ToBeSignedCertificate,
+        issuer: &OwnCertificate,
+        algorithm: KeyAlgorithm,
+        compressed_key: bool,
+    ) -> Self {
+        let key_id = backend.create_key_with(algorithm);
+        let pk = backend.get_public_key_compressed(key_id, compressed_key);
 
         let mut tbs_owned = tbs;
         tbs_owned.verify_key_indicator = VerificationKeyIndicator::verificationKey(pk);
 
-        let h8 = issuer.as_hashedid8();
         let base = CertificateBase::new(
             Uint8(3),
             CertificateType::explicit,
-            IssuerIdentifier::sha256AndDigest(HashedId8(rasn::types::FixedOctetString::from(h8))),
+            issuer.cert.issuer_identifier(),
             tbs_owned,
             None, // will be filled by sign
         );
@@ -663,6 +925,114 @@ mod tests {
         )
     }
 
+    /// IEEE 1609.2 clause 6.4.3: a certificate is hashed with every point of
+    /// toBeSigned compressed and the signature r as x-only, on every curve.
+    #[test]
+    fn uncompressed_points_hash_as_compressed() {
+        use crate::security::ecdsa_backend::KeyAlgorithm;
+        use crate::security::security_asn::ieee1609_dot2_base_types::{
+            EcdsaP384Signature, PublicEncryptionKey, SymmAlgorithm,
+        };
+        let mut backend = EcdsaBackend::new();
+        for algorithm in [
+            KeyAlgorithm::NistP256,
+            KeyAlgorithm::BrainpoolP256r1,
+            KeyAlgorithm::BrainpoolP384r1,
+            KeyAlgorithm::NistP384,
+        ] {
+            let key = backend.create_key_with(algorithm);
+            let encryption = backend.create_key();
+            // r given as a point: reuse the key point (only the encoding matters here)
+            let signature = |compressed_r: bool| -> Ieee1609Signature {
+                let point = backend.get_public_key_compressed(key, true);
+                match point {
+                    PublicVerificationKey::ecdsaNistP256(p)
+                    | PublicVerificationKey::ecdsaBrainpoolP256r1(p) => {
+                        let x = match &p {
+                            EccP256CurvePoint::compressed_y_0(x)
+                            | EccP256CurvePoint::compressed_y_1(x) => x.clone(),
+                            _ => unreachable!(),
+                        };
+                        let r = if compressed_r {
+                            p.clone()
+                        } else {
+                            EccP256CurvePoint::x_only(x)
+                        };
+                        let sig = EcdsaP256Signature {
+                            r_sig: r,
+                            s_sig: vec![1u8; 32].into(),
+                        };
+                        if matches!(algorithm, KeyAlgorithm::NistP256) {
+                            Ieee1609Signature::ecdsaNistP256Signature(sig)
+                        } else {
+                            Ieee1609Signature::ecdsaBrainpoolP256r1Signature(sig)
+                        }
+                    }
+                    PublicVerificationKey::ecdsaBrainpoolP384r1(p)
+                    | PublicVerificationKey::ecdsaNistP384(p) => {
+                        let x = match &p {
+                            EccP384CurvePoint::compressed_y_0(x)
+                            | EccP384CurvePoint::compressed_y_1(x) => x.clone(),
+                            _ => unreachable!(),
+                        };
+                        let r = if compressed_r {
+                            p.clone()
+                        } else {
+                            EccP384CurvePoint::x_only(x)
+                        };
+                        let sig = EcdsaP384Signature {
+                            r_sig: r,
+                            s_sig: vec![1u8; 48].into(),
+                        };
+                        if matches!(algorithm, KeyAlgorithm::NistP384) {
+                            Ieee1609Signature::ecdsaNistP384Signature(sig)
+                        } else {
+                            Ieee1609Signature::ecdsaBrainpoolP384r1Signature(sig)
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            };
+            let certificate = |compressed: bool, compressed_r: bool| -> Certificate {
+                let mut tbs = make_at_tbs();
+                tbs.verify_key_indicator = VerificationKeyIndicator::verificationKey(
+                    backend.get_public_key_compressed(key, compressed),
+                );
+                let PublicVerificationKey::ecdsaNistP256(point) =
+                    backend.get_public_key_compressed(encryption, compressed)
+                else {
+                    unreachable!()
+                };
+                tbs.encryption_key = Some(PublicEncryptionKey::new(
+                    SymmAlgorithm::aes128Ccm,
+                    BasePublicEncryptionKey::eciesNistP256(point),
+                ));
+                let base = CertificateBase::new(
+                    Uint8(3),
+                    CertificateType::explicit,
+                    IssuerIdentifier::R_self(HashAlgorithm::sha256),
+                    tbs,
+                    Some(signature(compressed_r)),
+                );
+                Certificate::from_asn(EtsiTs103097Certificate(AsnCertificate(base)), None)
+            };
+            let reference = certificate(true, false);
+            for (compressed, compressed_r) in [(false, false), (false, true), (true, true)] {
+                let variant = certificate(compressed, compressed_r);
+                assert_eq!(
+                    variant.as_hashedid8(),
+                    reference.as_hashedid8(),
+                    "{algorithm:?}"
+                );
+                assert_eq!(
+                    variant.to_canonical().encode(),
+                    reference.encode(),
+                    "{algorithm:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn own_certificate_self_signed_roundtrip() {
         let mut backend = EcdsaBackend::new();
@@ -748,7 +1118,10 @@ mod tests {
         let own = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
         let sig = own.sign_message(&backend, b"test data");
         let pk = backend.get_public_key(own.key_id);
-        assert!(backend.verify_with_pk(b"test data", &sig, &pk));
+        // IEEE 1609.2 clause 5.3.1: Hash(data) || Hash(signer certificate)
+        let input = signing_input(b"test data", own.to_canonical().encode(), false);
+        assert!(backend.verify_with_pk(&input, &sig, &pk));
+        assert!(!backend.verify_with_pk(b"test data", &sig, &pk));
     }
 
     #[test]

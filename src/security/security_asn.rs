@@ -16,10 +16,10 @@ pub mod etsi_ts103097_extension_module {
     pub struct EtsiOriginatingHeaderInfoExtension {
         #[rasn(value("0..=255"))]
         pub id: u8,
-        pub content: Any,
+        pub content: OctetString,
     }
     impl EtsiOriginatingHeaderInfoExtension {
-        pub fn new(id: u8, content: Any) -> Self {
+        pub fn new(id: u8, content: OctetString) -> Self {
             Self { id, content }
         }
     }
@@ -156,10 +156,10 @@ pub mod ieee1609_dot2 {
     #[rasn(automatic_tags)]
     pub struct AppExtension {
         pub id: ExtId,
-        pub content: Any,
+        pub content: OctetString,
     }
     impl AppExtension {
-        pub fn new(id: ExtId, content: Any) -> Self {
+        pub fn new(id: ExtId, content: OctetString) -> Self {
             Self { id, content }
         }
     }
@@ -374,7 +374,8 @@ pub mod ieee1609_dot2 {
         delegate,
         identifier = "IOFR$IEEE1609DOT2-HEADERINFO-CONTRIBUTED-EXTENSION$&Extn"
     )]
-    pub struct AnonymousContributedExtensionBlockExtns(pub Any);
+    // Open type, as an OCTET STRING (same OER encoding; rasn cannot decode Any).
+    pub struct AnonymousContributedExtensionBlockExtns(pub OctetString);
     #[doc = " Inner type "]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, size("1.."))]
@@ -690,10 +691,10 @@ pub mod ieee1609_dot2 {
     #[rasn(automatic_tags)]
     pub struct Ieee1609ContributedHeaderInfoExtension {
         pub id: ExtId,
-        pub content: Any,
+        pub content: OctetString,
     }
     impl Ieee1609ContributedHeaderInfoExtension {
-        pub fn new(id: ExtId, content: Any) -> Self {
+        pub fn new(id: ExtId, content: OctetString) -> Self {
             Self { id, content }
         }
     }

@@ -12,23 +12,17 @@ pub struct Tst {
 }
 
 impl Tst {
+    /// TST of a Unix (UTC) timestamp in ms: TAI milliseconds since the ITS
+    /// epoch 2004-01-01T00:00:00Z, modulo 2^32 (ETSI TS 103 836-4-1).
     pub fn set_in_normal_timestamp_milliseconds(msec: u64) -> Self {
-        // TAI epoch offset: 2004-01-01T00:00:00 UTC = 1 072 911 600 s
-        // Timestamp = (unix_ms - tai_offset_ms) mod 2^32
-        const TAI_OFFSET_MS: u64 = 1_072_911_600_000;
-        let value: u32 = if msec > TAI_OFFSET_MS {
-            ((msec - TAI_OFFSET_MS) & 0xFFFF_FFFF) as u32
-        } else {
-            0
-        };
-        Tst { msec: value }
+        let its_ms = crate::security::time_service::unix_ms_to_its_ms(msec);
+        Tst {
+            msec: (its_ms & 0xFFFF_FFFF) as u32,
+        }
     }
 
     pub fn set_in_normal_timestamp_seconds(sec: u64) -> Self {
-        let value: u32 = (((sec - 1072911600) * 1000) % 2u64.pow(32))
-            .try_into()
-            .unwrap();
-        Tst { msec: value }
+        Self::set_in_normal_timestamp_milliseconds(sec * 1000)
     }
 
     pub fn encode(&self) -> [u8; 4] {
@@ -71,7 +65,7 @@ impl PartialEq for Tst {
 impl PartialOrd for Tst {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         // 2^31 is the serial-number half-range used for TAI ms wraparound comparison
-        // (RFC 1982 / ETSI EN 302 636-4-1 §9.2.2.1).
+        // (RFC 1982 / ETSI TS 103 836-4-1 V2.2.1, Annex C.2).
         // We must NOT use 2u32.pow(32) — that overflows u32 in debug builds.
         const HALF: u32 = 0x8000_0000;
         if (self.msec > other.msec && self.msec - other.msec <= HALF)
@@ -169,6 +163,28 @@ impl LongPositionVector {
         heading_deg: f64,
         pai: bool,
     ) {
+        self.update_from_gps_at(
+            latitude_deg,
+            longitude_deg,
+            speed_mps,
+            heading_deg,
+            pai,
+            None,
+        );
+    }
+
+    /// [`LongPositionVector::update_from_gps`] with the UTC acquisition time
+    /// of the position (ms since the Unix epoch) as TST (clause 9.5.2.2);
+    /// the current time when `None`.
+    pub fn update_from_gps_at(
+        &mut self,
+        latitude_deg: f64,
+        longitude_deg: f64,
+        speed_mps: f64,
+        heading_deg: f64,
+        pai: bool,
+        fix_time_ms: Option<u64>,
+    ) {
         use std::time::SystemTime;
         // Encode latitude and longitude as 1/10 microdegrees (i32, cast to u32)
         self.latitude = ((latitude_deg * 1e7) as i32) as u32;
@@ -178,11 +194,13 @@ impl LongPositionVector {
         // Heading in units of 0.1 degrees, 16-bit value
         self.h = ((heading_deg * 10.0) as u16) % 3600;
         self.pai = pai;
-        // Update timestamp to current TAI time
-        let unix_ms = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        // TST: acquisition time of the position (TAI), the current time if unknown
+        let unix_ms = fix_time_ms.unwrap_or_else(|| {
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64
+        });
         self.tst = Tst::set_in_normal_timestamp_milliseconds(unix_ms);
     }
 }
@@ -246,7 +264,8 @@ mod tests {
         // 2024-06-01T00:00:00 UTC ≈ 1 717 200 000 000 ms
         let unix_ms: u64 = 1_717_200_000_000;
         let tst = Tst::set_in_normal_timestamp_milliseconds(unix_ms);
-        let expected = ((unix_ms - 1_072_911_600_000) & 0xFFFF_FFFF) as u32;
+        // ITS epoch 2004-01-01T00:00:00Z = 1 072 915 200 s, plus 5 leap seconds (TAI).
+        let expected = ((unix_ms - 1_072_915_200_000 + 5_000) & 0xFFFF_FFFF) as u32;
         assert_eq!(tst.msec, expected);
     }
 

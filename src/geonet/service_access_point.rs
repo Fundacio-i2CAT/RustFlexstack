@@ -306,14 +306,30 @@ pub struct GNDataConfirm {
     pub result_code: ResultCode,
 }
 
+/// Results of the security processing of a received secured packet
+/// (ETSI TS 103 836-4-1 V2.2.1, e.g. Table 38): report, signer certificate,
+/// ITS-AID and the SSP of the signer for that ITS-AID.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SecurityIndication {
+    pub report: crate::security::sn_sap::ReportVerify,
+    pub certificate_id: Vec<u8>,
+    pub its_aid: u64,
+    pub permissions: Vec<u8>,
+}
+
 pub struct GNDataIndication {
     pub upper_protocol_entity: CommonNH,
     pub packet_transport_type: PacketTransportType,
     pub source_position_vector: LongPositionVector,
     pub traffic_class: TrafficClass,
     pub destination_area: Option<Area>,
+    /// Destination address of a GeoUnicast (the DE PV GN_ADDR with which the source
+    /// generated it, TS 103 836-4-1 V2.2.1 clause J.4); `None` otherwise.
+    pub destination: Option<GNAddress>,
     pub remaining_packet_lifetime: Option<f64>,
     pub remaining_hop_limit: Option<u8>,
+    /// Security processing results; `None` for an unsecured packet.
+    pub security: Option<SecurityIndication>,
     pub length: u16,
     pub data: Vec<u8>,
 }

@@ -8,6 +8,7 @@
 //! - DENM (ITS-AID 37) — §7.1.2
 //! - Other              — §7.1.3
 
+use crate::security::header_extensions::{encode_requests, TrustListRequest};
 use rasn::prelude::*;
 
 use crate::security::certificate::{
@@ -25,12 +26,37 @@ use crate::security::security_asn::ieee1609_dot2_base_types::{
     Elevation, HashAlgorithm, HashedId8, Latitude, Longitude, NinetyDegreeInt, OneEightyDegreeInt,
     Opaque, Psid, ThreeDLocation, Time64, Uint16, Uint64, Uint8,
 };
-use crate::security::sn_sap::{SNSignConfirm, SNSignRequest};
-use crate::security::time_service::timestamp_its_microseconds;
+use crate::security::sn_sap::{GenerationLocation, SNSignConfirm, SNSignRequest};
+use crate::security::time_service::{unix_time_secs, ELAPSED_SECONDS, ITS_EPOCH};
+use crate::security::validity::{app_permission, location_permitted, ssp_covers, valid_at};
+
+/// No authorization ticket may sign the message: none has the ITS-AID with
+/// the requested SSP, is valid now and is valid at the current position
+/// (IEEE Std 1609.2-2016 clause 5.2.3.2.2). The message shall not be sent.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SigningError {
+    NoAuthorizationTicket(u64),
+    MissingGenerationLocation,
+}
+
+impl std::fmt::Display for SigningError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SigningError::NoAuthorizationTicket(aid) => {
+                write!(f, "no valid authorization ticket for ITS-AID {aid}")
+            }
+            SigningError::MissingGenerationLocation => {
+                write!(f, "DENM requires generation_location")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SigningError {}
 
 // ─── CAM security handler ───────────────────────────────────────────────
 
-/// Handles the signing and signer selection of CAMs according to ETSI TS 103 097 V2.1.1 (2021-10) §7.1.1:
+/// Handles the signing and signer selection of CAMs according to ETSI TS 103 097 V2.2.1 (2026-03) §7.1.1:
 /// - As default, the choice digest shall be included.
 /// - The choice certificate shall be included once, one second after the last inclusion of the choice certificate.
 /// - If the ITS-S receives a CAM signed by a previously unknown AT, it shall include the choice certificate immediately
@@ -38,6 +64,7 @@ use crate::security::time_service::timestamp_its_microseconds;
 ///   certificate shall be restarted.
 /// - If an ITS-S receives a CAM that includes a `tbsData.headerInfo` component of type `inlineP2pcdRequest`,
 ///   and finds its own AT's digest in that list, it shall include the choice certificate immediately in its next CAM.
+
 #[derive(Clone, Debug)]
 pub struct CooperativeAwarenessMessageSecurityHandler {
     pub backend: EcdsaBackend,
@@ -59,7 +86,7 @@ impl CooperativeAwarenessMessageSecurityHandler {
     /// Set up the signer choice for a CAM at the given timestamp in seconds.
     ///
     /// The whole certificate is attached if:
-    /// - More than 1 second has elapsed since the last full certificate attachment, or
+    /// - At least 1 second has elapsed since the last full certificate attachment, or
     /// - Own certificate was explicitly requested (e.g. peer sent unknown AT or P2PCD request).
     ///
     /// Otherwise, the digest (HashedId8) is attached.
@@ -68,9 +95,10 @@ impl CooperativeAwarenessMessageSecurityHandler {
         cert: &OwnCertificate,
         current_time: f64,
     ) -> SignerIdentifier {
-        if current_time - self.last_signer_full_certificate_time > 1.0
-            || self.requested_own_certificate
-        {
+        // Compared in microseconds so that exactly one second counts as elapsed.
+        let elapsed_us =
+            ((current_time - self.last_signer_full_certificate_time) * 1e6).round() as i64;
+        if elapsed_us >= 1_000_000 || self.requested_own_certificate {
             self.last_signer_full_certificate_time = current_time;
             self.requested_own_certificate = false;
             let asn_cert: AsnCertificate = cert.cert.inner.0.clone();
@@ -95,27 +123,65 @@ impl CooperativeAwarenessMessageSecurityHandler {
 
 // ─── SignService ─────────────────────────────────────────────────────────
 
+/// Time source of the sign service: the current UTC time in seconds since the
+/// Unix epoch. It dates the messages (generationTime), drives the
+/// certificate-inclusion timers and selects the ATs valid now.
+pub type SignClock = std::sync::Arc<dyn Fn() -> f64 + Send + Sync>;
+
+/// Source of the peer-to-peer CRL / CTL request inserted in the next CAM (ETSI
+/// TS 103 601 V2.1.1 clause 5.3.4), set by the CRL / CTL distribution service.
+pub type TrustListRequestProvider =
+    std::sync::Arc<dyn Fn() -> Option<TrustListRequest> + Send + Sync>;
+
 /// Signing service for ETSI TS 103 097-secured messages.
 pub struct SignService {
     pub backend: EcdsaBackend,
     pub cert_library: CertificateLibrary,
     pub cam_handler: CooperativeAwarenessMessageSecurityHandler,
+    /// Certificate timer of the messages other than CAM and DENM (clause
+    /// 7.1.3): the certificate once per second, the digest otherwise.
+    pub other_handler: CooperativeAwarenessMessageSecurityHandler,
     /// HashedId3 values of unknown ATs to include in `inlineP2pcdRequest`.
     pub unknown_ats: Vec<[u8; 3]>,
     /// HashedId3 values for which we should embed `requestedCertificate`.
     pub requested_ats: Vec<[u8; 3]>,
+    /// P2P CRL / CTL request for the next CAM (TS 103 601 clause 5.3.4).
+    pub trust_list_request: Option<TrustListRequestProvider>,
+    clock: Option<SignClock>,
 }
 
 impl SignService {
     pub fn new(backend: EcdsaBackend, cert_library: CertificateLibrary) -> Self {
         let cam_handler = CooperativeAwarenessMessageSecurityHandler::new(backend.clone());
+        let other_handler = CooperativeAwarenessMessageSecurityHandler::new(backend.clone());
         Self {
             backend,
             cert_library,
             cam_handler,
+            other_handler,
             unknown_ats: Vec::new(),
             requested_ats: Vec::new(),
+            trust_list_request: None,
+            clock: None,
         }
+    }
+
+    /// Use `clock` instead of the system time (UTC seconds since the Unix epoch).
+    pub fn with_clock(mut self, clock: SignClock) -> Self {
+        self.clock = Some(clock);
+        self
+    }
+
+    /// Current UTC time in seconds (the injected clock, or the system time).
+    pub fn now_secs(&self) -> f64 {
+        self.clock
+            .as_ref()
+            .map_or_else(unix_time_secs, |clock| clock())
+    }
+
+    /// Current ITS time (TAI) in microseconds, as `generationTime` (Time64).
+    pub fn now_its_us(&self) -> u64 {
+        ((self.now_secs() - ITS_EPOCH as f64 + ELAPSED_SECONDS as f64) * 1e6).round() as u64
     }
 
     /// Accessor for CAM security handler (cam_state).
@@ -129,26 +195,65 @@ impl SignService {
     }
 
     /// Route to the correct profile based on ITS-AID.
+    ///
+    /// # Panics
+    /// When no authorization ticket may sign the message; use
+    /// [`SignService::try_sign_request`] to handle that case.
     pub fn sign_request(&mut self, request: &SNSignRequest) -> SNSignConfirm {
+        self.try_sign_request(request).expect("No AT for signing")
+    }
+
+    /// Route to the correct profile based on ITS-AID; `Err` when no AT may
+    /// sign the message (the message shall then not be sent).
+    pub fn try_sign_request(
+        &mut self,
+        request: &SNSignRequest,
+    ) -> Result<SNSignConfirm, SigningError> {
         match request.its_aid {
-            36 => self.sign_cam(request),
-            37 => self.sign_denm(request),
-            _ => self.sign_other(request),
+            36 => self.try_sign_cam_at(request, None),
+            37 => self.try_sign_denm(request),
+            _ => self.try_sign_other(request),
         }
     }
 
-    /// Find the own certificate that covers the given ITS-AID.
+    /// Find the own certificate that may sign for the given ITS-AID now.
     pub fn get_present_at(&self, its_aid: u64) -> Option<&OwnCertificate> {
-        self.cert_library
-            .own_certificates
-            .values()
-            .find(|&cert| cert.get_list_of_its_aid().contains(&its_aid))
-            .map(|v| v as _)
+        self.select_at(its_aid, &[], None)
     }
 
     /// Parity alias for Python `get_present_at_for_signging`.
     pub fn get_present_at_for_signging(&self, its_aid: u64) -> Option<&OwnCertificate> {
         self.get_present_at(its_aid)
+    }
+
+    /// Select the AT to sign with (IEEE Std 1609.2-2016 clause 5.2.3.2.2):
+    /// its appPermissions contain the ITS-AID with an SSP granting the
+    /// requested `permissions`, the current time lies in the validity period
+    /// of its chain and, when `location` is given, the position lies in the
+    /// region of its chain.
+    pub fn select_at(
+        &self,
+        its_aid: u64,
+        permissions: &[u8],
+        location: Option<&GenerationLocation>,
+    ) -> Option<&OwnCertificate> {
+        let now_us = self.now_its_us();
+        self.cert_library.own_certificates.values().find(|cert| {
+            let (permitted, ssp) = app_permission(cert.tbs(), its_aid);
+            permitted
+                && ssp_covers(ssp.as_deref(), permissions)
+                && valid_at(&cert.cert, now_us)
+                && location.is_none_or(|l| location_permitted(&cert.cert, l.latitude, l.longitude))
+        })
+    }
+
+    fn at_for(&self, request: &SNSignRequest) -> Result<&OwnCertificate, SigningError> {
+        self.select_at(
+            request.its_aid,
+            &request.permissions,
+            request.generation_location.as_ref(),
+        )
+        .ok_or(SigningError::NoAuthorizationTicket(request.its_aid))
     }
 
     /// Look up a known CA certificate by its HashedId3 for inclusion in `requestedCertificate`.
@@ -161,7 +266,7 @@ impl SignService {
 
     // ── Helper: build the Ieee1609Dot2Data envelope ──────────────────────
 
-    fn build_signed_data(
+    pub(crate) fn build_signed_data(
         &self,
         payload: &[u8],
         header_info: HeaderInfo,
@@ -185,7 +290,12 @@ impl SignService {
         let tbs_bytes = encode_tbs_data(&tbs_data);
         let signature = at.sign_message(&self.backend, &tbs_bytes);
 
-        let signed_data = SignedData::new(HashAlgorithm::sha256, tbs_data, signer, signature);
+        let hash_id = if at.cert.uses_sha384() {
+            HashAlgorithm::sha384
+        } else {
+            HashAlgorithm::sha256
+        };
+        let signed_data = SignedData::new(hash_id, tbs_data, signer, signature);
 
         let outer = Ieee1609Dot2Data::new(Uint8(3), Ieee1609Dot2Content::signedData(signed_data));
         encode_ieee1609_dot2_data(&outer)
@@ -193,17 +303,25 @@ impl SignService {
 
     // ── §7.1.3 generic signed messages ───────────────────────────────────
 
-    pub fn sign_other(&self, request: &SNSignRequest) -> SNSignConfirm {
-        let at = self
-            .get_present_at(request.its_aid)
-            .expect("No AT for signing");
+    pub fn sign_other(&mut self, request: &SNSignRequest) -> SNSignConfirm {
+        self.try_sign_other(request).expect("No AT for signing")
+    }
 
-        let h = at.as_hashedid8();
-        let signer = SignerIdentifier::digest(HashedId8(FixedOctetString::from(h)));
+    /// Messages other than CAM and DENM (TS 103 097 clause 7.1.3, which does
+    /// not constrain the signer): the certificate once per second, so that
+    /// receivers can verify them without having heard a CAM, the digest
+    /// otherwise.
+    pub fn try_sign_other(
+        &mut self,
+        request: &SNSignRequest,
+    ) -> Result<SNSignConfirm, SigningError> {
+        let at = self.at_for(request)?.clone();
+        let now = self.now_secs();
+        let signer = self.other_handler.set_up_signer_at(&at, now);
 
         let header_info = HeaderInfo::new(
             Psid(Integer::from(request.its_aid as i64)),
-            Some(Time64(Uint64(timestamp_its_microseconds()))),
+            Some(Time64(Uint64(self.now_its_us()))),
             None,
             None,
             None,
@@ -215,28 +333,29 @@ impl SignService {
             None,
         );
 
-        let sec_message = self.build_signed_data(&request.tbs_message, header_info, signer, at);
-        SNSignConfirm { sec_message }
+        let sec_message = self.build_signed_data(&request.tbs_message, header_info, signer, &at);
+        Ok(SNSignConfirm { sec_message })
     }
 
     // ── §7.1.2 DENM ─────────────────────────────────────────────────────
 
     pub fn sign_denm(&self, request: &SNSignRequest) -> SNSignConfirm {
-        let at = self
-            .get_present_at(request.its_aid)
-            .expect("No AT for signing DENM");
+        self.try_sign_denm(request).expect("No AT for signing DENM")
+    }
 
+    pub fn try_sign_denm(&self, request: &SNSignRequest) -> Result<SNSignConfirm, SigningError> {
         let gen_loc = request
             .generation_location
             .as_ref()
-            .expect("DENM requires generation_location");
+            .ok_or(SigningError::MissingGenerationLocation)?;
+        let at = self.at_for(request)?;
 
         let asn_cert: AsnCertificate = at.cert.inner.0.clone();
         let signer = SignerIdentifier::certificate(SequenceOfCertificate(vec![asn_cert]));
 
         let header_info = HeaderInfo::new(
             Psid(Integer::from(request.its_aid as i64)),
-            Some(Time64(Uint64(timestamp_its_microseconds()))),
+            Some(Time64(Uint64(self.now_its_us()))),
             None,
             Some(ThreeDLocation {
                 latitude: Latitude(NinetyDegreeInt(gen_loc.latitude)),
@@ -253,7 +372,7 @@ impl SignService {
         );
 
         let sec_message = self.build_signed_data(&request.tbs_message, header_info, signer, at);
-        SNSignConfirm { sec_message }
+        Ok(SNSignConfirm { sec_message })
     }
 
     // ── §7.1.1 CAM ──────────────────────────────────────────────────────
@@ -262,28 +381,35 @@ impl SignService {
         self.sign_cam_at(request, None)
     }
 
-    /// Sign a CAM according to ETSI TS 103 097 V2.1.1 §5.2 and §7.1.1,
+    /// Sign a CAM according to ETSI TS 103 097 V2.2.1 §5.2 and §7.1.1,
     /// with an optional timestamp in seconds (for deterministic testing).
     pub fn sign_cam_at(
         &mut self,
         request: &SNSignRequest,
         timestamp_secs: Option<f64>,
     ) -> SNSignConfirm {
-        let at = self
-            .get_present_at(request.its_aid)
+        self.try_sign_cam_at(request, timestamp_secs)
             .expect("No AT for signing CAM")
-            .clone();
+    }
 
-        let signer = match timestamp_secs {
-            Some(t) => self.cam_handler.set_up_signer_at(&at, t),
-            None => self.cam_handler.set_up_signer(&at),
-        };
+    /// [`SignService::sign_cam_at`] returning `Err` when no AT may sign.
+    pub fn try_sign_cam_at(
+        &mut self,
+        request: &SNSignRequest,
+        timestamp_secs: Option<f64>,
+    ) -> Result<SNSignConfirm, SigningError> {
+        let at = self.at_for(request)?.clone();
 
-        // Build P2PCD inline request if needed
+        let now = timestamp_secs.unwrap_or_else(|| self.now_secs());
+        let signer = self.cam_handler.set_up_signer_at(&at, now);
+
+        // inlineP2pcdRequest: the certificates still unknown (TS 103 097
+        // clause 7.1.1); an entry is removed when the certificate is learned.
         let inline_p2pcd = if !self.unknown_ats.is_empty() {
             let hashes: Vec<_> = self
                 .unknown_ats
-                .drain(..)
+                .iter()
+                .copied()
                 .map(|h3| {
                     crate::security::security_asn::ieee1609_dot2_base_types::HashedId3(
                         FixedOctetString::from(h3),
@@ -299,17 +425,27 @@ impl SignService {
             None
         };
 
-        // Embed requestedCertificate if pending
-        let requested_cert = if !self.requested_ats.is_empty() {
-            let h3 = self.requested_ats.remove(0);
-            self.get_known_at_for_request(&h3).ok()
-        } else {
-            None
-        };
+        // requestedCertificate: only in a CAM signed with a digest; while the
+        // signer is a certificate the request stays pending (clause 7.1.1).
+        let requested_cert =
+            if !self.requested_ats.is_empty() && matches!(signer, SignerIdentifier::digest(_)) {
+                let h3 = self.requested_ats.remove(0);
+                self.get_known_at_for_request(&h3).ok()
+            } else {
+                None
+            };
+
+        // contributedExtensions: a single P2P CRL / CTL request per CAM (TS 103
+        // 601 clauses 5.3.2 and 5.3.4; TS 103 097 clause 7.1.1 allows them).
+        let contributed = self
+            .trust_list_request
+            .as_ref()
+            .and_then(|provider| provider())
+            .map(|r| encode_requests(std::slice::from_ref(&r)));
 
         let header_info = HeaderInfo::new(
             Psid(Integer::from(request.its_aid as i64)),
-            Some(Time64(Uint64(timestamp_its_microseconds()))),
+            Some(Time64(Uint64(self.now_its_us()))),
             None,
             None,
             None,
@@ -318,11 +454,11 @@ impl SignService {
             inline_p2pcd,
             requested_cert,
             None,
-            None,
+            contributed,
         );
 
         let sec_message = self.build_signed_data(&request.tbs_message, header_info, signer, &at);
-        SNSignConfirm { sec_message }
+        Ok(SNSignConfirm { sec_message })
     }
 
     // ── P2PCD notification helpers ───────────────────────────────────────
@@ -334,6 +470,12 @@ impl SignService {
             self.unknown_ats.push(h3);
         }
         self.cam_handler.requested_own_certificate = true;
+    }
+
+    /// An AT was learned (received as certificate signer): stop requesting it.
+    pub fn notify_known_at(&mut self, hashedid8: &[u8; 8]) {
+        let h3 = [hashedid8[5], hashedid8[6], hashedid8[7]];
+        self.unknown_ats.retain(|x| *x != h3);
     }
 
     /// Process a received `inlineP2pcdRequest`.
@@ -426,7 +568,11 @@ mod tests {
     }
 
     fn make_at_tbs(its_aid: i64) -> ToBeSignedCertificate {
-        let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(1)));
+        // Valid now: started a minute ago, one year long
+        let now_s =
+            (crate::security::time_service::timestamp_its_microseconds() / 1_000_000) as u32;
+        let validity =
+            ValidityPeriod::new(Time32(Uint32(now_s - 60)), AsnDuration::years(Uint16(1)));
         let app_perms = SequenceOfPsidSsp(vec![PsidSsp::new(Psid(Integer::from(its_aid)), None)]);
         let pk =
             PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::x_only(vec![0u8; 32].into()));
@@ -620,28 +766,28 @@ mod tests {
             );
         }
 
-        // Call 3 at t = 101.0s (exactly 1.0s later) -> digest (not strictly > 1.0s)
-        let confirm3 = svc.sign_cam_at(&req, Some(101.0));
+        // Call 3 at t = 100.999s (just under 1.0s later) -> digest
+        let confirm3 = svc.sign_cam_at(&req, Some(100.999));
         let dot2_3 = decode_ieee1609_dot2_data(&confirm3.sec_message);
         if let Ieee1609Dot2Content::signedData(sd) = dot2_3.content {
             assert!(
                 matches!(sd.signer, SignerIdentifier::digest(_)),
-                "Call at exactly 1.0s is digest"
+                "Call under 1.0s is digest"
             );
         }
 
-        // Call 4 at t = 101.05s (> 1.0s later) -> full certificate attached again!
-        let confirm4 = svc.sign_cam_at(&req, Some(101.05));
+        // Call 4 at t = 101.0s (one second later, TS 103 097 clause 7.1.1) -> full certificate again
+        let confirm4 = svc.sign_cam_at(&req, Some(101.0));
         let dot2_4 = decode_ieee1609_dot2_data(&confirm4.sec_message);
         if let Ieee1609Dot2Content::signedData(sd) = dot2_4.content {
             match sd.signer {
                 SignerIdentifier::certificate(certs) => {
                     assert_eq!(certs.0.len(), 1);
                 }
-                _ => panic!("Call > 1s later must attach full certificate again"),
+                _ => panic!("Call 1s later must attach full certificate again"),
             }
         }
-        assert_eq!(svc.cam_handler.last_signer_full_certificate_time, 101.05);
+        assert_eq!(svc.cam_handler.last_signer_full_certificate_time, 101.0);
     }
 
     #[test]
@@ -690,22 +836,37 @@ mod tests {
         assert!(matches!(signer1, SignerIdentifier::certificate(_)));
         assert_eq!(handler.last_signer_full_certificate_time, 100.0);
 
-        // Second call at 101.0 -> digest (101.0 - 100.0 == 1.0, not > 1.0)
-        let signer2 = handler.set_up_signer_at(&at, 101.0);
+        // Second call at 100.9 -> digest (under one second)
+        let signer2 = handler.set_up_signer_at(&at, 100.9);
         assert!(matches!(signer2, SignerIdentifier::digest(_)));
         assert_eq!(handler.last_signer_full_certificate_time, 100.0);
 
         // Third call with requested_own_certificate = true -> certificate
         handler.requested_own_certificate = true;
-        let signer3 = handler.set_up_signer_at(&at, 101.0);
+        let signer3 = handler.set_up_signer_at(&at, 100.95);
         assert!(matches!(signer3, SignerIdentifier::certificate(_)));
         assert!(!handler.requested_own_certificate);
-        assert_eq!(handler.last_signer_full_certificate_time, 101.0);
+        assert_eq!(handler.last_signer_full_certificate_time, 100.95);
 
-        // Fourth call at 102.5 -> certificate (> 1.0s elapsed)
-        let signer4 = handler.set_up_signer_at(&at, 102.5);
+        // One second after the last inclusion -> certificate (TS 103 097 clause 7.1.1)
+        assert!(matches!(
+            handler.set_up_signer_at(&at, 101.9),
+            SignerIdentifier::digest(_)
+        ));
+        assert!(matches!(
+            handler.set_up_signer_at(&at, 101.95),
+            SignerIdentifier::certificate(_)
+        ));
+        assert_eq!(handler.last_signer_full_certificate_time, 101.95);
+
+        // Later call at 102.5 -> digest (0.55 s elapsed); at 103.0 -> certificate
+        assert!(matches!(
+            handler.set_up_signer_at(&at, 102.5),
+            SignerIdentifier::digest(_)
+        ));
+        let signer4 = handler.set_up_signer_at(&at, 102.95);
         assert!(matches!(signer4, SignerIdentifier::certificate(_)));
-        assert_eq!(handler.last_signer_full_certificate_time, 102.5);
+        assert_eq!(handler.last_signer_full_certificate_time, 102.95);
     }
 
     #[test]
@@ -730,8 +891,10 @@ mod tests {
         }
     }
 
+    /// Clause 7.1.3 messages: the certificate once per second, the digest
+    /// otherwise (own timer, independent of the CAM one).
     #[test]
-    fn sign_other_always_uses_digest() {
+    fn sign_other_certificate_once_per_second() {
         let mut backend = EcdsaBackend::new();
         let root = OwnCertificate::initialize_self_signed(&mut backend, make_root_tbs());
         let aa = OwnCertificate::initialize_issued(&mut backend, make_root_tbs(), &root);
@@ -751,13 +914,21 @@ mod tests {
             permissions: vec![],
             generation_location: None,
         };
-        let confirm = svc.sign_other(&req);
-        let dot2 = decode_ieee1609_dot2_data(&confirm.sec_message);
-        if let Ieee1609Dot2Content::signedData(sd) = dot2.content {
-            assert!(matches!(sd.signer, SignerIdentifier::digest(_)));
-        } else {
-            panic!("Expected signedData");
-        }
+        let signer_is_certificate = |svc: &mut SignService| {
+            let confirm = svc.sign_other(&req);
+            match decode_ieee1609_dot2_data(&confirm.sec_message).content {
+                Ieee1609Dot2Content::signedData(sd) => {
+                    matches!(sd.signer, SignerIdentifier::certificate(_))
+                }
+                _ => panic!("Expected signedData"),
+            }
+        };
+        assert!(signer_is_certificate(&mut svc));
+        assert!(!signer_is_certificate(&mut svc));
+        assert_eq!(svc.cam_handler.last_signer_full_certificate_time, 0.0);
+        svc.other_handler.last_signer_full_certificate_time -= 1.5;
+        assert!(signer_is_certificate(&mut svc));
+        assert!(!signer_is_certificate(&mut svc));
     }
 
     #[test]

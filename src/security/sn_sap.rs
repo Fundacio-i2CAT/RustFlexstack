@@ -69,6 +69,7 @@ pub struct SNVerifyRequest {
 
 /// Verification outcome codes (Table 5, §5.2.2.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum ReportVerify {
     Success,
     FalseSignature,
@@ -82,6 +83,13 @@ pub enum ReportVerify {
     SignerCertificateNotFound,
     UnsupportedSignerIdentifierType,
     IncompatibleProtocol,
+}
+
+impl ReportVerify {
+    /// Numeric value of the report (Table 5), as carried in the GN/BTP indications.
+    pub fn code(&self) -> u8 {
+        *self as u8
+    }
 }
 
 /// SN-VERIFY.confirm
@@ -98,10 +106,16 @@ pub struct SNVerifyConfirm {
 /// Security profile selector (mirrors the Python SecurityProfile enum).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecurityProfile {
+    /// Parameter not set: with itsGnSecurity ENABLED the default profile signs
+    /// (ETSI TS 103 836-4-1 V2.2.1, NOTE of table 37).
     NoSecurity = 0,
     CooperativeAwarenessMessage = 1,
     DecentralizedEnvironmentalNotificationMessage = 2,
     VruAwarenessMessage = 3,
+    /// Unsecured packet (NH = Common Header, table 18) even with itsGnSecurity
+    /// ENABLED: the CRL / CTL broadcast, whose SM-PDU is signed by its issuer
+    /// (ETSI TS 103 601 V2.1.1 clause 5.4.2).
+    Unsecured = 4,
 }
 
 #[cfg(test)]

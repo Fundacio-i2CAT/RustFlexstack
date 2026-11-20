@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! DENM Transmission Management.
+//! DENM transmission: originating ITS-S operation of the DEN service
+//! (ETSI TS 103 831 V2.3.1 (2025-11), clauses 5.3.1 and 8.2).
 //!
-//! Mirrors `DENMTransmissionManagement` in
-//! `flexstack/facilities/decentralized_environmental_notification_service/denm_transmission_management.py`.
+//! The protocol rules live in [`super::den_protocol`]; this module turns
+//! application requests into protocol operations and hands the resulting DENMs
+//! to BTP (port 2002, GeoBroadcast, clause 6.1.3.4).
 //!
-//! The main entry point is [`DENMTransmissionManagement::trigger_denm_sending`],
-//! which spawns a background thread that:
-//! 1. Builds DENM PDUs from a [`DENRequest`] and static vehicle data.
-//! 2. UPER-encodes each DENM via [`DenmCoder`].
-//! 3. Sends a [`BTPDataRequest`] on BTP port **2002** using GeoBroadcast-Circle
-//!    transport, centred at the event position.
+//! Two request styles are supported:
+//! * the standard requests [`DENMTransmissionManagement::trigger`],
+//!   [`update`](DENMTransmissionManagement::update) and
+//!   [`terminate`](DENMTransmissionManagement::terminate) (AppDENM_trigger,
+//!   AppDENM_update, AppDENM_termination) taking a [`DenmRequest`];
+//! * the road-hazard [`DENRequest`], converted to an AppDENM_trigger with
+//!   repetition ([`DENMTransmissionManagement::trigger_denm_sending`]).
 //!
-//! Transmission repeats at the interval specified in the [`DENRequest`] until
-//! the configured `time_period_ms` has elapsed.
+//! Mirrors `flexstack/facilities/decentralized_environmental_notification_service/denm_transmission_management.py`.
 
+use super::den_protocol::{DenActionId, DenProtocol, DenResult, DenmRequest, OutgoingDenm};
 use super::denm_coder::{
     denm_header, timestamp_its_now, ActionId, Altitude, AltitudeConfidence, AltitudeValue,
     CauseCodeChoice, CauseCodeV2, DeltaAltitude, DeltaLatitude, DeltaLongitude,
@@ -29,13 +32,48 @@ use crate::btp::router::BTPRouterHandle;
 use crate::btp::service_access_point::BTPDataRequest;
 use crate::geonet::gn_address::{GNAddress, M, MID, ST};
 use crate::geonet::service_access_point::{
-    Area, CommonNH, CommunicationProfile, GeoBroadcastHST, HeaderSubType, HeaderType,
-    PacketTransportType, TrafficClass,
+    Area, CommonNH, CommunicationProfile, HeaderSubType, HeaderType, PacketTransportType,
 };
 use crate::security::sn_sap::SecurityProfile;
-use std::sync::atomic::{AtomicU16, Ordering};
-use std::thread;
-use std::time::Duration;
+use std::sync::{Arc, Condvar, Mutex};
+
+/// BTP port of the DEN service (ETSI TS 103 248).
+pub const DENM_BTP_PORT: u16 = 2002;
+/// ITS-AID of the DEN service (ETSI TS 102 965).
+pub const DENM_ITS_AID: u64 = 37;
+
+/// Source of the current time of the DEN service (TimestampIts, ms).
+pub type DenClock = Arc<dyn Fn() -> u64 + Send + Sync>;
+
+/// Protocol engine shared by transmission, reception and the timer thread.
+pub struct DenShared {
+    pub protocol: Mutex<DenProtocol>,
+    /// Signalled whenever the protocol timers may have changed.
+    pub wakeup: Condvar,
+    clock: Option<DenClock>,
+}
+
+impl DenShared {
+    pub fn new(protocol: DenProtocol) -> Arc<Self> {
+        Self::with_clock(protocol, None)
+    }
+
+    /// Shared engine whose time is read from `clock` (the system time when `None`).
+    pub fn with_clock(protocol: DenProtocol, clock: Option<DenClock>) -> Arc<Self> {
+        Arc::new(DenShared {
+            protocol: Mutex::new(protocol),
+            wakeup: Condvar::new(),
+            clock,
+        })
+    }
+
+    /// Current TimestampIts (ms) of the DEN service.
+    pub fn now(&self) -> u64 {
+        self.clock
+            .as_ref()
+            .map_or_else(|| timestamp_its_now().0, |clock| clock())
+    }
+}
 
 // ─── VehicleData ─────────────────────────────────────────────────────────────
 
@@ -115,15 +153,6 @@ impl Default for DENRequest {
             relevance_radius_m: 1000,
         }
     }
-}
-
-// ─── Sequence number counter ──────────────────────────────────────────────────
-
-/// Global atomic sequence number, shared across all DENM transmissions.
-static SEQUENCE_NUMBER: AtomicU16 = AtomicU16::new(0);
-
-fn next_sequence_number() -> u16 {
-    SEQUENCE_NUMBER.fetch_add(1, Ordering::Relaxed) % 65535
 }
 
 // ─── DENM builder ────────────────────────────────────────────────────────────
@@ -223,110 +252,255 @@ pub fn build_denm(request: &DENRequest, vd: &VehicleData, seq_nr: u16) -> Denm {
 
 // ─── DENMTransmissionManagement ──────────────────────────────────────────────
 
-/// DENM Transmission Management.
+/// Originating ITS-S operation of the DEN service (clause 8.2).
 ///
-/// Mirrors `DENMTransmissionManagement` in
-/// `flexstack/facilities/decentralized_environmental_notification_service/denm_transmission_management.py`.
+/// Mirrors `DENMTransmissionManagement` in the Python stack.
 pub struct DENMTransmissionManagement {
     btp_handle: BTPRouterHandle,
     coder: DenmCoder,
     vehicle_data: VehicleData,
+    shared: Arc<DenShared>,
+}
+
+/// Engine for a DEN service of this station; DENMs are validated by encoding.
+pub fn new_protocol(
+    vehicle_data: &VehicleData,
+    kaf_enabled: bool,
+    coder: &DenmCoder,
+) -> DenProtocol {
+    let coder = coder.clone();
+    DenProtocol::new(
+        vehicle_data.station_id,
+        vehicle_data.station_type,
+        kaf_enabled,
+        Some(Box::new(move |denm: &Denm| coder.encode(denm).map(|_| ()))),
+    )
 }
 
 impl DENMTransmissionManagement {
+    /// Standalone transmission management with its own protocol engine (no
+    /// timer thread: DENM repetition needs the DEN service).
     pub fn new(btp_handle: BTPRouterHandle, coder: DenmCoder, vehicle_data: VehicleData) -> Self {
+        let shared = DenShared::new(new_protocol(&vehicle_data, false, &coder));
+        Self::with_shared(btp_handle, coder, vehicle_data, shared)
+    }
+
+    /// Transmission management on a protocol engine shared with reception.
+    pub fn with_shared(
+        btp_handle: BTPRouterHandle,
+        coder: DenmCoder,
+        vehicle_data: VehicleData,
+        shared: Arc<DenShared>,
+    ) -> Self {
         DENMTransmissionManagement {
             btp_handle,
             coder,
             vehicle_data,
+            shared,
         }
     }
 
-    /// Trigger repeated DENM transmission in a new background thread.
-    ///
-    /// DENMs are sent every `request.denm_interval_ms` milliseconds for
-    /// `request.time_period_ms` total milliseconds.
-    pub fn trigger_denm_sending(&self, request: DENRequest) {
-        let btp_handle = self.btp_handle.clone();
-        let coder = self.coder.clone();
-        let vehicle_data = self.vehicle_data.clone();
+    // ── Standard application requests (clause 5.3.1) ──────────────────────
 
-        thread::spawn(move || {
-            let interval = Duration::from_millis(request.denm_interval_ms);
-            let end_time =
-                std::time::Instant::now() + Duration::from_millis(request.time_period_ms);
-
-            while std::time::Instant::now() < end_time {
-                let seq_nr = next_sequence_number();
-                let denm = build_denm(&request, &vehicle_data, seq_nr);
-                transmit_denm(&btp_handle, &coder, &denm, &request);
-                thread::sleep(interval);
-            }
-        });
+    /// AppDENM_trigger: returns the new actionId or a failure notification.
+    pub fn trigger(&self, request: &DenmRequest) -> DenResult {
+        let now = self.shared.now();
+        let (result, outgoing) = self.shared.protocol.lock().unwrap().trigger(request, now);
+        self.dispatch(result, outgoing)
     }
 
-    /// Transmit a single pre-built DENM immediately (fire-and-forget).
+    /// AppDENM_update for an event triggered by this ITS-S.
+    pub fn update(&self, action_id: DenActionId, request: &DenmRequest) -> DenResult {
+        let now = self.shared.now();
+        let (result, outgoing) = self
+            .shared
+            .protocol
+            .lock()
+            .unwrap()
+            .update(action_id, request, now);
+        self.dispatch(result, outgoing)
+    }
+
+    /// AppDENM_termination: cancellation (own event) or negation (received event).
+    pub fn terminate(&self, action_id: DenActionId, request: &DenmRequest) -> DenResult {
+        let now = self.shared.now();
+        let (result, outgoing) = self
+            .shared
+            .protocol
+            .lock()
+            .unwrap()
+            .terminate(action_id, request, now);
+        self.dispatch(result, outgoing)
+    }
+
+    // ── Road hazard signalling requests (DENRequest) ───────────────────────
+
+    /// AppDENM_trigger repeated every `denm_interval_ms` for `time_period_ms`
+    /// (DENM repetition, clause 6.1.2.3), with transmissionInterval set so
+    /// receivers may keep it alive. Repetition needs the DEN service timer.
+    pub fn trigger_denm_sending(&self, request: DENRequest) {
+        let _ = self.trigger(&self.to_denm_request(&request, true));
+    }
+
+    /// A single new DENM, no repetition.
     pub fn send_single_denm(&self, request: &DENRequest) {
-        let seq_nr = next_sequence_number();
-        let denm = build_denm(request, &self.vehicle_data, seq_nr);
-        transmit_denm(&self.btp_handle, &self.coder, &denm, request);
+        let _ = self.trigger(&self.to_denm_request(request, false));
+    }
+
+    /// AppDENM_trigger request carrying the content of a road-hazard request.
+    pub fn to_denm_request(&self, request: &DENRequest, repeat: bool) -> DenmRequest {
+        let denm = build_denm(request, &self.vehicle_data, 0);
+        let mut out = DenmRequest::new(denm.denm.management.event_position.clone());
+        out.situation = denm.denm.situation;
+        out.location = denm.denm.location;
+        out.validity_duration = Some(if request.time_period_ms == 0 {
+            super::den_protocol::DEFAULT_VALIDITY_DURATION_S
+        } else {
+            request.time_period_ms.div_ceil(1000).max(1) as u32
+        });
+        out.transmission_interval = Some(request.denm_interval_ms.clamp(1, 10_000) as u16);
+        out.station_type = Some(self.vehicle_data.station_type);
+        if repeat {
+            out.repetition_interval = Some(request.denm_interval_ms);
+            out.repetition_duration = Some(request.time_period_ms);
+        }
+        out.destination_area = Some(Area {
+            latitude: denm.denm.management.event_position.latitude.0 as u32,
+            longitude: denm.denm.management.event_position.longitude.0 as u32,
+            a: request.relevance_radius_m.min(u32::from(u16::MAX)) as u16,
+            b: 0,
+            angle: 0,
+        });
+        out
+    }
+
+    // ── Transmission ───────────────────────────────────────────────────────
+
+    fn dispatch(&self, result: DenResult, outgoing: Vec<OutgoingDenm>) -> DenResult {
+        for item in &outgoing {
+            transmit(&self.btp_handle, &self.coder, item);
+        }
+        if let Err(failure) = result {
+            eprintln!("[DEN] request failed: {failure:?}");
+        }
+        self.shared.wakeup.notify_all();
+        result
+    }
+
+    /// Encode a DENM and pass it to BTP-B port 2002 over GeoBroadcast.
+    pub fn transmit(&self, outgoing: &OutgoingDenm) {
+        transmit(&self.btp_handle, &self.coder, outgoing);
     }
 }
 
-// ─── Internal transmit helper ─────────────────────────────────────────────────
+/// Encode a DENM and pass it to BTP-B port 2002 over GeoBroadcast.
+pub fn transmit(btp_handle: &BTPRouterHandle, coder: &DenmCoder, outgoing: &OutgoingDenm) {
+    let Ok(data) = coder.encode(&outgoing.denm) else {
+        return;
+    };
+    btp_handle.send_btp_data_request(BTPDataRequest {
+        btp_type: CommonNH::BtpB,
+        source_port: 0,
+        destination_port: DENM_BTP_PORT,
+        destination_port_info: 0,
+        gn_packet_transport_type: PacketTransportType {
+            header_type: HeaderType::GeoBroadcast,
+            header_sub_type: HeaderSubType::GeoBroadcast(outgoing.area_type),
+        },
+        gn_destination_address: GNAddress {
+            m: M::GnMulticast,
+            st: ST::Unknown,
+            mid: MID::new([0xFF; 6]),
+        },
+        communication_profile: CommunicationProfile::Unspecified,
+        gn_area: outgoing.area,
+        traffic_class: outgoing.traffic_class,
+        security_profile: SecurityProfile::DecentralizedEnvironmentalNotificationMessage,
+        its_aid: DENM_ITS_AID,
+        // Sender-side SSP check (clause 6.2.2.2): sign only with an AT
+        // granting the cause code of this DENM.
+        security_permissions: super::denm_ssp::permissions_bitmap(&outgoing.denm),
+        gn_max_hop_limit: 10,
+        gn_max_packet_lifetime: None,
+        gn_repetition_interval: None,
+        gn_max_repetition_time: None,
+        destination: None,
+        length: data.len() as u16,
+        data,
+    });
+}
 
-fn transmit_denm(
-    btp_handle: &BTPRouterHandle,
-    coder: &DenmCoder,
-    denm: &Denm,
-    request: &DENRequest,
-) {
-    if let Ok(data) = coder.encode(denm) {
-        // Event position in 1/10 µdeg for the GN area centre (Area uses u32).
-        let area_lat =
-            ((request.event_latitude * 1e7).round() as i32).clamp(-900_000_000, 900_000_000) as u32;
-        let area_lon = ((request.event_longitude * 1e7).round() as i32)
-            .clamp(-1_800_000_000, 1_800_000_000) as u32;
+#[cfg(test)]
+mod tests {
+    use super::super::denm_coder::AccidentSubCauseCode;
+    use super::*;
+    use crate::geonet::mib::Mib;
+    use crate::geonet::service_access_point::GeoBroadcastHST;
+    use std::time::Duration;
 
-        let req = BTPDataRequest {
-            btp_type: CommonNH::BtpB,
-            source_port: 0,
-            destination_port: 2002, // BTP port for DENM
-            destination_port_info: 0,
-            gn_packet_transport_type: PacketTransportType {
-                header_type: HeaderType::GeoBroadcast,
-                header_sub_type: HeaderSubType::GeoBroadcast(GeoBroadcastHST::GeoBroadcastCircle),
-            },
-            gn_destination_address: GNAddress {
-                m: M::GnMulticast,
-                st: ST::Unknown,
-                mid: MID::new([0xFF; 6]),
-            },
-            communication_profile: CommunicationProfile::Unspecified,
-            gn_area: Area {
-                latitude: area_lat,
-                longitude: area_lon,
-                a: request.relevance_radius_m as u16, // semi-major axis (m)
-                b: 0,
-                angle: 0,
-            },
-            traffic_class: TrafficClass {
-                scf: false,
-                channel_offload: false,
-                tc_id: 0,
-            },
-            security_profile: SecurityProfile::DecentralizedEnvironmentalNotificationMessage,
-            its_aid: 37,
-            security_permissions: vec![],
-            gn_max_hop_limit: 10,
-            gn_max_packet_lifetime: None,
-            gn_repetition_interval: None,
-            gn_max_repetition_time: None,
-            destination: None,
-            length: data.len() as u16,
-            data,
+    fn vehicle(station_id: u32) -> VehicleData {
+        VehicleData {
+            station_id,
+            station_type: 5,
+        }
+    }
+
+    /// New event (TS 103 831 clauses 6.1.1, 8.2.2): the actionID of a new DENM contains the StationID of
+    /// the originating ITS-S.
+    #[test]
+    fn build_denm_action_id_contains_station_id() {
+        let denm = build_denm(&DENRequest::default(), &vehicle(4242), 7);
+        let action_id = &denm.denm.management.action_id;
+        assert_eq!(action_id.originating_station_id.0, 4242);
+        assert_eq!(action_id.sequence_number.0, 7);
+        assert_eq!(denm.header.station_id.0, 4242);
+    }
+
+    /// New event (TS 103 831 clauses 6.1.1, 8.2.2): cause and sub-cause are those provided by the
+    /// application.
+    #[test]
+    fn build_denm_carries_application_cause_code() {
+        let request = DENRequest {
+            cause_code: CauseCodeChoice::accident2(AccidentSubCauseCode(3)),
+            ..DENRequest::default()
         };
+        let denm = build_denm(&request, &vehicle(1), 0);
+        let situation = denm.denm.situation.expect("situation container");
+        assert_eq!(situation.event_type.cc_and_scc, request.cause_code);
+    }
 
-        btp_handle.send_btp_data_request(req);
+    /// New event (TS 103 831 clauses 6.1.1, 8.2.2): referenceTime of a new DENM is the current time.
+    #[test]
+    fn build_denm_reference_time_is_now() {
+        let before = timestamp_its_now().0;
+        let denm = build_denm(&DENRequest::default(), &vehicle(1), 0);
+        let after = timestamp_its_now().0;
+        let reference = denm.denm.management.reference_time.0;
+        assert!(reference >= before && reference <= after);
+    }
+
+    /// DENM encapsulation (TS 103 831 clause 5.4.2.2): a DENM is sent as BTP-B to port 2002 in a
+    /// GeoNetworking GBC (circle) packet.
+    #[test]
+    fn send_single_denm_uses_btp_b_port_2002_over_gbc() {
+        let (btp_handle, gn_rx) = crate::btp::router::Router::spawn(Mib::new());
+        let dtm = DENMTransmissionManagement::new(btp_handle, DenmCoder::new(), vehicle(1));
+        dtm.send_single_denm(&DENRequest::default());
+
+        let gn_req = gn_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("DENM did not reach GeoNetworking");
+        assert_eq!(gn_req.upper_protocol_entity, CommonNH::BtpB);
+        assert_eq!(
+            gn_req.packet_transport_type.header_type,
+            HeaderType::GeoBroadcast
+        );
+        assert_eq!(
+            gn_req.packet_transport_type.header_sub_type,
+            HeaderSubType::GeoBroadcast(GeoBroadcastHST::GeoBroadcastCircle)
+        );
+        // BTP-B header: destination port 2002 (0x07D2).
+        assert_eq!(&gn_req.data[0..2], &[0x07, 0xD2]);
+        assert_eq!(gn_req.its_aid, 37);
     }
 }

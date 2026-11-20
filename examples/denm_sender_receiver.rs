@@ -36,7 +36,7 @@ use rustflexstack::facilities::decentralized_environmental_notification_service:
 };
 use rustflexstack::facilities::location_service::{GpsFix, LocationService};
 use rustflexstack::geonet::gn_address::{GNAddress, M, MID, ST};
-use rustflexstack::geonet::mib::Mib;
+use rustflexstack::geonet::mib::{GnIfType, Mib};
 use rustflexstack::geonet::position_vector::LongPositionVector;
 use rustflexstack::geonet::router::Router as GNRouter;
 use rustflexstack::link_layer::raw_link_layer::RawLinkLayer;
@@ -76,6 +76,7 @@ fn main() {
     // ── MIB ───────────────────────────────────────────────────────────────────
     let mut mib = Mib::new();
     mib.itsGnLocalGnAddr = GNAddress::new(M::GnMulticast, ST::PassengerCar, MID::new(mac));
+    mib.itsGnIfType = GnIfType::ItsG5;
     mib.itsGnBeaconServiceRetransmitTimer = 0;
 
     // ── Location Service ──────────────────────────────────────────────────────
@@ -93,7 +94,16 @@ fn main() {
 
     // ── Wire RawLinkLayer ─────────────────────────────────────────────────────
     let (ll_to_gn_tx, ll_to_gn_rx) = mpsc::channel::<Vec<u8>>();
-    let raw_ll = RawLinkLayer::new(ll_to_gn_tx, gn_to_ll_rx, &iface, mac);
+    // Unicast forwarding steps go to the next hop's MAC address (TS 103 836-4-1 clause E.2).
+    let (unicast_tx, unicast_rx) = mpsc::channel();
+    gn_handle.set_unicast_sender(unicast_tx);
+    let raw_ll =
+        RawLinkLayer::new(ll_to_gn_tx, gn_to_ll_rx, &iface, mac).with_unicast_receiver(unicast_rx);
+    // ETSI TS 103 836-4-2 clause 6.1: over ITS-G5 the MID is the interface MAC address
+    assert!(
+        mib.media_dependent_address_ok(Some(raw_ll.media_dependent_mid())),
+        "itsGnLocalGnAddr MID must be the MAC address of the link layer"
+    );
     raw_ll.start();
 
     // ── Wire threads ──────────────────────────────────────────────────────────
@@ -127,12 +137,13 @@ fn main() {
     thread::spawn(move || {
         while let Ok(fix) = gn_gps_rx.recv() {
             let mut epv = LongPositionVector::decode([0u8; 24]);
-            epv.update_from_gps(
+            epv.update_from_gps_at(
                 fix.latitude,
                 fix.longitude,
                 fix.speed_mps,
                 fix.heading_deg,
                 fix.pai,
+                fix.fix_time_ms,
             );
             gn_h3.update_position_vector(epv);
         }
@@ -175,6 +186,7 @@ fn main() {
         speed_mps: 14.0, // ~50 km/h
         heading_deg: 90.0,
         pai: true,
+        fix_time_ms: None,
     };
     loc_svc.publish(gps_fix);
 

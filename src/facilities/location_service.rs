@@ -31,6 +31,7 @@
 //!         speed_mps:   0.0,
 //!         heading_deg: 0.0,
 //!         pai:         true,
+//!         fix_time_ms: None,
 //!     });
 //! });
 //!
@@ -68,6 +69,10 @@ pub struct GpsFix {
     /// Position Accuracy Indicator — `true` when the position fix is
     /// considered accurate (≤ 4 m, ETSI EN 302 636-4-1 §9.2.2.2).
     pub pai: bool,
+    /// UTC time of the position acquisition in ms since the Unix epoch (the
+    /// gpsd TPV `time`); the GN position vector TST is set from it (ETSI TS
+    /// 103 836-4-1 clause 9.5.2.2). `None`: the time of reception.
+    pub fix_time_ms: Option<u64>,
 }
 
 impl Default for GpsFix {
@@ -79,6 +84,7 @@ impl Default for GpsFix {
             speed_mps: 0.0,
             heading_deg: 0.0,
             pai: false,
+            fix_time_ms: None,
         }
     }
 }
@@ -169,6 +175,7 @@ mod tests {
             speed_mps: 10.0,
             heading_deg: 90.0,
             pai: true,
+            fix_time_ms: None,
         };
         svc.publish(fix);
         let received = rx.recv().unwrap();

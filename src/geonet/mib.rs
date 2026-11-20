@@ -128,6 +128,8 @@ impl SnDecapResultHandling {
 pub enum NonAreaForwardingAlgorithm {
     Unspecified,
     Greedy,
+    /// Non-area contention-based forwarding (ETSI TS 103 836-4-1 V2.2.1, clause E.3).
+    Cbf,
 }
 
 impl NonAreaForwardingAlgorithm {
@@ -135,6 +137,7 @@ impl NonAreaForwardingAlgorithm {
         match self {
             NonAreaForwardingAlgorithm::Unspecified => 0,
             NonAreaForwardingAlgorithm::Greedy => 1,
+            NonAreaForwardingAlgorithm::Cbf => 2,
         }
     }
 
@@ -142,6 +145,7 @@ impl NonAreaForwardingAlgorithm {
         match value {
             0 => NonAreaForwardingAlgorithm::Unspecified,
             1 => NonAreaForwardingAlgorithm::Greedy,
+            2 => NonAreaForwardingAlgorithm::Cbf,
             _ => panic!("Invalid NonAreaForwardingAlgorithm Value"),
         }
     }
@@ -220,6 +224,22 @@ impl Default for Mib {
 }
 
 impl Mib {
+    /// Whether itsGnLocalGnAddr follows the media-dependent rule of
+    /// itsGnIfType: ITS-G5, MID = MAC address of the interface (ETSI TS
+    /// 103 836-4-2 V2.1.1 clause 6.1); LTE-V2X, MID = 24-bit Source Layer 2
+    /// ID followed by three zero octets (ETSI TS 103 836-4-3 V2.1.1 clause
+    /// 5.2). `link_layer_mid` is the MID reported by the link layer; when it
+    /// is unknown only the LTE-V2X zero octets are checked. Always true for
+    /// an unspecified interface type.
+    pub fn media_dependent_address_ok(&self, link_layer_mid: Option<MID>) -> bool {
+        let mid = self.itsGnLocalGnAddr.mid.as_bytes();
+        match self.itsGnIfType {
+            GnIfType::Unspecified => true,
+            GnIfType::LteV2x if mid[3..] != [0, 0, 0] => false,
+            _ => link_layer_mid.is_none_or(|l| l.as_bytes() == mid),
+        }
+    }
+
     pub fn new() -> Self {
         {
             Mib {

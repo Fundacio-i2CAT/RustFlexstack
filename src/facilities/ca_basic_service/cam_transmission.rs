@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! CAM Transmission Management — ETSI TS 103 900 V2.2.1 (2025-02).
+//! CAM Transmission Management — ETSI TS 103 900 V2.3.1 (2026-05), the latest version.
 //!
 //! Mirrors `CAMTransmissionManagement` in
 //! `flexstack/facilities/ca_basic_service/cam_transmission_management.py`.
 //!
 //! Key standard-compliance additions:
-//!   - Timer-based (T_CheckCamGen) instead of GPS-callback-reactive (§6.1.3, Annex B).
-//!   - T_GenCam is initialised to T_GenCamMax (not T_GenCamMin) as mandated by §6.1.3.
+//!   - Timer-based (T_CheckCamGen) instead of GPS-callback-reactive (§6.1.2, Annex B).
+//!   - T_GenCam is initialised to T_GenCamMax (not T_GenCamMin) as mandated by §6.1.2.
 //!   - Condition 1 (dynamics: heading/position/speed) and Condition 2 (time) are both
 //!     evaluated on every T_CheckCamGen tick.
-//!   - N_GenCam counter resets T_GenCam to T_GenCamMax after N_GenCam consecutive
-//!     condition-1 CAMs.
+//!   - A condition-1 CAM sets T_GenCam to the elapsed time; N_GenCam consecutive
+//!     condition-2 CAMs reset it to T_GenCamMax; the first CAM keeps T_GenCamMax.
 //!   - Low-Frequency, Special-Vehicle, Very-Low-Frequency and Two-Wheeler extension
-//!     containers are included according to §6.1.3.
-//!   - GN max packet lifetime set to 1000 ms per §5.3.4.1.
+//!     containers are included according to §6.1.2.
+//!   - GN max packet lifetime 950 ms, below 1 s (TS 102 868-2 TP/CAM/MSD/PAR/BV-03;
+//!     single-hop BTP-B/SHB per §6.1.1 and §5.3.4; V2.2.1 §5.3.4.1 allows at most
+//!     1000 ms, V2.3.1 leaves it to the NTL protocol stack).
 //!   - Ingestion into LDM on transmission if LDM adapter is configured.
 
 use super::cam_bindings::cam_pdu_descriptions::{
@@ -24,8 +26,8 @@ use super::cam_bindings::cam_pdu_descriptions::{
     WrappedExtensionContainer, WrappedExtensionContainers,
 };
 use super::cam_bindings::etsi_its_cdd::{
-    DeltaAltitude, DeltaLatitude, DeltaLongitude, DeltaReferencePosition, ExteriorLights, Path,
-    PathDeltaTime, PathPoint, VehicleRole,
+    AccelerationControl, DeltaAltitude, DeltaLatitude, DeltaLongitude, DeltaReferencePosition,
+    ExteriorLights, Path, PathDeltaTime, PathPoint, VehicleRole,
 };
 use super::cam_coder::{
     cam_header, generate_white_cam_static, generation_delta_time_now, AccelerationComponent,
@@ -56,7 +58,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-// ─── Timing constants (ETSI TS 103 900 V2.2.1 §6.1.3) ───────────────────────
+// ─── Timing constants (ETSI TS 103 900 V2.3.1 §6.1.2) ───────────────────────
 
 /// T_GenCamMin [ms]: minimum CAM generation interval (10 Hz maximum rate).
 pub const T_GEN_CAM_MIN_MS: u64 = 100;
@@ -67,27 +69,34 @@ pub const T_CHECK_CAM_GEN_MS: u64 = T_GEN_CAM_MIN_MS;
 /// Default T_GenCam_DCC [ms] used until a DCC entity provides a value.
 ///
 /// T_GenCam_DCC is the DCC-imposed minimum interval ∈ [T_GenCamMin, T_GenCamMax]
-/// (§6.1.3). Set it at runtime with
+/// (§6.1.2). Set it at runtime with
 /// [`CAMTransmissionManagement::set_t_gen_cam_dcc`], typically from a
 /// [`DccEntity`](crate::management::DccEntity) listener.
 pub const T_GEN_CAM_DCC_MS: u64 = T_GEN_CAM_MIN_MS;
 
-// ─── Optional-container intervals (§6.1.3) ───────────────────────────────────
+// ─── Optional-container intervals (§6.1.2) ───────────────────────────────────
 
-/// N_GenCam: max consecutive condition-1-triggered CAMs before resetting T_GenCam.
+/// N_GenCam: consecutive condition-2 CAMs after which T_GenCam returns to T_GenCamMax (§6.1.2).
 pub const N_GEN_CAM_DEFAULT: u32 = 3;
 /// Low-frequency container minimum interval [ms].
 pub const T_GEN_CAM_LF_MS: u64 = 500;
+/// GN packet lifetime of CAMs [s]: below 1 s (TS 102 868-2 TP/CAM/MSD/PAR/BV-03;
+/// TS 103 900 V2.2.1 §5.3.4.1: at most 1000 ms); 950 ms = 19 x 50 ms.
+pub const CAM_PACKET_LIFETIME_S: f64 = 0.95;
+/// Tolerance of the elapsed-time comparisons [ms]: the evaluations are at
+/// least T_CheckCamGen apart, but millisecond truncation of the timestamps can
+/// make the measured interval 1 ms shorter.
+pub const TIMESTAMP_TOLERANCE_MS: u64 = 1;
 /// Special-vehicle container minimum interval [ms].
 pub const T_GEN_CAM_SPECIAL_MS: u64 = 500;
 /// Very-low-frequency container minimum interval [ms].
 pub const T_GEN_CAM_VLF_MS: u64 = 10_000;
 
-/// Station types that must include the Two-Wheeler extension container (§6.1.3):
+/// Station types that must include the Two-Wheeler extension container (§6.1.2):
 /// cyclist(2), moped(3), motorcycle(4).
 pub const TWO_WHEELER_STATION_TYPES: [u8; 3] = [2, 3, 4];
 
-/// VehicleRole enum names indexed by integer value (§6.1.3 / CDD).
+/// VehicleRole enum names indexed by integer value (§6.1.2 / CDD).
 pub const VEHICLE_ROLE_NAMES: [VehicleRole; 16] = [
     VehicleRole::default,
     VehicleRole::publicTransport,
@@ -185,7 +194,7 @@ pub fn create_heading_confidence(epd: f64) -> HeadingConfidence {
 /// Static vehicle data used to populate every CAM.
 ///
 /// Mirrors the `VehicleData` frozen dataclass in the Python implementation
-/// (ETSI TS 103 900 V2.2.1).
+/// (ETSI TS 103 900 V2.3.1).
 #[derive(Debug, Clone, PartialEq)]
 pub struct VehicleData {
     /// ITS station ID (0–4 294 967 295).
@@ -200,7 +209,7 @@ pub struct VehicleData {
     /// Vehicle width in 0.1 m units (1–61 valid; 62 = unavailable).
     pub vehicle_width: u8,
     /// VehicleRole (0=default). Used in the Low-Frequency container and to
-    /// decide whether a Special-Vehicle container is required (§6.1.3).
+    /// decide whether a Special-Vehicle container is required (§6.1.2).
     pub vehicle_role: u8,
     /// ExteriorLights BIT STRING (SIZE(8)). One byte; bits ordered MSB→LSB
     /// correspond to lowBeam(0)…parkingLights(7). Default = all off.
@@ -241,6 +250,26 @@ impl VehicleData {
         }
         if self.exterior_lights.is_empty() {
             return Err("exterior_lights must be at least 1 byte".to_string());
+        }
+        // The special vehicle container must be the one of the vehicle role
+        // (TS 103 900 V2.3.1 clause 7.6, Annex A).
+        if let Some(container) = &self.special_vehicle_data {
+            let given = super::cam_ssp::special_container_name(container);
+            match super::cam_ssp::role_special_container(self.vehicle_role) {
+                None => {
+                    return Err(format!(
+                        "vehicle_role {} has no special vehicle container",
+                        self.vehicle_role
+                    ))
+                }
+                Some(expected) if expected != given => {
+                    return Err(format!(
+                        "vehicle_role {} requires {expected}, got {given}",
+                        self.vehicle_role
+                    ))
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -389,9 +418,88 @@ pub struct TransmissionState {
     pub last_cam_generation_delta_time: Option<GenerationDeltaTime>,
 }
 
+// ─── In-vehicle data (§5.2, §7.1) ─────────────────────────────────────────────
+
+/// AccelerationControl BIT STRING (SIZE(7)) bit names (ETSI TS 102 894-2 CDD).
+pub const ACCELERATION_CONTROL_BITS: [&str; 7] = [
+    "brakePedalEngaged",
+    "gasPedalEngaged",
+    "emergencyBrakeEngaged",
+    "collisionWarningEngaged",
+    "accEngaged",
+    "cruiseControlEngaged",
+    "speedLimiterEngaged",
+];
+/// ExteriorLights BIT STRING (SIZE(8)) bit names (ETSI TS 102 894-2 CDD).
+pub const EXTERIOR_LIGHTS_BITS: [&str; 8] = [
+    "lowBeamHeadlightsOn",
+    "highBeamHeadlightsOn",
+    "leftTurnSignalOn",
+    "rightTurnSignalOn",
+    "daytimeRunningLightsOn",
+    "reverseLightOn",
+    "fogLightOn",
+    "parkingLightsOn",
+];
+
+/// Latest in-vehicle data provided to the CA basic service (ETSI TS 103 900
+/// V2.3.1 clauses 5.2 and 7.1): the next generated CAM carries these values.
+/// `None` keeps the static value of [`VehicleData`] (drive direction, exterior
+/// lights) or omits the optional field (accelerationControl). The bit arrays
+/// are indexed as [`ACCELERATION_CONTROL_BITS`] / [`EXTERIOR_LIGHTS_BITS`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct InVehicleData {
+    /// CurvatureValue (-1023..1023, 1023 = unavailable).
+    pub curvature_value: i16,
+    pub curvature_confidence: CurvatureConfidence,
+    pub curvature_calculation_mode: CurvatureCalculationMode,
+    /// YawRateValue in 0,01 degree/s (-32766..32767, 32767 = unavailable).
+    pub yaw_rate_value: i16,
+    pub yaw_rate_confidence: YawRateConfidence,
+    pub drive_direction: Option<DriveDirection>,
+    pub acceleration_control: Option<[bool; 7]>,
+    pub exterior_lights: Option<[bool; 8]>,
+}
+
+impl Default for InVehicleData {
+    fn default() -> Self {
+        InVehicleData {
+            curvature_value: 1023,
+            curvature_confidence: CurvatureConfidence::unavailable,
+            curvature_calculation_mode: CurvatureCalculationMode::unavailable,
+            yaw_rate_value: 32767,
+            yaw_rate_confidence: YawRateConfidence::unavailable,
+            drive_direction: None,
+            acceleration_control: None,
+            exterior_lights: None,
+        }
+    }
+}
+
+impl InVehicleData {
+    /// Check the value ranges of the CDD.
+    pub fn validate(&self) -> Result<(), String> {
+        if !(-1023..=1023).contains(&self.curvature_value) {
+            return Err("curvature_value out of range (-1023..1023)".into());
+        }
+        if self.yaw_rate_value < -32766 {
+            return Err("yaw_rate_value out of range (-32766..32767)".into());
+        }
+        Ok(())
+    }
+}
+
+fn bit_string<const N: usize>(bits: &[bool; N]) -> rasn::types::FixedBitString<N> {
+    let mut out = rasn::types::FixedBitString::<N>::default();
+    for (i, bit) in bits.iter().enumerate() {
+        out.set(i, *bit);
+    }
+    out
+}
+
 // ─── CAMTransmissionManagement ───────────────────────────────────────────────
 
-/// CAM Transmission Management — ETSI TS 103 900 V2.2.1 §6.1.
+/// CAM Transmission Management — ETSI TS 103 900 V2.3.1 §6.1.
 #[derive(Clone)]
 pub struct CAMTransmissionManagement {
     pub btp_handle: BTPRouterHandle,
@@ -406,6 +514,8 @@ pub struct CAMTransmissionManagement {
 
     pub state: Arc<Mutex<TransmissionState>>,
     pub active: Arc<AtomicBool>,
+    /// Latest in-vehicle data (§5.2, §7.1).
+    pub in_vehicle_data: Arc<Mutex<InVehicleData>>,
 }
 
 impl CAMTransmissionManagement {
@@ -426,10 +536,37 @@ impl CAMTransmissionManagement {
             n_gen_cam_counter: Arc::new(AtomicU32::new(0)),
             state: Arc::new(Mutex::new(TransmissionState::default())),
             active: Arc::new(AtomicBool::new(false)),
+            in_vehicle_data: Arc::new(Mutex::new(InVehicleData::default())),
         }
     }
 
-    /// Activate the CA service (§6.1.2).
+    /// Update the latest in-vehicle data (§5.2, §7.1): the next CAM carries
+    /// the new values. Invalid values return an error and leave the data
+    /// unchanged.
+    pub fn update_in_vehicle_data(
+        &self,
+        update: impl FnOnce(&mut InVehicleData),
+    ) -> Result<InVehicleData, String> {
+        let mut guard = self
+            .in_vehicle_data
+            .lock()
+            .map_err(|_| "in-vehicle data lock poisoned".to_string())?;
+        let mut data = guard.clone();
+        update(&mut data);
+        data.validate()?;
+        *guard = data.clone();
+        Ok(data)
+    }
+
+    /// The latest in-vehicle data.
+    pub fn in_vehicle_data(&self) -> InVehicleData {
+        self.in_vehicle_data
+            .lock()
+            .map(|d| d.clone())
+            .unwrap_or_default()
+    }
+
+    /// Activate the CA service (§5.3.1 (CA_Activation)).
     ///
     /// Resets per-activation dynamics and timer state.
     pub fn start(&self) {
@@ -453,7 +590,7 @@ impl CAMTransmissionManagement {
         }
     }
 
-    /// Deactivate the CA service (§6.1.2).
+    /// Deactivate the CA service (§5.3.1 (CA_Activation)).
     pub fn stop(&self) {
         self.active.store(false, Ordering::SeqCst);
     }
@@ -473,7 +610,7 @@ impl CAMTransmissionManagement {
         self.t_gen_cam_dcc_ms.load(Ordering::SeqCst)
     }
 
-    /// Set T_GenCam_DCC (§6.1.3), clamped to [T_GenCamMin, T_GenCamMax].
+    /// Set T_GenCam_DCC (§6.1.2), clamped to [T_GenCamMin, T_GenCamMax].
     ///
     /// Shared by all clones of this instance, so it may be called from a DCC
     /// entity thread while the transmission thread is running.
@@ -492,7 +629,7 @@ impl CAMTransmissionManagement {
         self.state.lock().ok().and_then(|st| st.last_cam_time_ms)
     }
 
-    /// Cache the latest position data (§6.1.3).
+    /// Cache the latest position data (§6.1.2).
     ///
     /// This method only updates the internal position cache and does not
     /// trigger transmission directly.
@@ -502,7 +639,7 @@ impl CAMTransmissionManagement {
         }
     }
 
-    /// Return true if at least one dynamics threshold is exceeded (§6.1.3 Condition 1).
+    /// Return true if at least one dynamics threshold is exceeded (§6.1.2 Condition 1).
     ///
     /// Thresholds:
     ///   - |Δheading| > 4°
@@ -546,7 +683,7 @@ impl CAMTransmissionManagement {
         false
     }
 
-    /// Low-Frequency container: first CAM, then every ≥ 500 ms (§6.1.3).
+    /// Low-Frequency container: first CAM, then every ≥ 500 ms (§6.1.2).
     pub fn should_include_lf(&self, now_ms: u64) -> bool {
         let st = match self.state.lock() {
             Ok(s) => s,
@@ -561,7 +698,7 @@ impl CAMTransmissionManagement {
         }
     }
 
-    /// Special-Vehicle container: first CAM (if role ≠ default), then ≥ 500 ms (§6.1.3).
+    /// Special-Vehicle container: first CAM (if role ≠ default), then ≥ 500 ms (§6.1.2).
     pub fn should_include_special_vehicle(&self, now_ms: u64) -> bool {
         if self.vehicle_data.vehicle_role == 0 {
             return false;
@@ -579,7 +716,7 @@ impl CAMTransmissionManagement {
         }
     }
 
-    /// Very-Low-Frequency extension container (§6.1.3):
+    /// Very-Low-Frequency extension container (§6.1.2):
     ///   - Second CAM after activation (cam_count == 1).
     ///   - After that: ≥ 10 s elapsed AND LF/special containers NOT included.
     pub fn should_include_vlf(&self, now_ms: u64, include_lf: bool, include_special: bool) -> bool {
@@ -598,7 +735,7 @@ impl CAMTransmissionManagement {
         }
     }
 
-    /// Two-Wheeler extension container in ALL CAMs for cyclist/moped/motorcycle (§6.1.3).
+    /// Two-Wheeler extension container in ALL CAMs for cyclist/moped/motorcycle (§6.1.2).
     pub fn should_include_two_wheeler(&self) -> bool {
         TWO_WHEELER_STATION_TYPES.contains(&self.vehicle_data.station_type)
     }
@@ -612,19 +749,24 @@ impl CAMTransmissionManagement {
             VehicleRole::default
         };
 
-        let mut ext_bits = rasn::types::FixedBitString::<8>::default();
-        let lights_byte = self
-            .vehicle_data
-            .exterior_lights
-            .first()
-            .copied()
-            .unwrap_or(0);
-        for i in 0..8 {
-            if lights_byte & (1 << (7 - i)) != 0 {
-                ext_bits.set(i, true);
+        let ext_lights = match self.in_vehicle_data().exterior_lights {
+            Some(bits) => ExteriorLights(bit_string(&bits)),
+            None => {
+                let mut ext_bits = rasn::types::FixedBitString::<8>::default();
+                let lights_byte = self
+                    .vehicle_data
+                    .exterior_lights
+                    .first()
+                    .copied()
+                    .unwrap_or(0);
+                for i in 0..8 {
+                    if lights_byte & (1 << (7 - i)) != 0 {
+                        ext_bits.set(i, true);
+                    }
+                }
+                ExteriorLights(ext_bits)
             }
-        }
-        let ext_lights = ExteriorLights(ext_bits);
+        };
 
         let path_points = self.get_path_history(fix, now_ms);
         let path = Path(path_points);
@@ -683,22 +825,23 @@ impl CAMTransmissionManagement {
         };
         let t_gen_cam_dcc = self.t_gen_cam_dcc_ms.load(Ordering::SeqCst);
 
-        // First CAM after activation — send immediately
-        if last_time.is_none() {
+        // First CAM after activation — send immediately; T_GenCam keeps its
+        // default T_GenCamMax (condition 0: neither 1 nor 2).
+        let Some(last_time) = last_time else {
+            return self.generate_and_send_cam(&fix, now_ms, 0).ok();
+        };
+
+        let elapsed_ms = now_ms
+            .saturating_sub(last_time)
+            .saturating_add(TIMESTAMP_TOLERANCE_MS);
+
+        // Condition 1 (§6.1.2): elapsed ≥ T_GenCam_DCC AND dynamics changed
+        if elapsed_ms >= t_gen_cam_dcc && self.check_dynamics(&fix) {
             return self.generate_and_send_cam(&fix, now_ms, 1).ok();
         }
 
-        let elapsed_ms = now_ms.saturating_sub(last_time.unwrap());
-
-        // Condition 1 (§6.1.3): elapsed ≥ T_GenCam_DCC AND dynamics changed
-        if elapsed_ms.saturating_add(5) >= t_gen_cam_dcc && self.check_dynamics(&fix) {
-            return self.generate_and_send_cam(&fix, now_ms, 1).ok();
-        }
-
-        // Condition 2 (§6.1.3): elapsed ≥ T_GenCam AND elapsed ≥ T_GenCam_DCC
-        if elapsed_ms.saturating_add(5) >= t_gen_cam
-            && elapsed_ms.saturating_add(5) >= t_gen_cam_dcc
-        {
+        // Condition 2 (§6.1.2): elapsed ≥ T_GenCam AND elapsed ≥ T_GenCam_DCC
+        if elapsed_ms >= t_gen_cam && elapsed_ms >= t_gen_cam_dcc {
             return self.generate_and_send_cam(&fix, now_ms, 2).ok();
         }
 
@@ -760,20 +903,34 @@ impl CAMTransmissionManagement {
         let vehicle_width = VehicleWidth(self.vehicle_data.vehicle_width.clamp(1, 62));
         let longitudinal_acceleration =
             AccelerationComponent::new(AccelerationValue(161), AccelerationConfidence(102));
-        let curvature = Curvature::new(CurvatureValue(1023), CurvatureConfidence::unavailable);
-        let yaw_rate = YawRate::new(YawRateValue(32767), YawRateConfidence::unavailable);
+        // Latest in-vehicle data (§5.2, §7.1)
+        let in_vehicle = self.in_vehicle_data();
+        let curvature = Curvature::new(
+            CurvatureValue(in_vehicle.curvature_value),
+            in_vehicle.curvature_confidence,
+        );
+        let yaw_rate = YawRate::new(
+            YawRateValue(in_vehicle.yaw_rate_value),
+            in_vehicle.yaw_rate_confidence,
+        );
+        let acceleration_control = in_vehicle
+            .acceleration_control
+            .as_ref()
+            .map(|bits| AccelerationControl(bit_string(bits)));
 
         let hf = BasicVehicleContainerHighFrequency::new(
             heading,
             speed,
-            self.vehicle_data.drive_direction,
+            in_vehicle
+                .drive_direction
+                .unwrap_or(self.vehicle_data.drive_direction),
             vehicle_length,
             vehicle_width,
             longitudinal_acceleration,
             curvature,
-            CurvatureCalculationMode::unavailable,
+            in_vehicle.curvature_calculation_mode,
             yaw_rate,
-            None,
+            acceleration_control,
             None,
             None,
             None,
@@ -851,7 +1008,7 @@ impl CAMTransmissionManagement {
         Ok(cam)
     }
 
-    /// Encode and transmit a CAM PDU via BTP-B/SHB (§5.3.4.1).
+    /// Encode and transmit a CAM PDU via BTP-B/SHB (§6.1.1, §5.3.4; V2.2.1 §5.3.4.1).
     pub fn send_cam(&self, cam: &Cam) -> Result<(), String> {
         let data = self.cam_coder.encode(cam)?;
         let request = BTPDataRequest {
@@ -883,9 +1040,11 @@ impl CAMTransmissionManagement {
             },
             security_profile: SecurityProfile::CooperativeAwarenessMessage,
             its_aid: 36,
-            security_permissions: vec![],
+            // Sender-side SSP check (clause 6.2.2.2): sign only with an AT
+            // granting the protected content of this CAM.
+            security_permissions: super::cam_ssp::permissions_bitmap(cam, Some(&self.cam_coder)),
             gn_max_hop_limit: 1,
-            gn_max_packet_lifetime: Some(1.0), // §5.3.4.1: max 1000 ms
+            gn_max_packet_lifetime: Some(CAM_PACKET_LIFETIME_S),
             gn_repetition_interval: None,
             gn_max_repetition_time: None,
             destination: None,
@@ -914,17 +1073,20 @@ impl CAMTransmissionManagement {
         include_special: bool,
         include_vlf: bool,
     ) {
+        // §6.1.2: a condition-1 CAM sets T_GenCam to the time elapsed since the
+        // last CAM; after N_GenCam consecutive CAMs due to condition 2,
+        // T_GenCam is set to T_GenCamMax. The first CAM after activation
+        // (condition 0) leaves the default T_GenCamMax.
         if condition == 1 {
             let clamped = elapsed_ms.clamp(T_GEN_CAM_MIN_MS, T_GEN_CAM_MAX_MS);
             self.t_gen_cam_ms.store(clamped, Ordering::SeqCst);
+            self.n_gen_cam_counter.store(0, Ordering::SeqCst);
+        } else if condition == 2 {
             let prev_n = self.n_gen_cam_counter.fetch_add(1, Ordering::SeqCst);
             if prev_n + 1 >= N_GEN_CAM_DEFAULT {
                 self.t_gen_cam_ms.store(T_GEN_CAM_MAX_MS, Ordering::SeqCst);
                 self.n_gen_cam_counter.store(0, Ordering::SeqCst);
             }
-        } else {
-            self.n_gen_cam_counter.store(0, Ordering::SeqCst);
-            self.t_gen_cam_ms.store(T_GEN_CAM_MAX_MS, Ordering::SeqCst);
         }
 
         if let Ok(mut st) = self.state.lock() {
@@ -1018,6 +1180,7 @@ mod tests {
             speed_mps: speed,
             heading_deg: heading,
             pai: true,
+            fix_time_ms: None,
         }
     }
 
@@ -1162,6 +1325,123 @@ mod tests {
 
     // ─── Container inclusion tests ───────────────────────────────────────────
 
+    /// §6.1.2: LF and special-vehicle containers are repeated when ≥ 500 ms
+    /// have elapsed since they were last included, not before
+    /// (TS 103 900 clause 6.1.2).
+    #[test]
+    fn test_lf_and_special_container_500ms_timing() {
+        let ctm = make_test_ctm(
+            Some(VehicleData {
+                vehicle_role: 6,
+                ..VehicleData::default()
+            }),
+            None,
+        );
+        {
+            let mut st = ctm.state.lock().unwrap();
+            st.cam_count = 3;
+            st.last_lf_time_ms = Some(1_000);
+            st.last_special_time_ms = Some(1_000);
+        }
+        assert!(!ctm.should_include_lf(1_499));
+        assert!(ctm.should_include_lf(1_500));
+        assert!(!ctm.should_include_special_vehicle(1_499));
+        assert!(ctm.should_include_special_vehicle(1_500));
+    }
+
+    /// §6.1.2: after the second CAM, the VLF extension container is included
+    /// when ≥ 10 s have elapsed and neither LF nor special-vehicle container is
+    /// included in the same CAM (TS 103 900 clause 6.1.2).
+    #[test]
+    fn test_vlf_container_10s_timing() {
+        let ctm = make_test_ctm(None, None);
+        {
+            let mut st = ctm.state.lock().unwrap();
+            st.cam_count = 5;
+            st.last_vlf_time_ms = Some(1_000);
+        }
+        assert!(!ctm.should_include_vlf(10_999, false, false));
+        assert!(ctm.should_include_vlf(11_000, false, false));
+        assert!(!ctm.should_include_vlf(11_000, true, false));
+        assert!(!ctm.should_include_vlf(11_000, false, true));
+    }
+
+    /// V2.2.1 §5.3.4.1 / V2.3.1 §6.1.1: a CAM leaves the CA service as BTP-B to port 2001 in a GN
+    /// single-hop broadcast with packet lifetime ≤ 1 s
+    /// (TS 103 900 V2.2.1 clause 5.3.4.1).
+    #[test]
+    fn test_send_cam_btp_b_shb_port_2001_lifetime() {
+        let (btp_handle, gn_rx) = crate::btp::router::Router::spawn(Mib::new());
+        let vehicle_data = VehicleData {
+            station_id: 1,
+            station_type: 5,
+            drive_direction: DriveDirection::forward,
+            vehicle_length_value: 50,
+            vehicle_width: 30,
+            ..VehicleData::default()
+        };
+        let ctm = CAMTransmissionManagement::new(btp_handle, CamCoder::new(), vehicle_data, None);
+        let fix = make_test_fix(41.552, 2.134, 90.0, 5.0);
+        assert!(ctm.generate_and_send_cam(&fix, 1_000, 1).is_ok());
+
+        let gn_req = gn_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("CAM did not reach GeoNetworking");
+        assert_eq!(gn_req.upper_protocol_entity, CommonNH::BtpB);
+        assert_eq!(gn_req.packet_transport_type.header_type, HeaderType::Tsb);
+        assert_eq!(
+            gn_req.packet_transport_type.header_sub_type,
+            HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop)
+        );
+        let lifetime = gn_req.max_packet_lifetime.expect("lifetime must be set");
+        assert!(lifetime > 0.0 && lifetime <= 1.0);
+        // BTP-B header: destination port 2001 (0x07D1).
+        assert_eq!(&gn_req.data[0..2], &[0x07, 0xD1]);
+    }
+
+    /// §6.1.2: the two-wheeler container is included in all CAMs of cyclists,
+    /// mopeds and motorcycles, and not for other station types
+    /// (TS 103 900 clause 6.1.2).
+    #[test]
+    fn test_two_wheeler_container_station_types() {
+        for (station_type, expected) in [(2u8, true), (3, true), (4, true), (5, false)] {
+            let ctm = make_test_ctm(
+                Some(VehicleData {
+                    station_type,
+                    ..VehicleData::default()
+                }),
+                None,
+            );
+            assert_eq!(
+                ctm.should_include_two_wheeler(),
+                expected,
+                "station type {station_type}"
+            );
+        }
+    }
+
+    /// §5.3.1 / Annex B.2.4: the CAM carries the latest in-vehicle data
+    /// (position, speed, heading of the latest fix) (TS 103 900 clause 7.1).
+    #[test]
+    fn test_cam_carries_latest_vehicle_data() {
+        let ctm = make_test_ctm(None, None);
+        let first = make_test_fix(41.552, 2.134, 90.0, 5.0);
+        ctm.generate_and_send_cam(&first, 1_000, 1).unwrap();
+        let latest = make_test_fix(41.553, 2.135, 180.0, 12.5);
+        let cam = ctm.generate_and_send_cam(&latest, 2_000, 1).unwrap();
+        let params = &cam.cam.cam_parameters;
+        let pos = &params.basic_container.reference_position;
+        assert_eq!(pos.latitude.0, 415_530_000);
+        assert_eq!(pos.longitude.0, 21_350_000);
+        let HighFrequencyContainer::basicVehicleContainerHighFrequency(hf) =
+            &params.high_frequency_container
+        else {
+            panic!("vehicle CAM carries the basic vehicle HF container");
+        };
+        assert_eq!(hf.speed.speed_value.0, 1250);
+        assert_eq!(hf.heading.heading_value.0, 1800);
+    }
+
     #[test]
     fn test_container_inclusions() {
         let ctm = make_test_ctm(None, None);
@@ -1217,29 +1497,37 @@ mod tests {
 
     #[test]
     fn test_condition2_resets_t_gen_cam_to_max() {
+        // §6.1.2: T_GenCam returns to T_GenCamMax after N_GenCam consecutive
+        // condition-2 CAMs, not before.
         let ctm = make_test_ctm(None, None);
         let fix = make_test_fix(41.0, 2.0, 90.0, 5.0);
 
-        ctm.generate_and_send_cam(&fix, 1_000, 1).unwrap();
-        ctm.t_gen_cam_ms.store(400, Ordering::SeqCst);
-
-        // Condition 2 resets T_GenCam to T_GenCamMax
-        ctm.generate_and_send_cam(&fix, 3_000, 2).unwrap();
+        ctm.generate_and_send_cam(&fix, 1_000, 0).unwrap();
+        ctm.t_gen_cam_ms.store(400, Ordering::SeqCst); // set by a condition-1 CAM
+        for count in 1..N_GEN_CAM_DEFAULT as u64 {
+            ctm.generate_and_send_cam(&fix, 1_000 + 2_000 * count, 2)
+                .unwrap();
+            assert_eq!(ctm.t_gen_cam(), 400);
+        }
+        ctm.generate_and_send_cam(&fix, 1_000 + 2_000 * N_GEN_CAM_DEFAULT as u64, 2)
+            .unwrap();
         assert_eq!(ctm.t_gen_cam(), T_GEN_CAM_MAX_MS);
     }
 
     #[test]
     fn test_n_gen_cam_resets_after_default_consecutive() {
+        // §6.1.2: a condition-1 CAM sets T_GenCam to the elapsed time and
+        // restarts the count of consecutive condition-2 CAMs; the first CAM
+        // after activation (condition 0) keeps T_GenCamMax.
         let ctm = make_test_ctm(None, None);
         let fix = make_test_fix(41.0, 2.0, 90.0, 5.0);
 
-        ctm.generate_and_send_cam(&fix, 1_000, 1).unwrap();
+        ctm.generate_and_send_cam(&fix, 1_000, 0).unwrap();
+        assert_eq!(ctm.t_gen_cam(), T_GEN_CAM_MAX_MS);
         ctm.n_gen_cam_counter
             .store(N_GEN_CAM_DEFAULT - 1, Ordering::SeqCst);
-
-        // Third consecutive condition-1 CAM
-        ctm.generate_and_send_cam(&fix, 1_500, 1).unwrap();
-        assert_eq!(ctm.t_gen_cam(), T_GEN_CAM_MAX_MS);
+        ctm.generate_and_send_cam(&fix, 1_300, 1).unwrap();
+        assert_eq!(ctm.t_gen_cam(), 300);
         assert_eq!(ctm.n_gen_cam_counter.load(Ordering::SeqCst), 0);
     }
 
@@ -1313,6 +1601,22 @@ mod tests {
         // elapsed ≥ T_GenCam but < T_GenCam_DCC: no CAM.
         assert!(ctm.evaluate_and_maybe_send(1_500).is_none());
         assert!(ctm.evaluate_and_maybe_send(1_800).is_some());
+    }
+
+    /// Millisecond truncation: 999 ms after the last CAM counts as T_GenCam
+    /// (1000 ms); 998 ms does not. Mirrors the Python test of the same name.
+    #[test]
+    fn test_elapsed_time_tolerance_is_one_millisecond() {
+        for (elapsed, sent) in [(998, false), (999, true)] {
+            let ctm = make_test_ctm(None, None);
+            ctm.location_service_callback(make_test_fix(41.0, 2.0, 90.0, 5.0));
+            assert!(ctm.evaluate_and_maybe_send(1_000).is_some());
+            assert_eq!(
+                ctm.evaluate_and_maybe_send(1_000 + elapsed).is_some(),
+                sent,
+                "elapsed {elapsed} ms"
+            );
+        }
     }
 
     #[test]

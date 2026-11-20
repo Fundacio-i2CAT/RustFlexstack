@@ -131,12 +131,13 @@ fn main() {
     thread::spawn(move || {
         while let Ok(fix) = gn_gps_rx.recv() {
             let mut epv = LongPositionVector::decode([0u8; 24]);
-            epv.update_from_gps(
+            epv.update_from_gps_at(
                 fix.latitude,
                 fix.longitude,
                 fix.speed_mps,
                 fix.heading_deg,
                 fix.pai,
+                fix.fix_time_ms,
             );
             gn_h3.update_position_vector(epv);
         }
@@ -175,6 +176,7 @@ fn main() {
         speed_mps: 14.0,
         heading_deg: 90.0,
         pai: true,
+        fix_time_ms: None,
     };
     loc_svc.publish(gps_fix);
 

@@ -170,7 +170,44 @@ fn parse_tpv(line: &str) -> Option<GpsFix> {
         speed_mps: speed,
         heading_deg: track,
         pai,
+        fix_time_ms: extract_str(line, "time").and_then(parse_iso8601_ms),
     })
+}
+
+/// Extract a string value for `"key":"value"` from a JSON line.
+fn extract_str<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    let pattern = format!("\"{}\":\"", key);
+    let start = json.find(&pattern)? + pattern.len();
+    let rest = &json[start..];
+    Some(&rest[..rest.find('"')?])
+}
+
+/// Unix time in ms of a gpsd ISO 8601 UTC time, e.g.
+/// `2026-11-17T10:00:00.250Z` (fraction optional).
+fn parse_iso8601_ms(time: &str) -> Option<u64> {
+    let time = time.strip_suffix('Z')?;
+    let (date, clock) = time.split_once('T')?;
+    let mut date = date.splitn(3, '-').map(|v| v.parse::<i64>().ok());
+    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
+    let (hms, fraction) = clock.split_once('.').unwrap_or((clock, ""));
+    let mut hms = hms.splitn(3, ':').map(|v| v.parse::<i64>().ok());
+    let (hour, minute, second) = (hms.next()??, hms.next()??, hms.next()??);
+    let millis = if fraction.is_empty() {
+        0
+    } else {
+        format!("{:0<3}", &fraction[..fraction.len().min(3)])
+            .parse::<i64>()
+            .ok()?
+    };
+    // Days from civil (H. Hinnant), proleptic Gregorian calendar.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let ms = ((days * 86_400 + hour * 3600 + minute * 60 + second) * 1000) + millis;
+    u64::try_from(ms).ok()
 }
 
 /// Extract a numeric value for `"key":value` from a JSON line.
@@ -198,6 +235,26 @@ fn extract_f64(json: &str, key: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The TPV `time` (UTC, ms included) becomes the fix acquisition time,
+    /// used as GN TST (ETSI TS 103 836-4-1 clause 9.5.2.2).
+    #[test]
+    fn parse_tpv_acquisition_time() {
+        let line =
+            r#"{"class":"TPV","mode":3,"time":"2026-11-17T10:00:00.250Z","lat":41.5,"lon":2.1}"#;
+        // 2026-11-17T10:00:00.250Z = 1_794_909_600_250 ms since the Unix epoch
+        assert_eq!(
+            parse_tpv(line).unwrap().fix_time_ms,
+            Some(1_794_909_600_250)
+        );
+        assert_eq!(parse_iso8601_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(
+            parse_iso8601_ms("2000-03-01T00:00:01.5Z"),
+            Some(951_868_801_500)
+        );
+        let no_time = r#"{"class":"TPV","mode":3,"lat":41.5,"lon":2.1}"#;
+        assert_eq!(parse_tpv(no_time).unwrap().fix_time_ms, None);
+    }
 
     #[test]
     fn parse_tpv_valid_3d_fix() {
