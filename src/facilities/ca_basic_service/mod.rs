@@ -33,7 +33,7 @@
 //! ca_svc.start(loc_svc.subscribe());
 //!
 //! while let Ok(cam) = cam_rx.recv() {
-//!     println!("CAM from station {}", cam.header.station_id);
+//!     println!("CAM from station {}", cam.header.station_id.0);
 //! }
 //! ```
 
