@@ -121,11 +121,9 @@ impl MID {
     }
 
     pub fn encode_to_address(&self) -> u64 {
-        let mut address: u64 = 0;
-        for i in 0..6 {
-            address |= (self.mid[i] as u64) << (8 * (5 - i));
-        }
-        address
+        self.mid
+            .iter()
+            .fold(0u64, |address, &octet| (address << 8) | octet as u64)
     }
 
     pub fn decode_from_address(address: u64) -> Self {
