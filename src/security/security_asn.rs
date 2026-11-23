@@ -634,9 +634,12 @@ pub mod ieee1609_dot2 {
         pub inline_p2pcd_request: Option<SequenceOfHashedId3>,
         #[rasn(extension_addition, identifier = "requestedCertificate")]
         pub requested_certificate: Option<Certificate>,
-        #[rasn(extension_addition, identifier = "pduFunctionalType")]
+        // Constraints repeated on the extension-addition fields: rasn drops
+        // the constraints of a delegate type encoded as an extension addition
+        // (the INTEGER (0..255) was COER-encoded with a length octet).
+        #[rasn(extension_addition, value("0..=255"), identifier = "pduFunctionalType")]
         pub pdu_functional_type: Option<PduFunctionalType>,
-        #[rasn(extension_addition, identifier = "contributedExtensions")]
+        #[rasn(extension_addition, size("1.."), identifier = "contributedExtensions")]
         pub contributed_extensions: Option<ContributedExtensionBlocks>,
     }
     impl HeaderInfo {
@@ -1743,11 +1746,13 @@ pub mod ieee1609_dot2 {
         pub verify_key_indicator: VerificationKeyIndicator,
         #[rasn(extension_addition, size("8"))]
         pub flags: Option<BitString>,
-        #[rasn(extension_addition, identifier = "appExtensions")]
+        // Constraints repeated on the extension-addition fields (rasn drops
+        // those of a delegate type there; no change in COER for SIZE (1..)).
+        #[rasn(extension_addition, size("1.."), identifier = "appExtensions")]
         pub app_extensions: Option<SequenceOfAppExtensions>,
-        #[rasn(extension_addition, identifier = "certIssueExtensions")]
+        #[rasn(extension_addition, size("1.."), identifier = "certIssueExtensions")]
         pub cert_issue_extensions: Option<SequenceOfCertIssueExtensions>,
-        #[rasn(extension_addition, identifier = "certRequestExtension")]
+        #[rasn(extension_addition, size("1.."), identifier = "certRequestExtension")]
         pub cert_request_extension: Option<SequenceOfCertRequestExtensions>,
     }
     impl ToBeSignedCertificate {

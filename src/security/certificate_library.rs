@@ -274,6 +274,39 @@ mod tests {
     };
     use rasn::prelude::*;
 
+    /// Canonical OER (X.696): the DEFAULT components of PsidGroupPermissions
+    /// (minChainLength 1, chainLengthRange 0, eeType {app}) are not encoded.
+    /// Same vector in FlexStack (test_canonical_oer.py).
+    #[test]
+    fn psid_group_permissions_encoding_is_canonical() {
+        let app = {
+            let mut bits = FixedBitString::<8>::default();
+            bits.set(0, true);
+            EndEntityType(bits)
+        };
+        let group = |min: i64, range: i64, ee: EndEntityType| {
+            PsidGroupPermissions::new(
+                SubjectPermissions::all(()),
+                Integer::from(min),
+                Integer::from(range),
+                ee,
+            )
+        };
+        let hex = |g: &PsidGroupPermissions| -> String {
+            rasn::coer::encode(g)
+                .unwrap()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        };
+        assert_eq!(hex(&group(2, 0, app.clone())), "80810102");
+        assert_eq!(hex(&group(1, 0, app)), "0081");
+        let mut both = FixedBitString::<8>::default();
+        both.set(0, true);
+        both.set(1, true);
+        assert_eq!(hex(&group(2, 0, EndEntityType(both))), "a0810102c0");
+    }
+
     fn make_root_tbs() -> crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));
         let perms = SequenceOfPsidGroupPermissions(vec![PsidGroupPermissions::new(

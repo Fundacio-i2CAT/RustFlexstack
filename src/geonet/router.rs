@@ -42,10 +42,17 @@ use crate::security::certificate_library::CertificateLibrary;
 use crate::security::ecdsa_backend::EcdsaBackend;
 use crate::security::sign_service::SignService;
 use crate::security::sn_sap::{
-    GenerationLocation, ReportVerify, SNSignRequest, SNVerifyRequest, SecurityProfile,
+    GenerationLocation, ReportVerify, SNSignRequest, SNVerifyConfirm, SNVerifyRequest,
+    SecurityProfile,
 };
 use crate::security::verify_service;
 use crate::security::verify_service::TrustListListener;
+
+/// Observer of the SN-VERIFY results of the router (see
+/// [`Router::set_verify_observer`]): the secured message as received (the
+/// Ieee1609Dot2Data after the Basic Header) and the confirm, for every secured
+/// packet, verified or not.
+pub type VerifyObserver = Box<dyn Fn(&[u8], &SNVerifyConfirm) + Send>;
 
 const EARTH_RADIUS: f64 = 6371000.0;
 /// Octets of a Basic + Common + GUC Extended Header, used to size LS-buffered requests.
@@ -149,6 +156,8 @@ pub enum RouterInput {
     /// Channel for GN-PDUs addressed to a next hop (see
     /// [`Router::set_unicast_sender`]).
     UnicastSender(Sender<(Vec<u8>, [u8; 6])>),
+    /// See [`Router::set_verify_observer`].
+    VerifyObserver(VerifyObserver),
     Shutdown,
 }
 
@@ -207,6 +216,8 @@ pub struct Router {
     verify_cert_library: Option<CertificateLibrary>,
     /// Receiver of the P2P CRL / CTL requests of the verified packets.
     trust_list_listener: Option<TrustListListener>,
+    /// See [`Router::set_verify_observer`].
+    verify_observer: Option<VerifyObserver>,
 
     /// Monotonic clock in milliseconds driving the LS and CBF timers.
     clock: Box<dyn Fn() -> u64 + Send>,
@@ -281,6 +292,11 @@ impl RouterHandle {
         let _ = self.input_tx.send(RouterInput::UnicastSender(unicast_tx));
     }
 
+    /// [`Router::set_verify_observer`] for a spawned router.
+    pub fn set_verify_observer(&self, observer: VerifyObserver) {
+        let _ = self.input_tx.send(RouterInput::VerifyObserver(observer));
+    }
+
     pub fn shutdown(self) {
         let _ = self.input_tx.send(RouterInput::Shutdown);
     }
@@ -321,6 +337,7 @@ impl Router {
             verify_backend,
             verify_cert_library,
             trust_list_listener: None,
+            verify_observer: None,
             clock: {
                 let start = Instant::now();
                 Box::new(move || start.elapsed().as_millis() as u64)
@@ -368,6 +385,14 @@ impl Router {
     /// (the CRL / CTL distribution service, ETSI TS 103 601 V2.1.1 clause 5.3).
     pub fn set_trust_list_listener(&mut self, listener: TrustListListener) {
         self.trust_list_listener = Some(listener);
+    }
+
+    /// Call `observer` with the outcome of every verification of a received
+    /// secured packet (SN-VERIFY.confirm, ETSI TS 102 723-8), whatever the
+    /// report: for logging and test instrumentation. It does not change the
+    /// processing of the packet.
+    pub fn set_verify_observer(&mut self, observer: VerifyObserver) {
+        self.verify_observer = Some(observer);
     }
 
     pub fn dcc_net_mut(&mut self) -> Option<&mut DccNet> {
@@ -458,6 +483,9 @@ impl Router {
                 }
                 Some(RouterInput::UnicastSender(unicast_tx)) => {
                     self.set_unicast_sender(unicast_tx);
+                }
+                Some(RouterInput::VerifyObserver(observer)) => {
+                    self.set_verify_observer(observer);
                 }
                 Some(RouterInput::Shutdown) => break,
                 None => {}
@@ -1482,6 +1510,9 @@ impl Router {
 
         let (confirm, events) =
             verify_service::verify_message(&verify_request, backend, cert_library);
+        if let Some(observer) = &self.verify_observer {
+            observer(packet, &confirm);
+        }
 
         if let Some(ref mut sign_service) = self.sign_service {
             for event in events {
@@ -3714,6 +3745,41 @@ mod forwarding_tests {
         }
         f.add_neighbour(9, north(50.0));
         f
+    }
+
+    /// The verify observer sees the outcome of every verification of a received
+    /// secured packet, accepted or not, and does not change the processing.
+    #[test]
+    fn verify_observer_sees_every_verification() {
+        use crate::facilities::ca_basic_service::conformance::Pki;
+        use std::sync::{Arc, Mutex};
+        let mut pki = Pki::new();
+        let at = pki.at(&[(36, None)]);
+        let good = pki.secured_shb(&at, &[0x02, 0x02]);
+        let mut bad = good.clone();
+        let last = bad.len() - 1;
+        bad[last] ^= 0x01; // signature altered
+
+        let mut mib = Mib::new();
+        mib.itsGnSecurity = GnSecurity::Enabled;
+        let mut f = Fixture::new(mib);
+        f.router.verify_backend = Some(pki.backend.clone());
+        f.router.verify_cert_library = Some(pki.library());
+        let seen: Arc<Mutex<Vec<(usize, ReportVerify)>>> = Arc::default();
+        let log = Arc::clone(&seen);
+        f.router
+            .set_verify_observer(Box::new(move |message, confirm| {
+                log.lock().unwrap().push((message.len(), confirm.report));
+            }));
+        f.router.process_incoming(&good, None);
+        f.router.process_incoming(&bad, None);
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0], (good.len() - 4, ReportVerify::Success));
+        assert_eq!(seen[1].0, bad.len() - 4);
+        assert_ne!(seen[1].1, ReportVerify::Success);
+        // Only the verified packet reached BTP.
+        assert_eq!(f.btp_rx.try_iter().count(), 1);
     }
 
     /// Table 18: Security profile `Unsecured` gives NH = Common Header (no

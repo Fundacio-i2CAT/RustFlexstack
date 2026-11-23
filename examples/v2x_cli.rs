@@ -243,7 +243,10 @@ fn build_pki_security_stack(
     }
     println!(
         "[PKI] Canonical identifier (itsId): {}",
-        its_id.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        its_id
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
     );
 
     let rca_p1 = cert_dir.join("root_ca.cert");
@@ -354,7 +357,15 @@ fn build_pki_security_stack(
         vec![at_own.cert.clone()],
     );
     let mut sign_service = SignService::new(client.backend, cert_library);
+    let at_hashedid8 = at_own.as_hashedid8();
     sign_service.add_own_certificate(at_own);
+    if !sign_service
+        .cert_library
+        .own_certificates
+        .contains_key(&at_hashedid8)
+    {
+        return Err("the AT was not accepted: its AA certificate does not verify with the Root CA certificate, or the AT does not verify with the AA".into());
+    }
 
     Ok(sign_service)
 }
@@ -585,7 +596,9 @@ fn main() {
                 i += 1;
                 let hex = &args[i];
                 assert!(
-                    hex.len() % 2 == 0 && !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit()),
+                    hex.len().is_multiple_of(2)
+                        && !hex.is_empty()
+                        && hex.chars().all(|c| c.is_ascii_hexdigit()),
                     "--its-id must be hexadecimal"
                 );
                 its_id = Some(

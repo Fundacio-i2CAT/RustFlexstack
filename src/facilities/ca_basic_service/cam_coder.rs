@@ -359,6 +359,45 @@ impl CamCoder {
 mod tests {
     use super::*;
 
+    /// UPER of WrappedExtensionContainers with one VeryLowFrequencyContainer
+    /// (id 3, all fields absent: containerData = 00), X.691: SEQUENCE OF
+    /// extension bit 0, count - 1 = 000 (SIZE(1..8,...)); containerId extension
+    /// bit 0 and 3 - 1 = 0010 (INTEGER (1..16,...)); open type: length 01, 00.
+    /// Same octets as FlexStack (Python) and asn1c.
+    #[test]
+    fn wrapped_extension_containers_uper() {
+        use crate::facilities::ca_basic_service::cam_bindings::cam_pdu_descriptions::{
+            ExtensionContainerId, WrappedExtensionContainer, WrappedExtensionContainers,
+        };
+        let containers = WrappedExtensionContainers(vec![WrappedExtensionContainer::new(
+            ExtensionContainerId(Integer::from(3)),
+            Any::new(vec![0x00]),
+        )]);
+        let encoded = rasn::uper::encode(&containers).unwrap();
+        assert_eq!(encoded, vec![0x01, 0x00, 0x80, 0x00]);
+    }
+
+    /// A CAM with a VeryLowFrequencyContainer as extension container
+    /// (extension addition of CamParameters, X.691 clause 19.9: an open type
+    /// holding the value above), as FlexStack Python sends it. Frozen vector,
+    /// also in FlexStack (test_cam_coder). Before the field constraint fix, Rust
+    /// refused it and encoded the extension as 4 octets of another value.
+    #[test]
+    fn cam_with_extension_container_matches_x691() {
+        let frozen = [
+            0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x2f, 0x20, 0x80, 0x59, 0xca, 0x02, 0x27, 0xed,
+            0x92, 0x9d, 0xf5, 0xe0, 0xc8, 0x0c, 0x80, 0x01, 0xb7, 0x74, 0x3e, 0x00, 0x3d, 0xff,
+            0xc1, 0xf4, 0x7e, 0x3f, 0xe9, 0xed, 0x07, 0x37, 0xfe, 0xeb, 0xff, 0xf6, 0x00, 0x41,
+            0x00, 0x40, 0x20, 0x00, 0x00,
+        ];
+        let cam: Cam = rasn::uper::decode(&frozen).unwrap();
+        let ext = cam.cam.cam_parameters.extension_containers.clone().unwrap();
+        assert_eq!(ext.0.len(), 1);
+        assert_eq!(ext.0[0].container_id.0, Integer::from(3));
+        assert_eq!(ext.0[0].container_data.as_bytes(), &[0x00]);
+        assert_eq!(rasn::uper::encode(&cam).unwrap(), frozen.to_vec());
+    }
+
     #[test]
     fn generation_delta_time_set_in_normal_timestamp() {
         let timestamp: f64 = 1675871599.0;

@@ -25,7 +25,9 @@
 
 use std::path::{Path, PathBuf};
 
-use p256::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding};
+use p256::pkcs8::{
+    DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding,
+};
 use sha2::{Digest, Sha256};
 
 use super::client::PkiError;
@@ -52,7 +54,9 @@ impl CanonicalKey {
     /// The pythonpki command that registers this ITS-S with the EA (`its_id`
     /// defaults to [`CanonicalKey::its_id`]).
     pub fn registration_command(&self, its_id: Option<&[u8]>) -> String {
-        let id = its_id.map(<[u8]>::to_vec).unwrap_or_else(|| self.its_id().to_vec());
+        let id = its_id
+            .map(<[u8]>::to_vec)
+            .unwrap_or_else(|| self.its_id().to_vec());
         format!(
             "ea-tool register --its-id {} --public-key {}",
             hex(&id),
@@ -209,8 +213,14 @@ Yfps5mliLmDyn7Z5A/4QCLi8maQa6elWKLxk8vGyDC1+n1F3o8KU1EYimQ==\n\
         let first = load_or_create_canonical_key(&path).unwrap();
         assert!(first.created);
         assert_eq!(first.scalar.len(), 32);
-        assert_eq!(first.public_path, path.with_file_name("canonical_key.pub.pem"));
-        assert_eq!(std::fs::read_to_string(&first.public_path).unwrap(), first.public_pem);
+        assert_eq!(
+            first.public_path,
+            path.with_file_name("canonical_key.pub.pem")
+        );
+        assert_eq!(
+            std::fs::read_to_string(&first.public_path).unwrap(),
+            first.public_pem
+        );
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -231,10 +241,16 @@ Yfps5mliLmDyn7Z5A/4QCLi8maQa6elWKLxk8vGyDC1+n1F3o8KU1EYimQ==\n\
         let key = load_or_create_canonical_key(&path).unwrap();
         std::fs::write(&key.public_path, "stale").unwrap();
         load_or_create_canonical_key(&path).unwrap();
-        assert_eq!(std::fs::read_to_string(&key.public_path).unwrap(), key.public_pem);
+        assert_eq!(
+            std::fs::read_to_string(&key.public_path).unwrap(),
+            key.public_pem
+        );
         std::fs::remove_file(&key.public_path).unwrap();
         load_or_create_canonical_key(&path).unwrap();
-        assert_eq!(std::fs::read_to_string(&key.public_path).unwrap(), key.public_pem);
+        assert_eq!(
+            std::fs::read_to_string(&key.public_path).unwrap(),
+            key.public_pem
+        );
     }
 
     #[test]
@@ -286,7 +302,10 @@ Yfps5mliLmDyn7Z5A/4QCLi8maQa6elWKLxk8vGyDC1+n1F3o8KU1EYimQ==\n\
         let key = load_or_create_canonical_key(&dir.join("a.pem")).unwrap();
         assert_eq!(
             key.registration_command(Some(&[1, 2])),
-            format!("ea-tool register --its-id 0102 --public-key {}", key.public_path.display())
+            format!(
+                "ea-tool register --its-id 0102 --public-key {}",
+                key.public_path.display()
+            )
         );
         assert_eq!(
             key.registration_command(None),
@@ -339,7 +358,9 @@ Yfps5mliLmDyn7Z5A/4QCLi8maQa6elWKLxk8vGyDC1+n1F3o8KU1EYimQ==\n\
 
         fn last_signer(&self) -> SignerIdentifier {
             let p = self.pki.lock().unwrap();
-            signed_data(&p.enrolments.last().unwrap().outer).signer.clone()
+            signed_data(&p.enrolments.last().unwrap().outer)
+                .signer
+                .clone()
         }
     }
 
@@ -348,7 +369,10 @@ Yfps5mliLmDyn7Z5A/4QCLi8maQa6elWKLxk8vGyDC1+n1F3o8KU1EYimQ==\n\
     fn registered_key_enrols() {
         let flow = Flow::new();
         let mut client = flow.client();
-        assert_eq!(client.canonical_public_key(), registered(&flow.key.public_pem));
+        assert_eq!(
+            client.canonical_public_key(),
+            registered(&flow.key.public_pem)
+        );
         flow.pki
             .lock()
             .unwrap()

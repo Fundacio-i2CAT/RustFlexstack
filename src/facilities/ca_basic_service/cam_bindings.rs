@@ -231,7 +231,16 @@ pub mod cam_pdu_descriptions {
         pub low_frequency_container: Option<LowFrequencyContainer>,
         #[rasn(identifier = "specialVehicleContainer")]
         pub special_vehicle_container: Option<SpecialVehicleContainer>,
-        #[rasn(extension_addition, identifier = "extensionContainers")]
+        // The SIZE constraint is repeated on the field: rasn (0.26 to 0.30)
+        // drops the constraints of a delegate type encoded as an extension
+        // addition, and wrote the SEQUENCE OF count as an unconstrained length
+        // (X.691 open type of the wrong value; FlexStack Python and asn1c
+        // could not decode it).
+        #[rasn(
+            extension_addition,
+            size("1..=8", extensible),
+            identifier = "extensionContainers"
+        )]
         pub extension_containers: Option<WrappedExtensionContainers>,
     }
     impl CamParameters {

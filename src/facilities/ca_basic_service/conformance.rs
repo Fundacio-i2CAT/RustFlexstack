@@ -796,7 +796,7 @@ impl Pki {
     }
 
     /// Secured SHB carrying `cam`, signed with `at` regardless of its permissions.
-    fn secured_shb(&self, at: &OwnCertificate, cam: &[u8]) -> Vec<u8> {
+    pub(crate) fn secured_shb(&self, at: &OwnCertificate, cam: &[u8]) -> Vec<u8> {
         let common = CommonHeader {
             nh: CommonNH::BtpB,
             reserved: 0,

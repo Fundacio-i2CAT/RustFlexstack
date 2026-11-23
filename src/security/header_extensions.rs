@@ -150,6 +150,54 @@ pub fn decode_requests(blocks: &ContributedExtensionBlocks) -> Vec<TrustListRequ
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// COER of HeaderInfo extension additions (X.696 clause 16.4: extension
+    /// presence bitmap over the 4 additions of the TS 103 097 V2.2.1 ASN.1,
+    /// then each addition as an open type). Frozen vectors, also in FlexStack
+    /// (test_canonical_oer). pduFunctionalType was encoded with a length
+    /// octet before the field constraint fix (rasn drops the constraints of a
+    /// delegate type in an extension addition).
+    #[test]
+    fn header_info_extension_additions_coer() {
+        use crate::security::security_asn::ieee1609_dot2::{HeaderInfo, PduFunctionalType};
+        use crate::security::security_asn::ieee1609_dot2_base_types::{
+            HashedId3, Psid, SequenceOfHashedId3,
+        };
+        let pdu = HeaderInfo::new(
+            Psid(rasn::prelude::Integer::from(36)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(PduFunctionalType(2)),
+            None,
+        );
+        let bytes = rasn::coer::encode(&pdu).unwrap();
+        assert_eq!(bytes, vec![0x80, 0x01, 0x24, 0x02, 0x04, 0x20, 0x01, 0x02]);
+        assert_eq!(rasn::coer::decode::<HeaderInfo>(&bytes).unwrap(), pdu);
+        let p2pcd = HeaderInfo::new(
+            Psid(rasn::prelude::Integer::from(36)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(SequenceOfHashedId3(vec![HashedId3([1, 2, 3].into())])),
+            None,
+            None,
+            None,
+        );
+        let bytes = rasn::coer::encode(&p2pcd).unwrap();
+        assert_eq!(
+            bytes,
+            vec![0x80, 0x01, 0x24, 0x02, 0x04, 0x80, 0x05, 0x01, 0x01, 0x01, 0x02, 0x03]
+        );
+    }
     use crate::security::security_asn::ieee1609_dot2::HeaderInfo;
     use crate::security::security_asn::ieee1609_dot2_base_types::{
         HashedId8, Psid, Time32, Time64, Uint32, Uint64, Uint8,

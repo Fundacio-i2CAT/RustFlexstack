@@ -11,7 +11,9 @@ use crate::security::certificate_library::CertificateLibrary;
 use crate::security::ecdsa_backend::key_uses_sha384;
 use crate::security::ecdsa_backend::EcdsaBackend;
 use crate::security::header_extensions::{decode_requests, TrustListRequest};
-use crate::security::security_asn::ieee1609_dot2::{Ieee1609Dot2Content, SignerIdentifier};
+use crate::security::security_asn::ieee1609_dot2::{
+    Ieee1609Dot2Content, SignedData, SignerIdentifier,
+};
 use crate::security::sign_service::SignService;
 use crate::security::sn_sap::{ReportVerify, SNVerifyConfirm, SNVerifyRequest};
 use crate::security::validity::{app_permission, location_permitted, valid_at};
@@ -89,6 +91,23 @@ fn confirm(
         permissions,
         plain_message,
     }
+}
+
+/// The tbsData octets of a received Ieee1609Dot2Data signedData:
+/// protocolVersion (1 octet), the Ieee1609Dot2Content tag of signedData
+/// (0x81), hashId (1 octet), then tbsData, signer and signature (SignedData
+/// has no extension marker). `None` when the message does not end with the
+/// encodings of its signer and signature.
+fn received_tbs_data<'a>(message: &'a [u8], signed_data: &SignedData) -> Option<&'a [u8]> {
+    if message.len() < 3 || message[1] != 0x81 {
+        return None;
+    }
+    let mut tail = rasn::coer::encode(&signed_data.signer).ok()?;
+    tail.extend(rasn::coer::encode(&signed_data.signature).ok()?);
+    if message.len() < 3 + tail.len() || !message.ends_with(&tail) {
+        return None;
+    }
+    Some(&message[3..message.len() - tail.len()])
 }
 
 /// Stateless verification (ETSI TS 103 097 V2.2.1 clauses 5 and 7; IEEE Std
@@ -266,9 +285,24 @@ pub fn verify_message(
     }
 
     // 8. Signature over Hash(Hash(tbsData) || Hash(AT)) (IEEE 1609.2 clause 5.3.1)
-    let payload = signing_input(&tbs_bytes, at.to_canonical().encode(), key_uses_sha384(vk));
+    let at_canonical = at.to_canonical();
+    let payload = signing_input(&tbs_bytes, at_canonical.encode(), key_uses_sha384(vk));
     if !backend.verify_with_pk(&payload, &signed_data.signature, vk) {
-        return (fail(ReportVerify::FalseSignature, Some(&at)), events);
+        // The signer encoded tbsData with its own ASN.1 version: another
+        // number of HeaderInfo extension additions gives another extension
+        // presence bitmap (X.696 clause 16.4), e.g. IEEE 1609.2-2016 modules.
+        // The signature covers the octets the signer encoded (clause 6.3.4),
+        // so they are verified as received.
+        let received = received_tbs_data(&request.message, signed_data);
+        let verified = received
+            .filter(|octets| *octets != tbs_bytes.as_slice())
+            .is_some_and(|octets| {
+                let payload = signing_input(octets, at_canonical.encode(), key_uses_sha384(vk));
+                backend.verify_with_pk(&payload, &signed_data.signature, vk)
+            });
+        if !verified {
+            return (fail(ReportVerify::FalseSignature, Some(&at)), events);
+        }
     }
 
     // Extract the plain message
@@ -2376,6 +2410,55 @@ pub(crate) mod security_checks {
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    // Frozen vector, also in FlexStack (test_verify_service): a CAM signed by
+    // Vanetza (commit 3b9a544, IEEE 1609.2-2016 ASN.1 with 2 HeaderInfo
+    // extension additions) carrying an inlineP2pcdRequest, captured in the
+    // signed interop matrix (FlexStackBenchmarking/interop), and the Root CA
+    // and AA of that run. Vanetza encodes the extension presence bitmap with
+    // 2 bits (02 06 80); this stack's ASN.1 has 4 (02 04 80).
+    const VANETZA_ROOT: &str = "800300810008810f696e7465726f702d726f6f742d636100000000002b0d1cdd860001010180810102808082c5c5cf6fa9f7e3ccd67d16a5aab17ee1727ebf4ab1ee2f0ce3d90076f2a629318080ed258011549d01048319db4848c0a550c169d17d2a0d7204fe4768064afbbcd7e2c6c2ae5dce3db11cc3ae7f636a888c8cf811470d7c767dbd64083a418c8dea";
+    const VANETZA_AA: &str = "80030080d3dd2cb18f37f08508810a696e7465726f702d616100000000002b0d1cdd860001010100800104800124818001258180018d818002027e818080835db6d0c1c41584004070f700aa23cb2688273c9a04811e6dfa1c26ce95e1d545808086ad69ddbaad6d2eb2f14ff9c479b51995dc7dc7203f234576dc98324af55adb2e80f61000922868dcaad628afb8fc539ff47196bb1ead45550220f0a3e50775";
+    const VANETZA_CAM: &str = "0381004003805120500080002d01008000aa05e7e4cd642b6fc60418ab2b97014b2570800000000000000007d10000020200000003c6e50059ca02930d929eee1ffffffc23b7743e0000000000003fe9ed0737feebfff600c00124000290e9aca0f1530206800501011ad738810101800300803c82cf6a9b7294cb108300000000002b0d1cdd860001010480012481040303ffff80012581060502ffffffff00018d0002027e808082b7cd8f1efe5880b4779bf967150bdb36b31cb690da293eea789f377241dcff78808005c8c38854e7b3f7e2ed55fdbbe7dcebe3c3baaf990e8f9cd38074f583e69651093804732abbb13c20432d042d06edf02a7e12fd87ed7fc3c5dfc336182370e080805fd37ee613809ec114e8ac105725784c363164d5928f8c577b94089d81fb6e818c4f30264948f7134f93b06950fad28992206a26474bd57e3a7ff4b70fc8b3e2";
+
+    /// IEEE 1609.2 clause 6.3.4: the signature covers the tbsData octets the
+    /// signer encoded. A CAM from a stack whose ASN.1 has another number of
+    /// HeaderInfo extension additions verifies over the octets received; any
+    /// change of those octets is still refused.
+    #[test]
+    fn tbs_data_of_another_asn1_version_verified_as_received() {
+        let backend = EcdsaBackend::new();
+        let root = Certificate::from_bytes(&hex(VANETZA_ROOT), None);
+        let aa = Certificate::from_bytes(&hex(VANETZA_AA), Some(root.clone()));
+        let message = hex(VANETZA_CAM);
+        let data = decode_ieee1609_dot2_data(&message);
+        let Ieee1609Dot2Content::signedData(sd) = &data.content else {
+            panic!("signedData");
+        };
+        let received = received_tbs_data(&message, sd).unwrap();
+        assert_ne!(received, encode_tbs_data(&sd.tbs_data).as_slice());
+        assert!(received.windows(3).any(|w| w == [0x02, 0x06, 0x80])); // 2-bit bitmap
+
+        let mut library =
+            CertificateLibrary::new(&backend, vec![root.clone()], vec![aa.clone()], vec![]);
+        let request = SNVerifyRequest {
+            message: message.clone(),
+        };
+        let (confirm, _) = verify_message(&request, &backend, &mut library);
+        assert_eq!(confirm.report, ReportVerify::Success);
+        assert_eq!(confirm.its_aid, 36);
+
+        // One octet of the CAM payload changed: refused.
+        let mut altered = message.clone();
+        altered[60] ^= 0x01;
+        let mut library = CertificateLibrary::new(&backend, vec![root], vec![aa], vec![]);
+        let (confirm, _) = verify_message(
+            &SNVerifyRequest { message: altered },
+            &backend,
+            &mut library,
+        );
+        assert_ne!(confirm.report, ReportVerify::Success);
     }
 
     /// ETSI TS 103 097 clause 7.1.1, ETSI TS 103 097 clause 7.1.2:
