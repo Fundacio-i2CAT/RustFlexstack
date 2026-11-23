@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! CAM Reception Management — ETSI TS 103 900 V2.2.1 §6.2 / Annex B.3.
+//! CAM Reception Management — ETSI TS 103 900 V2.3.1 (2026-05) §5.3.1 / Annex B.3.
 //!
 //! Mirrors `CAMReceptionManagement` in
 //! `flexstack/facilities/ca_basic_service/cam_reception_management.py`.
@@ -23,10 +23,13 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// ITS-AID of the service (ETSI TS 102 965).
+pub const CAM_ITS_AID: u64 = 36;
+
 /// Application callback type: receives a reference to the decoded CAM and its UTC timestamp.
 pub type ApplicationCallback = Arc<dyn Fn(&Cam, u64) + Send + Sync>;
 
-/// CAM Reception Management — ETSI TS 103 900 V2.2.1 §6.2 / Annex B.3.
+/// CAM Reception Management — ETSI TS 103 900 V2.3.1 (2026-05) §5.3.1 / Annex B.3.
 #[derive(Clone)]
 pub struct CAMReceptionManagement {
     pub cam_coder: CamCoder,
@@ -68,7 +71,7 @@ impl CAMReceptionManagement {
         }
     }
 
-    /// Register an application callback (IF.CAM — §6.2).
+    /// Register an application callback (CA_DataProvision — §5.3.1).
     ///
     /// The callback receives the decoded [`Cam`] and calculated `utc_timestamp`
     /// whenever a valid CAM is received.
@@ -94,12 +97,30 @@ impl CAMReceptionManagement {
     /// Decoding exceptions are caught here so that the LDM and application
     /// layers are never updated with malformed data (Annex B.3.3.1).
     pub fn reception_callback(&self, btp_indication: &BTPDataIndication) -> Result<Cam, String> {
+        // ETSI TS 103 097 V2.2.1 clause 7.1.1: a
+        // secured CAM shall carry the CAM ITS-AID.
+        if btp_indication
+            .gn_its_aid
+            .is_some_and(|aid| aid != CAM_ITS_AID)
+        {
+            return Err("Secured CAM with another ITS-AID".to_string());
+        }
         let cam = match self.cam_coder.decode(&btp_indication.data) {
             Ok(c) => c,
             Err(e) => {
                 return Err(e);
             }
         };
+
+        // Security constraints (TS 103 900 V2.3.1 clause 6.2.2): a CAM whose
+        // protected content is not permitted by the signer's SSP is invalid.
+        if !super::cam_ssp::ssp_consistent(
+            btp_indication.gn_permissions.as_deref(),
+            &cam,
+            Some(&self.cam_coder),
+        ) {
+            return Err("CAM content not permitted by the signer's SSP".to_string());
+        }
 
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)

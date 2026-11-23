@@ -79,11 +79,11 @@ pub type LdmHandle = Arc<LdmFacility>;
 /// Holds both ETSI interfaces and exposes them as public fields so callers
 /// can invoke provider and consumer operations directly:
 ///
-/// ```no_run
+/// ```ignore
 /// # use rustflexstack::facilities::local_dynamic_map::{LdmFacility, LdmHandle};
 /// # let ldm: LdmHandle = LdmFacility::new(0, 0, 0.0);
-/// ldm.if_ldm_3.add_provider_data(/* ... */);
-/// ldm.if_ldm_4.request_data_objects(/* ... */);
+/// ldm.if_ldm_3.add_provider_data(/* AddDataProviderReq */);
+/// ldm.if_ldm_4.request_data_objects(/* RequestDataObjectsReq */);
 /// ```
 pub struct LdmFacility {
     /// ETSI IF.LDM.3 — Data Provider interface.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! CA Basic Service — Cooperative Awareness Basic Service (ETSI TS 103 900 V2.2.1).
+//! CA Basic Service — Cooperative Awareness Basic Service (ETSI TS 103 900 V2.3.1).
 //!
 //! Implements CAM generation and reception on top of the BTP and
 //! GeoNetworking layers already present in this crate.
@@ -33,7 +33,7 @@
 //! ca_svc.start(loc_svc.subscribe());
 //!
 //! while let Ok(cam) = cam_rx.recv() {
-//!     println!("CAM from station {}", cam.header.station_id);
+//!     println!("CAM from station {}", cam.header.station_id.0);
 //! }
 //! ```
 
@@ -41,6 +41,7 @@ pub mod cam_bindings;
 pub mod cam_coder;
 pub mod cam_ldm_adaptation;
 pub mod cam_reception;
+pub mod cam_ssp;
 pub mod cam_transmission;
 
 pub use cam_coder::{Cam, CamCoder};
@@ -118,7 +119,7 @@ impl CooperativeAwarenessBasicService {
         (svc, cam_rx)
     }
 
-    /// Activate the CA service (§6.1.2).
+    /// Activate the CA service (§5.3.1 (CA_Activation)).
     ///
     /// Spawns the transmission and reception management background worker threads.
     /// * `gps_rx` — a `Receiver<GpsFix>` from [`LocationService::subscribe`](crate::facilities::location_service::LocationService::subscribe).
@@ -173,28 +174,39 @@ impl CooperativeAwarenessBasicService {
         });
     }
 
-    /// Deactivate the CA service (§6.1.2).
+    /// Deactivate the CA service (§5.3.1 (CA_Activation)).
     ///
     /// Stops CAM transmission.
     pub fn stop(&self) {
         self.cam_transmission_management.stop();
     }
 
-    /// Set T_GenCam_DCC (§6.1.3) on the transmission management, clamped to
+    /// Set T_GenCam_DCC (§6.1.2) on the transmission management, clamped to
     /// [T_GenCamMin, T_GenCamMax]. Intended as a
     /// [`DccEntity`](crate::management::DccEntity) listener target.
+    /// Update the latest in-vehicle data (ETSI TS 103 900 §5.2, §7.1): the
+    /// next CAM carries the new values. See
+    /// [`CAMTransmissionManagement::update_in_vehicle_data`].
+    pub fn update_in_vehicle_data(
+        &self,
+        update: impl FnOnce(&mut cam_transmission::InVehicleData),
+    ) -> Result<cam_transmission::InVehicleData, String> {
+        self.cam_transmission_management
+            .update_in_vehicle_data(update)
+    }
+
     pub fn set_t_gen_cam_dcc(&self, t_gen_cam_dcc_ms: u64) {
         self.cam_transmission_management
             .set_t_gen_cam_dcc(t_gen_cam_dcc_ms);
     }
 
-    /// Update position fix directly via the location service callback (§6.1.3).
+    /// Update position fix directly via the location service callback (§6.1.2).
     pub fn location_service_callback(&self, fix: GpsFix) {
         self.cam_transmission_management
             .location_service_callback(fix);
     }
 
-    /// Register an application callback for received CAMs (IF.CAM — §6.2).
+    /// Register an application callback for received CAMs (CA_DataProvision — §5.3.1).
     pub fn add_application_callback<F>(&self, callback: F)
     where
         F: Fn(&Cam, u64) + Send + Sync + 'static,
@@ -203,6 +215,9 @@ impl CooperativeAwarenessBasicService {
             .add_application_callback(callback);
     }
 }
+
+#[cfg(test)]
+pub(crate) mod conformance;
 
 #[cfg(test)]
 mod tests {
@@ -266,6 +281,7 @@ mod tests {
             speed_mps: 10.0,
             heading_deg: 90.0,
             pai: true,
+            fix_time_ms: None,
         };
         service.location_service_callback(fix);
         let cached = service

@@ -231,7 +231,16 @@ pub mod cam_pdu_descriptions {
         pub low_frequency_container: Option<LowFrequencyContainer>,
         #[rasn(identifier = "specialVehicleContainer")]
         pub special_vehicle_container: Option<SpecialVehicleContainer>,
-        #[rasn(extension_addition, identifier = "extensionContainers")]
+        // The SIZE constraint is repeated on the field: rasn (0.26 to 0.30)
+        // drops the constraints of a delegate type encoded as an extension
+        // addition, and wrote the SEQUENCE OF count as an unconstrained length
+        // (X.691 open type of the wrong value; FlexStack Python and asn1c
+        // could not decode it).
+        #[rasn(
+            extension_addition,
+            size("1..=8", extensible),
+            identifier = "extensionContainers"
+        )]
         pub extension_containers: Option<WrappedExtensionContainers>,
     }
     impl CamParameters {
@@ -423,18 +432,18 @@ pub mod cam_pdu_descriptions {
     #[rasn(delegate, value("1..=16", extensible))]
     pub struct ExtensionContainerId(pub Integer);
     #[doc = "*"]
-    #[doc = "* This type represents the generalized lane positions container."]
+    #[doc = "* This type represents the road lane positions container (CAM v2.3; named GeneralizedLanePositionsContainer up to v2.2)."]
     #[doc = "*"]
     #[doc = "* Contains detailed information about the transversal position of the ITS station with respect to the road and potentially about the lane type."]
     #[doc = ""]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     #[non_exhaustive]
-    pub struct GeneralizedLanePositionsContainer {
+    pub struct RoadLanePositionsContainer {
         #[rasn(identifier = "generalizedLanePositions")]
         pub generalized_lane_positions: GeneralizedLanePositions,
     }
-    impl GeneralizedLanePositionsContainer {
+    impl RoadLanePositionsContainer {
         pub fn new(generalized_lane_positions: GeneralizedLanePositions) -> Self {
             Self {
                 generalized_lane_positions,

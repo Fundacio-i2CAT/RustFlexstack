@@ -96,12 +96,34 @@ impl MID {
         MID { mid }
     }
 
-    pub fn encode_to_address(&self) -> u64 {
-        let mut address: u64 = 0;
-        for i in 0..6 {
-            address |= (self.mid[i] as u64) << (8 * (5 - i));
+    /// MID for GN over ITS-G5: the 48-bit MAC address of the ITS-G5
+    /// interface (ETSI TS 103 836-4-2 V2.1.1, clause 6.1).
+    pub fn from_its_g5_mac(mac_address: [u8; 6]) -> Self {
+        MID { mid: mac_address }
+    }
+
+    /// MID for GN over LTE-V2X: the 24-bit Source Layer 2 ID in octets 2-4
+    /// of the GN address, octets 5-7 set to zero (ETSI TS 103 836-4-3
+    /// V2.1.1, clause 5.2). `None` when `l2_id` does not fit in 24 bits.
+    pub fn from_lte_v2x_l2_id(l2_id: u32) -> Option<Self> {
+        if l2_id >= 1 << 24 {
+            return None;
         }
-        address
+        let b = l2_id.to_be_bytes();
+        Some(MID {
+            mid: [b[1], b[2], b[3], 0, 0, 0],
+        })
+    }
+
+    /// The link-layer address carried in the MID field.
+    pub fn as_bytes(&self) -> [u8; 6] {
+        self.mid
+    }
+
+    pub fn encode_to_address(&self) -> u64 {
+        self.mid
+            .iter()
+            .fold(0u64, |address, &octet| (address << 8) | octet as u64)
     }
 
     pub fn decode_from_address(address: u64) -> Self {

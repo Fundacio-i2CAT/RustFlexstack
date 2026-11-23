@@ -4,3 +4,6 @@
 pub mod btp_header;
 pub mod router;
 pub mod service_access_point;
+
+#[cfg(test)]
+mod conformance;

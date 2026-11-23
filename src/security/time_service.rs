@@ -7,10 +7,24 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Unix timestamp of the ITS epoch (2004-01-01T00:00:00 UTC).
-const ITS_EPOCH: u64 = 1_072_915_200;
+pub const ITS_EPOCH: u64 = 1_072_915_200;
 
-/// Leap-second offset UTC → TAI at the ITS epoch.
-const ELAPSED_SECONDS: u64 = 5;
+/// [`ITS_EPOCH`] in milliseconds.
+pub const ITS_EPOCH_MS: u64 = ITS_EPOCH * 1_000;
+
+/// Leap seconds inserted since the ITS epoch (TAI − UTC drift since 2004:
+/// 2005, 2008, 2012, 2015 and 2016). TimestampIts counts TAI milliseconds
+/// (ETSI TS 102 894-2), so this offset is added to UTC time.
+pub const ELAPSED_SECONDS: u64 = 5;
+
+/// [`ELAPSED_SECONDS`] in milliseconds.
+pub const ELAPSED_MILLISECONDS: u64 = ELAPSED_SECONDS * 1_000;
+
+/// Convert a Unix (UTC) timestamp in ms to ITS time (TAI ms since the ITS
+/// epoch), i.e. the TimestampIts of ETSI TS 102 894-2. Saturates at 0.
+pub fn unix_ms_to_its_ms(unix_ms: u64) -> u64 {
+    (unix_ms + ELAPSED_MILLISECONDS).saturating_sub(ITS_EPOCH_MS)
+}
 
 /// Return the current UTC timestamp in seconds (as `f64`).
 pub fn unix_time_secs() -> f64 {

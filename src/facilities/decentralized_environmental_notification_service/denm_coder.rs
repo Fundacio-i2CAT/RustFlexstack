@@ -29,7 +29,7 @@ pub use super::denm_bindings::etsi_its_cdd::{
 
 /// ITS epoch offset from UNIX epoch in milliseconds
 /// (2004-01-01T00:00:00 UTC = 1 072 911 600 s).
-const ITS_EPOCH_MS: u64 = 1_072_911_600_000;
+use crate::security::time_service::unix_ms_to_its_ms;
 
 /// Return the current ITS timestamp (milliseconds since ITS epoch) as a
 /// [`TimestampIts`].
@@ -41,7 +41,7 @@ pub fn timestamp_its_now() -> TimestampIts {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    TimestampIts(unix_ms.saturating_sub(ITS_EPOCH_MS))
+    TimestampIts(unix_ms_to_its_ms(unix_ms))
 }
 
 // ─── ITS PDU Header helper ────────────────────────────────────────────────────

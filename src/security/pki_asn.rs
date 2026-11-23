@@ -1,32 +1,57 @@
-#[allow(
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
+
+//! ASN.1 types of the ETSI TS 102 941 V2.2.1 ITS-S messages (official modules
+//! of <https://forge.etsi.org/rep/ITS/asn1/pki_ts102941>, tag v2.2.1):
+//! `EtsiTs102941BaseTypes`, `EtsiTs102941TypesEnrolment`,
+//! `EtsiTs102941TypesAuthorization`, `EtsiTs102941TrustLists`,
+//! `EtsiTs102941TypesLinkCertificate` and `EtsiTs102941MessagesItss`.
+//!
+//! `#[non_exhaustive]` marks the extensible types (`...`), as in the code
+//! generated for the other modules. Subtype constraints (`WITH COMPONENTS`)
+//! are checked by the PKI client, not by the types. The alternatives of
+//! `EtsiTs102941DataContent` added for butterfly key expansion carry IEEE
+//! 1609.2.1 types; butterfly is not implemented and they are kept as OCTET
+//! STRINGs, as the IEEE 1609.2.1 stubs of the Python stack (rasn cannot decode
+//! [`rasn::types::Any`] in OER: it panics), which does not affect the other
+//! alternatives.
+//! The encodings are checked against frozen vectors produced from the official
+//! module text (Python stack, `test_pki_coder.py`).
+
+#![allow(
     non_camel_case_types,
     non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::large_enum_variant
 )]
-use crate::security::security_asn::{
-    etsi_ts103097_module, ieee1609_dot2, ieee1609_dot2_base_types,
+
+use rasn::prelude::*;
+
+use crate::security::security_asn::etsi_ts103097_module::EtsiTs103097Certificate;
+use crate::security::security_asn::ieee1609_dot2::{
+    CertificateId, HashedData, Ieee1609Dot2Data, SequenceOfPsidGroupPermissions,
+};
+use crate::security::security_asn::ieee1609_dot2_base_types::{
+    GeographicRegion, HashedId8, PublicEncryptionKey, PublicVerificationKey, SequenceOfPsidSsp,
+    SubjectAssurance, Time32, ValidityPeriod,
 };
 
+/// `EtsiTs102941BaseTypes`.
 pub mod etsi_ts102941_base_types {
-    extern crate alloc;
-    use super::etsi_ts103097_module::EtsiTs103097Certificate;
-    use super::ieee1609_dot2::{CertificateId, Ieee1609Dot2Data, SequenceOfPsidGroupPermissions};
-    use super::ieee1609_dot2_base_types::{
-        GeographicRegion, HashedId8, PublicEncryptionKey, PublicVerificationKey, SequenceOfPsidSsp,
-        SubjectAssurance, Time32, Uint8, ValidityPeriod,
-    };
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = " Certificate format version: 1 = ts103097v131"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CertificateFormat(pub Uint8);
-    #[doc = " Subject attributes requested in EC/AT certificate"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    use super::*;
+
+    /// `CertificateFormat ::= INTEGER {ts103097v131 (1)} (1..255)`.
+    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(delegate, value("1..=255"))]
+    pub struct CertificateFormat(pub u8);
+
+    /// ts103097v131.
+    pub const TS103097V131: CertificateFormat = CertificateFormat(1);
+
+    /// `CertificateSubjectAttributes` (extensible).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Default)]
     #[rasn(automatic_tags)]
+    #[non_exhaustive]
     pub struct CertificateSubjectAttributes {
         pub id: Option<CertificateId>,
         #[rasn(identifier = "validityPeriod")]
@@ -39,6 +64,7 @@ pub mod etsi_ts102941_base_types {
         #[rasn(identifier = "certIssuePermissions")]
         pub cert_issue_permissions: Option<SequenceOfPsidGroupPermissions>,
     }
+
     impl CertificateSubjectAttributes {
         pub fn new(
             id: Option<CertificateId>,
@@ -58,24 +84,17 @@ pub mod etsi_ts102941_base_types {
             }
         }
     }
-    #[doc = " Sequential number for CTL/CRL"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct CtlSequenceNumber(pub Uint8);
-    #[doc = " EC signature (over SharedAtRequest), either privacy-protected (encrypted) or plain"]
-    #[doc = " The privacy case encrypts the signed structure with the EA's encryption key."]
-    #[doc = " Both alternatives carry an EtsiTs103097Data structure."]
+
+    /// `EcSignature`: the EC signature of the SharedAtRequest, encrypted for the
+    /// EA (privacy) or not.
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(choice, automatic_tags)]
     pub enum EcSignature {
-        ecSignature(Ieee1609Dot2Data),
         encryptedEcSignature(Ieee1609Dot2Data),
+        ecSignature(Ieee1609Dot2Data),
     }
-    #[doc = " HashedId10: 10-byte truncated hash used in CRL entries"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate)]
-    pub struct HashedId10(pub FixedOctetString<10usize>);
-    #[doc = " Container for the verification + optional encryption public keys"]
+
+    /// `PublicKeys` (not extensible).
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     pub struct PublicKeys {
@@ -84,6 +103,7 @@ pub mod etsi_ts102941_base_types {
         #[rasn(identifier = "encryptionKey")]
         pub encryption_key: Option<PublicEncryptionKey>,
     }
+
     impl PublicKeys {
         pub fn new(
             verification_key: PublicVerificationKey,
@@ -95,246 +115,104 @@ pub mod etsi_ts102941_base_types {
             }
         }
     }
-    #[doc = " URL type (up to 2048 UTF-8 characters)"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(delegate, size("0..=2048"))]
-    pub struct Url(pub Utf8String);
 }
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments
-)]
-pub mod etsi_ts102941_messages_itss {
-    extern crate alloc;
-    use super::etsi_ts102941_trust_lists::{ToBeSignedCrl, ToBeSignedRcaCtl};
-    use super::etsi_ts102941_types_authorization::{InnerAtRequest, InnerAtResponse};
-    use super::etsi_ts102941_types_authorization_validation::{
-        AuthorizationValidationRequest, AuthorizationValidationResponse,
-    };
-    use super::etsi_ts102941_types_enrolment::{InnerECRequest, InnerECResponse};
-    use super::ieee1609_dot2_base_types::Uint8;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = " TS 102 941 v2.2.1 §6.2 — Top-level ETSI TS 102 941 message envelope"]
-    #[doc = " This wraps all PKI protocol messages with a version field."]
-    #[doc = " Conveyed as the payload of an EtsiTs103097Data-Signed or -Encrypted structure."]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EtsiTs102941Data {
-        #[rasn(value("1"))]
-        pub version: Uint8,
-        pub content: EtsiTs102941DataContent,
-    }
-    impl EtsiTs102941Data {
-        pub fn new(version: Uint8, content: EtsiTs102941DataContent) -> Self {
-            Self { version, content }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    pub enum EtsiTs102941DataContent {
-        enrolmentRequest(InnerECRequest),
-        enrolmentResponse(InnerECResponse),
-        authorizationRequest(InnerAtRequest),
-        authorizationResponse(InnerAtResponse),
-        authorizationValidationRequest(AuthorizationValidationRequest),
-        authorizationValidationResponse(AuthorizationValidationResponse),
-        certificateTrustListTlm(ToBeSignedRcaCtl),
-        certificateTrustListRca(ToBeSignedRcaCtl),
-        certificateRevocationList(ToBeSignedCrl),
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments
-)]
-pub mod etsi_ts102941_trust_lists {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{CtlSequenceNumber, HashedId10, Url};
-    use super::etsi_ts103097_module::EtsiTs103097Certificate;
-    use super::ieee1609_dot2_base_types::{HashedId8, Time32};
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AaEntry {
-        #[rasn(identifier = "aaCertificate")]
-        pub aa_certificate: EtsiTs103097Certificate,
-        #[rasn(identifier = "itsAccessPoint")]
-        pub its_access_point: Option<Url>,
-    }
-    impl AaEntry {
-        pub fn new(aa_certificate: EtsiTs103097Certificate, its_access_point: Option<Url>) -> Self {
-            Self {
-                aa_certificate,
-                its_access_point,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct CrlEntry {
-        #[rasn(identifier = "revokedCertificate")]
-        pub revoked_certificate: HashedId10,
-        pub expiry: Time32,
-    }
-    impl CrlEntry {
-        pub fn new(revoked_certificate: HashedId10, expiry: Time32) -> Self {
-            Self {
-                revoked_certificate,
-                expiry,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    pub enum CtlCommand {
-        add(CtlEntry),
-        delete(CtlDeleteEntry),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    pub enum CtlDeleteEntry {
-        ea(HashedId8),
-        aa(HashedId8),
-        dc(HashedId8),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    pub enum CtlEntry {
-        ea(EaEntry),
-        aa(AaEntry),
-        dc(DcEntry),
-    }
-    #[doc = " TS 102 941 v2.2.1 §6.3 — Trust List structures"]
-    #[doc = " Top-level CTL format: full or delta"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(choice, automatic_tags)]
-    pub enum CtlFormat {
-        fullCtl(ToBeSignedRcaCtl),
-        deltaCtl(ToBeSignedRcaCtl),
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct DcEntry {
-        pub url: Url,
-        pub cert: Option<SequenceOf<EtsiTs103097Certificate>>,
-    }
-    impl DcEntry {
-        pub fn new(url: Url, cert: Option<SequenceOf<EtsiTs103097Certificate>>) -> Self {
-            Self { url, cert }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct EaEntry {
-        #[rasn(identifier = "eaCertificate")]
-        pub ea_certificate: EtsiTs103097Certificate,
-        #[rasn(identifier = "aaAccessPoint")]
-        pub aa_access_point: Option<Url>,
-        #[rasn(identifier = "itsAccessPoint")]
-        pub its_access_point: Option<Url>,
-    }
-    impl EaEntry {
-        pub fn new(
-            ea_certificate: EtsiTs103097Certificate,
-            aa_access_point: Option<Url>,
-            its_access_point: Option<Url>,
-        ) -> Self {
-            Self {
-                ea_certificate,
-                aa_access_point,
-                its_access_point,
-            }
-        }
-    }
-    #[doc = " CRL structures (TS 102 941 v2.2.1 §6.3.5)"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ToBeSignedCrl {
-        #[rasn(value("1"))]
-        pub version: u8,
-        #[rasn(identifier = "thisUpdate")]
-        pub this_update: Time32,
-        #[rasn(identifier = "nextUpdate")]
-        pub next_update: Time32,
-        pub entries: SequenceOf<CrlEntry>,
-    }
-    impl ToBeSignedCrl {
-        pub fn new(
-            version: u8,
-            this_update: Time32,
-            next_update: Time32,
-            entries: SequenceOf<CrlEntry>,
-        ) -> Self {
-            Self {
-                version,
-                this_update,
-                next_update,
-                entries,
-            }
-        }
-    }
-    #[doc = " Full and delta share the same structure (distinguished by context)"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct ToBeSignedRcaCtl {
-        #[rasn(value("1"))]
-        pub version: u8,
-        #[rasn(identifier = "nextUpdate")]
-        pub next_update: Time32,
-        #[rasn(identifier = "isFullCtl")]
-        pub is_full_ctl: bool,
-        #[rasn(identifier = "ctlSequence")]
-        pub ctl_sequence: CtlSequenceNumber,
-        #[rasn(identifier = "ctlCommands")]
-        pub ctl_commands: SequenceOf<CtlCommand>,
-    }
-    impl ToBeSignedRcaCtl {
-        pub fn new(
-            version: u8,
-            next_update: Time32,
-            is_full_ctl: bool,
-            ctl_sequence: CtlSequenceNumber,
-            ctl_commands: SequenceOf<CtlCommand>,
-        ) -> Self {
-            Self {
-                version,
-                next_update,
-                is_full_ctl,
-                ctl_sequence,
-                ctl_commands,
-            }
-        }
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments
-)]
-pub mod etsi_ts102941_types_authorization {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{
-        CertificateFormat, CertificateSubjectAttributes, EcSignature, PublicKeys,
-    };
-    use super::etsi_ts103097_module::EtsiTs103097Certificate;
-    use super::ieee1609_dot2_base_types::HashedId8;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
+
+/// `EtsiTs102941TypesEnrolment`.
+pub mod etsi_ts102941_types_enrolment {
+    use super::etsi_ts102941_base_types::*;
+    use super::*;
+
+    /// `EnrolmentResponseCode` (extensible).
+    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(enumerated)]
+    #[non_exhaustive]
+    pub enum EnrolmentResponseCode {
+        ok = 0,
+        cantparse = 1,
+        badcontenttype = 2,
+        imnottherecipient = 3,
+        unknownencryptionalgorithm = 4,
+        decryptionfailed = 5,
+        unknownits = 6,
+        invalidsignature = 7,
+        invalidencryptionkey = 8,
+        baditsstatus = 9,
+        incompleterequest = 10,
+        deniedpermissions = 11,
+        invalidkeys = 12,
+        deniedrequest = 13,
+    }
+
+    /// `InnerEcRequestSignedForPop ::= EtsiTs103097Data-Signed{InnerEcRequest}`.
+    pub type InnerEcRequestSignedForPop = Ieee1609Dot2Data;
+
+    /// `InnerEcRequest` (extensible).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    #[non_exhaustive]
+    pub struct InnerEcRequest {
+        #[rasn(identifier = "itsId")]
+        pub its_id: OctetString,
+        #[rasn(identifier = "certificateFormat")]
+        pub certificate_format: CertificateFormat,
+        #[rasn(identifier = "publicKeys")]
+        pub public_keys: PublicKeys,
+        #[rasn(identifier = "requestedSubjectAttributes")]
+        pub requested_subject_attributes: CertificateSubjectAttributes,
+    }
+
+    impl InnerEcRequest {
+        pub fn new(
+            its_id: OctetString,
+            certificate_format: CertificateFormat,
+            public_keys: PublicKeys,
+            requested_subject_attributes: CertificateSubjectAttributes,
+        ) -> Self {
+            Self {
+                its_id,
+                certificate_format,
+                public_keys,
+                requested_subject_attributes,
+            }
+        }
+    }
+
+    /// `InnerEcResponse` (extensible).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    #[non_exhaustive]
+    pub struct InnerEcResponse {
+        #[rasn(identifier = "requestHash")]
+        pub request_hash: FixedOctetString<16>,
+        #[rasn(identifier = "responseCode")]
+        pub response_code: EnrolmentResponseCode,
+        pub certificate: Option<EtsiTs103097Certificate>,
+    }
+
+    impl InnerEcResponse {
+        pub fn new(
+            request_hash: FixedOctetString<16>,
+            response_code: EnrolmentResponseCode,
+            certificate: Option<EtsiTs103097Certificate>,
+        ) -> Self {
+            Self {
+                request_hash,
+                response_code,
+                certificate,
+            }
+        }
+    }
+}
+
+/// `EtsiTs102941TypesAuthorization`.
+pub mod etsi_ts102941_types_authorization {
+    use super::etsi_ts102941_base_types::*;
+    use super::*;
+
+    /// `AuthorizationResponseCode` (extensible).
+    #[derive(AsnType, Debug, Clone, Copy, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(enumerated)]
+    #[non_exhaustive]
     pub enum AuthorizationResponseCode {
         ok = 0,
         #[rasn(identifier = "its-aa-cantparse")]
@@ -382,23 +260,26 @@ pub mod etsi_ts102941_types_authorization {
         deniedpermissions = 25,
         deniedtoomanycerts = 26,
     }
-    #[doc = " Inner AT request (encrypted and sent to AA)"]
+
+    /// `InnerAtRequest` (extensible).
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
+    #[non_exhaustive]
     pub struct InnerAtRequest {
         #[rasn(identifier = "publicKeys")]
         pub public_keys: PublicKeys,
-        #[rasn(size("32"), identifier = "hmacKey")]
-        pub hmac_key: OctetString,
+        #[rasn(identifier = "hmacKey")]
+        pub hmac_key: FixedOctetString<32>,
         #[rasn(identifier = "sharedAtRequest")]
         pub shared_at_request: SharedAtRequest,
         #[rasn(identifier = "ecSignature")]
         pub ec_signature: EcSignature,
     }
+
     impl InnerAtRequest {
         pub fn new(
             public_keys: PublicKeys,
-            hmac_key: OctetString,
+            hmac_key: FixedOctetString<32>,
             shared_at_request: SharedAtRequest,
             ec_signature: EcSignature,
         ) -> Self {
@@ -410,48 +291,26 @@ pub mod etsi_ts102941_types_authorization {
             }
         }
     }
-    #[doc = " NOTE: InnerAtResponse has NO version field (unlike InnerECResponse)."]
-    #[doc = " Per TS 102 941 v2.2.1 EtsiTs102941TypesAuthorization ASN.1 module."]
+
+    /// `SharedAtRequest` (extensible).
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
-    pub struct InnerAtResponse {
-        #[rasn(size("16"), identifier = "requestHash")]
-        pub request_hash: OctetString,
-        #[rasn(identifier = "responseCode")]
-        pub response_code: AuthorizationResponseCode,
-        pub certificate: Option<EtsiTs103097Certificate>,
-    }
-    impl InnerAtResponse {
-        pub fn new(
-            request_hash: OctetString,
-            response_code: AuthorizationResponseCode,
-            certificate: Option<EtsiTs103097Certificate>,
-        ) -> Self {
-            Self {
-                request_hash,
-                response_code,
-                certificate,
-            }
-        }
-    }
-    #[doc = " TS 102 941 v2.2.1 §6.2.3.3 — Authorization"]
-    #[doc = " Shared portion of the AT request (forwarded by AA to EA for validation)"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
+    #[non_exhaustive]
     pub struct SharedAtRequest {
         #[rasn(identifier = "eaId")]
         pub ea_id: HashedId8,
-        #[rasn(size("16"), identifier = "keyTag")]
-        pub key_tag: OctetString,
+        #[rasn(identifier = "keyTag")]
+        pub key_tag: FixedOctetString<16>,
         #[rasn(identifier = "certificateFormat")]
         pub certificate_format: CertificateFormat,
         #[rasn(identifier = "requestedSubjectAttributes")]
         pub requested_subject_attributes: CertificateSubjectAttributes,
     }
+
     impl SharedAtRequest {
         pub fn new(
             ea_id: HashedId8,
-            key_tag: OctetString,
+            key_tag: FixedOctetString<16>,
             certificate_format: CertificateFormat,
             requested_subject_attributes: CertificateSubjectAttributes,
         ) -> Self {
@@ -463,164 +322,493 @@ pub mod etsi_ts102941_types_authorization {
             }
         }
     }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments
-)]
-pub mod etsi_ts102941_types_authorization_validation {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{CertificateSubjectAttributes, EcSignature};
-    use super::etsi_ts102941_types_authorization::SharedAtRequest;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[doc = " TS 102 941 v2.2.1 §6.2.3.4 — Authorization Validation (S4: AA → EA)"]
+
+    /// `InnerAtResponse` (extensible).
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(automatic_tags)]
     #[non_exhaustive]
-    pub struct AuthorizationValidationRequest {
-        #[rasn(identifier = "sharedAtRequest")]
-        pub shared_at_request: SharedAtRequest,
-        #[rasn(identifier = "ecSignature")]
-        pub ec_signature: EcSignature,
-    }
-    impl AuthorizationValidationRequest {
-        pub fn new(shared_at_request: SharedAtRequest, ec_signature: EcSignature) -> Self {
-            Self {
-                shared_at_request,
-                ec_signature,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct AuthorizationValidationResponse {
-        #[rasn(size("16"), identifier = "requestHash")]
-        pub request_hash: OctetString,
+    pub struct InnerAtResponse {
+        #[rasn(identifier = "requestHash")]
+        pub request_hash: FixedOctetString<16>,
         #[rasn(identifier = "responseCode")]
-        pub response_code: AuthorizationValidationResponseCode,
-        #[rasn(identifier = "confirmedSubjectAttributes")]
-        pub confirmed_subject_attributes: Option<CertificateSubjectAttributes>,
+        pub response_code: AuthorizationResponseCode,
+        pub certificate: Option<EtsiTs103097Certificate>,
     }
-    impl AuthorizationValidationResponse {
+
+    impl InnerAtResponse {
         pub fn new(
-            request_hash: OctetString,
-            response_code: AuthorizationValidationResponseCode,
-            confirmed_subject_attributes: Option<CertificateSubjectAttributes>,
+            request_hash: FixedOctetString<16>,
+            response_code: AuthorizationResponseCode,
+            certificate: Option<EtsiTs103097Certificate>,
         ) -> Self {
             Self {
                 request_hash,
                 response_code,
-                confirmed_subject_attributes,
-            }
-        }
-    }
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(enumerated)]
-    pub enum AuthorizationValidationResponseCode {
-        ok = 0,
-        cantparse = 1,
-        badcontenttype = 2,
-        imnottherecipient = 3,
-        unknownencryptionalgorithm = 4,
-        decryptionfailed = 5,
-        invalidaa = 6,
-        invalidaasignature = 7,
-        wrongea = 8,
-        unknownits = 9,
-        invalidsignature = 10,
-        invalidencryptionkey = 11,
-        deniedpermissions = 12,
-        deniedtoomanycerts = 13,
-        deniedrequest = 14,
-    }
-}
-#[allow(
-    non_camel_case_types,
-    non_snake_case,
-    non_upper_case_globals,
-    unused,
-    clippy::too_many_arguments
-)]
-pub mod etsi_ts102941_types_enrolment {
-    extern crate alloc;
-    use super::etsi_ts102941_base_types::{
-        CertificateFormat, CertificateSubjectAttributes, PublicKeys,
-    };
-    use super::etsi_ts103097_module::EtsiTs103097Certificate;
-    use super::ieee1609_dot2_base_types::Uint8;
-    use core::borrow::Borrow;
-    use rasn::prelude::*;
-    use std::sync::LazyLock;
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash, Copy)]
-    #[rasn(enumerated)]
-    pub enum EnrolmentResponseCode {
-        ok = 0,
-        cantparse = 1,
-        badcontenttype = 2,
-        imtoolate = 3,
-        imtooearlyorequaltime = 4,
-        unauthorizedrequest = 5,
-        invalidsig = 6,
-        invalidencryptionkey = 7,
-        dupkey = 8,
-        invalidrequestformat = 9,
-        subjectnotfound = 10,
-        incompatiblelevel = 11,
-    }
-    #[doc = " TS 102 941 v2.2.1 §6.2.3.2 — Enrolment"]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct InnerECRequest {
-        #[rasn(identifier = "itsId")]
-        pub its_id: OctetString,
-        #[rasn(identifier = "certificateFormat")]
-        pub certificate_format: CertificateFormat,
-        #[rasn(identifier = "publicKeys")]
-        pub public_keys: PublicKeys,
-        #[rasn(identifier = "requestedSubjectAttributes")]
-        pub requested_subject_attributes: CertificateSubjectAttributes,
-    }
-    impl InnerECRequest {
-        pub fn new(
-            its_id: OctetString,
-            certificate_format: CertificateFormat,
-            public_keys: PublicKeys,
-            requested_subject_attributes: CertificateSubjectAttributes,
-        ) -> Self {
-            Self {
-                its_id,
-                certificate_format,
-                public_keys,
-                requested_subject_attributes,
-            }
-        }
-    }
-    #[doc = " InnerECRequestSignedForPOP is an EtsiTs103097Data-Signed wrapping the InnerECRequest."]
-    #[doc = " Encoded as Ieee1609Dot2Data at the outer layer; handled in message_builder.py."]
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
-    #[rasn(automatic_tags)]
-    pub struct InnerECResponse {
-        pub version: Uint8,
-        #[rasn(identifier = "responseCode")]
-        pub response_code: EnrolmentResponseCode,
-        pub certificate: Option<EtsiTs103097Certificate>,
-    }
-    impl InnerECResponse {
-        pub fn new(
-            version: Uint8,
-            response_code: EnrolmentResponseCode,
-            certificate: Option<EtsiTs103097Certificate>,
-        ) -> Self {
-            Self {
-                version,
-                response_code,
                 certificate,
             }
         }
+    }
+}
+
+/// `EtsiTs102941TrustLists`.
+pub mod etsi_ts102941_trust_lists {
+    use super::*;
+
+    /// `Url ::= IA5String`.
+    pub type Url = Ia5String;
+    /// `CrlEntry ::= HashedId8`.
+    pub type CrlEntry = HashedId8;
+
+    /// `ToBeSignedCrl` (extensible); `version` is `Version ::= INTEGER {v1(1)}`.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    #[non_exhaustive]
+    pub struct ToBeSignedCrl {
+        pub version: Integer,
+        #[rasn(identifier = "thisUpdate")]
+        pub this_update: Time32,
+        #[rasn(identifier = "nextUpdate")]
+        pub next_update: Time32,
+        pub entries: SequenceOf<CrlEntry>,
+    }
+
+    impl ToBeSignedCrl {
+        pub fn new(
+            version: Integer,
+            this_update: Time32,
+            next_update: Time32,
+            entries: SequenceOf<CrlEntry>,
+        ) -> Self {
+            Self {
+                version,
+                this_update,
+                next_update,
+                entries,
+            }
+        }
+    }
+
+    /// `CtlFormat` (extensible); `ToBeSignedTlmCtl` and `ToBeSignedRcaCtl` are
+    /// subtypes of it (full or delta CTL, allowed entries).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    #[non_exhaustive]
+    pub struct CtlFormat {
+        pub version: Integer,
+        #[rasn(identifier = "nextUpdate")]
+        pub next_update: Time32,
+        #[rasn(identifier = "isFullCtl")]
+        pub is_full_ctl: bool,
+        #[rasn(identifier = "ctlSequence", value("0..=255"))]
+        pub ctl_sequence: u8,
+        #[rasn(identifier = "ctlCommands")]
+        pub ctl_commands: SequenceOf<CtlCommand>,
+    }
+
+    impl CtlFormat {
+        pub fn new(
+            version: Integer,
+            next_update: Time32,
+            is_full_ctl: bool,
+            ctl_sequence: u8,
+            ctl_commands: SequenceOf<CtlCommand>,
+        ) -> Self {
+            Self {
+                version,
+                next_update,
+                is_full_ctl,
+                ctl_sequence,
+                ctl_commands,
+            }
+        }
+    }
+
+    pub type ToBeSignedTlmCtl = CtlFormat;
+    pub type ToBeSignedRcaCtl = CtlFormat;
+
+    /// `CtlCommand` (extensible).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(choice, automatic_tags)]
+    #[non_exhaustive]
+    pub enum CtlCommand {
+        add(CtlEntry),
+        delete(CtlDelete),
+    }
+
+    /// `CtlEntry` (extensible).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(choice, automatic_tags)]
+    #[non_exhaustive]
+    pub enum CtlEntry {
+        rca(RootCaEntry),
+        ea(EaEntry),
+        aa(AaEntry),
+        dc(DcEntry),
+        tlm(TlmEntry),
+    }
+
+    /// `CtlDelete` (extensible).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(choice, automatic_tags)]
+    #[non_exhaustive]
+    pub enum CtlDelete {
+        cert(HashedId8),
+        dc(Url),
+    }
+
+    /// `TlmEntry`.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct TlmEntry {
+        #[rasn(identifier = "selfSignedTLMCertificate")]
+        pub self_signed_tlm_certificate: EtsiTs103097Certificate,
+        #[rasn(identifier = "successorTo")]
+        pub successor_to: Option<EtsiTs103097Certificate>,
+        #[rasn(identifier = "accessPoint")]
+        pub access_point: Url,
+    }
+
+    /// `RootCaEntry`.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct RootCaEntry {
+        #[rasn(identifier = "selfsignedRootCa")]
+        pub selfsigned_root_ca: EtsiTs103097Certificate,
+        #[rasn(identifier = "successorTo")]
+        pub successor_to: Option<EtsiTs103097Certificate>,
+    }
+
+    /// `EaEntry`.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct EaEntry {
+        #[rasn(identifier = "eaCertificate")]
+        pub ea_certificate: EtsiTs103097Certificate,
+        #[rasn(identifier = "aaAccessPoint")]
+        pub aa_access_point: Url,
+        #[rasn(identifier = "itsAccessPoint")]
+        pub its_access_point: Option<Url>,
+    }
+
+    /// `AaEntry`.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct AaEntry {
+        #[rasn(identifier = "aaCertificate")]
+        pub aa_certificate: EtsiTs103097Certificate,
+        #[rasn(identifier = "accessPoint")]
+        pub access_point: Url,
+    }
+
+    /// `DcEntry`.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct DcEntry {
+        pub url: Url,
+        pub cert: SequenceOf<HashedId8>,
+    }
+}
+
+/// `EtsiTs102941TypesLinkCertificate`.
+pub mod etsi_ts102941_types_link_certificate {
+    use super::*;
+
+    /// `ToBeSignedLinkCertificate` (extensible); the TLM and RCA variants are the same type.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    #[non_exhaustive]
+    pub struct ToBeSignedLinkCertificate {
+        #[rasn(identifier = "expiryTime")]
+        pub expiry_time: Time32,
+        #[rasn(identifier = "certificateHash")]
+        pub certificate_hash: HashedData,
+    }
+
+    pub type ToBeSignedLinkCertificateTlm = ToBeSignedLinkCertificate;
+}
+
+/// `EtsiTs102941MessagesItss`.
+pub mod etsi_ts102941_messages_itss {
+    use super::etsi_ts102941_trust_lists::*;
+    use super::etsi_ts102941_types_authorization::*;
+    use super::etsi_ts102941_types_enrolment::*;
+    use super::etsi_ts102941_types_link_certificate::*;
+    use super::*;
+
+    /// `EtsiTs102941Data`; `version` is `Version (v1)`, i.e. the value 1.
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct EtsiTs102941Data {
+        #[rasn(value("1"))]
+        pub version: u8,
+        pub content: EtsiTs102941DataContent,
+    }
+
+    impl EtsiTs102941Data {
+        /// Version v1 with `content`.
+        pub fn new(content: EtsiTs102941DataContent) -> Self {
+            Self {
+                version: 1,
+                content,
+            }
+        }
+    }
+
+    /// `EtsiTs102941DataContent` (extensible).
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(choice, automatic_tags)]
+    #[non_exhaustive]
+    pub enum EtsiTs102941DataContent {
+        enrolmentRequest(InnerEcRequestSignedForPop),
+        enrolmentResponse(InnerEcResponse),
+        authorizationRequest(InnerAtRequest),
+        authorizationResponse(InnerAtResponse),
+        certificateRevocationList(ToBeSignedCrl),
+        certificateTrustListTlm(ToBeSignedTlmCtl),
+        certificateTrustListRca(ToBeSignedRcaCtl),
+        authorizationValidationRequest(()),
+        authorizationValidationResponse(()),
+        caCertificateRequest(()),
+        #[rasn(extension_addition)]
+        linkCertificateTlm(ToBeSignedLinkCertificateTlm),
+        #[rasn(extension_addition)]
+        singleSignedLinkCertificateRca(()),
+        #[rasn(extension_addition)]
+        doubleSignedlinkCertificateRca(()),
+        #[rasn(extension_addition)]
+        butterflyAuthorizationRequest(OctetString),
+        #[rasn(extension_addition)]
+        x509SignedbutterflyAuthorizationRequest(OctetString),
+        #[rasn(extension_addition)]
+        butterflyAuthorizationResponse(OctetString),
+        #[rasn(extension_addition)]
+        butterflyCertificateRequest(()),
+        #[rasn(extension_addition)]
+        butterflyCertificateResponse(()),
+        #[rasn(extension_addition)]
+        butterflyAtDownloadRequest(OctetString),
+    }
+}
+
+/// COER encoding.
+pub fn encode<T: Encode>(value: &T) -> Vec<u8> {
+    rasn::coer::encode(value).expect("COER encoding of a PKI type")
+}
+
+/// COER decoding.
+pub fn decode<T: Decode>(data: &[u8]) -> Result<T, rasn::error::DecodeError> {
+    rasn::coer::decode(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::etsi_ts102941_base_types::*;
+    use super::etsi_ts102941_messages_itss::*;
+    use super::etsi_ts102941_trust_lists::*;
+    use super::etsi_ts102941_types_authorization::*;
+    use super::etsi_ts102941_types_enrolment::*;
+    use super::*;
+    use crate::security::security_asn::ieee1609_dot2_base_types::{
+        BasePublicEncryptionKey, BitmapSsp, Duration, EccP256CurvePoint, Psid, PsidSsp,
+        ServiceSpecificPermissions, SymmAlgorithm, Uint16, Uint32,
+    };
+
+    /// Frozen COER encodings of the official types, produced by asn1tools from
+    /// the forge.etsi.org module text (FlexStack `test_pki_coder.py`).
+    const INNER_EC_REQUEST: &str = "000831323334353637380180808211111111111111111111111111111111111111111111111111111111111111110080832222222222222222222222222222222222222222222222222222222222222222240000006486000101018002026f81030201c0";
+    const INNER_EC_RESPONSE: &str = "00abababababababababababababababab0d";
+    const SHARED_AT_REQUEST: &str =
+        "00aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01040102000124000125";
+    const INNER_AT_RESPONSE: &str = "00cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd0a";
+    const CRL: &str = "0184000101000000050000000601010101010101010101";
+    const RCA_CTL: &str = "0186000101000000070003010280830b68747470733a2f2f64632f0101020202020202020281800303030303030303";
+    const AT_REQUEST: &str = "0182000080834444444444444444444444444444444444444444444444444444444444444444555555555555555555555555555555555555555555555555555555555555555500aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01040101000124800382010182666666666666666680827777777777777777777777777777777777777777777777777777777777777777888888888888888888888888888888889999999999999999999999999999999980121212121212121212121212143434343434343434343434343434343434343434";
+
+    fn psid_ssp(psid: i64, ssp: Option<&[u8]>) -> PsidSsp {
+        PsidSsp::new(
+            Psid(Integer::from(psid)),
+            ssp.map(|s| ServiceSpecificPermissions::bitmapSsp(BitmapSsp(s.to_vec().into()))),
+        )
+    }
+
+    fn check<T: Encode + Decode + PartialEq + std::fmt::Debug>(value: T, vector: &str) {
+        let encoded = encode(&value);
+        assert_eq!(hex(&encoded), vector);
+        assert_eq!(decode::<T>(&encoded).unwrap(), value);
+    }
+
+    fn hex(data: &[u8]) -> String {
+        data.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// A butterfly alternative (extension addition 13) decodes, as an OCTET STRING
+    /// (IEEE 1609.2.1 stub), instead of panicking as `Any` did; the encoding of the
+    /// Python stack (`018d0403010203`).
+    #[test]
+    fn butterfly_alternative_decodes() {
+        use super::etsi_ts102941_messages_itss::{EtsiTs102941Data, EtsiTs102941DataContent};
+        let bytes = [0x01, 0x8d, 0x04, 0x03, 0x01, 0x02, 0x03];
+        let data: EtsiTs102941Data = decode(&bytes).unwrap();
+        assert!(matches!(
+            &data.content,
+            EtsiTs102941DataContent::butterflyAuthorizationRequest(o) if o.as_ref() == [1, 2, 3]
+        ));
+        assert_eq!(encode(&data), bytes);
+    }
+
+    /// The official ETSI TS 102 941 V2.2.1 encodings: extension bits in the
+    /// preambles, CHOICE indexes (CRL 4, RCA CTL 6), Version length-prefixed in
+    /// CtlFormat / ToBeSignedCrl and one octet in EtsiTs102941Data.
+    #[test]
+    fn official_encodings() {
+        let attributes = CertificateSubjectAttributes::new(
+            None,
+            Some(ValidityPeriod::new(
+                Time32(Uint32(100)),
+                Duration::years(Uint16(1)),
+            )),
+            None,
+            None,
+            Some(SequenceOfPsidSsp(vec![psid_ssp(623, Some(&[1, 0xC0]))])),
+            None,
+        );
+        check(
+            InnerEcRequest::new(
+                b"12345678".to_vec().into(),
+                TS103097V131,
+                PublicKeys::new(
+                    PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::compressed_y_0(
+                        vec![0x11; 32].into(),
+                    )),
+                    Some(PublicEncryptionKey::new(
+                        SymmAlgorithm::aes128Ccm,
+                        BasePublicEncryptionKey::eciesNistP256(EccP256CurvePoint::compressed_y_1(
+                            vec![0x22; 32].into(),
+                        )),
+                    )),
+                ),
+                attributes,
+            ),
+            INNER_EC_REQUEST,
+        );
+        check(
+            InnerEcResponse::new(
+                FixedOctetString::from([0xAB; 16]),
+                EnrolmentResponseCode::deniedrequest,
+                None,
+            ),
+            INNER_EC_RESPONSE,
+        );
+        check(
+            SharedAtRequest::new(
+                HashedId8(FixedOctetString::from([0xAA; 8])),
+                FixedOctetString::from([0xBB; 16]),
+                TS103097V131,
+                CertificateSubjectAttributes::new(
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(SequenceOfPsidSsp(vec![
+                        psid_ssp(36, None),
+                        psid_ssp(37, None),
+                    ])),
+                    None,
+                ),
+            ),
+            SHARED_AT_REQUEST,
+        );
+        check(
+            InnerAtResponse::new(
+                FixedOctetString::from([0xCD; 16]),
+                AuthorizationResponseCode::its_aa_unknownea,
+                None,
+            ),
+            INNER_AT_RESPONSE,
+        );
+        check(
+            EtsiTs102941Data::new(EtsiTs102941DataContent::certificateRevocationList(
+                ToBeSignedCrl::new(
+                    Integer::from(1),
+                    Time32(Uint32(5)),
+                    Time32(Uint32(6)),
+                    vec![HashedId8(FixedOctetString::from([1; 8]))],
+                ),
+            )),
+            CRL,
+        );
+        check(
+            EtsiTs102941Data::new(EtsiTs102941DataContent::certificateTrustListRca(
+                CtlFormat::new(
+                    Integer::from(1),
+                    Time32(Uint32(7)),
+                    false,
+                    3,
+                    vec![
+                        CtlCommand::add(CtlEntry::dc(DcEntry {
+                            url: Ia5String::try_from("https://dc/".to_string()).unwrap(),
+                            cert: vec![HashedId8(FixedOctetString::from([2; 8]))],
+                        })),
+                        CtlCommand::delete(CtlDelete::cert(HashedId8(FixedOctetString::from(
+                            [3; 8],
+                        )))),
+                    ],
+                ),
+            )),
+            RCA_CTL,
+        );
+        // EcSignature: encryptedEcSignature is alternative 0 (80h)
+        use crate::security::security_asn::ieee1609_dot2::{
+            EncryptedData, EncryptedDataEncryptionKey, Ieee1609Dot2Content, One28BitCcmCiphertext,
+            PKRecipientInfo, RecipientInfo, SequenceOfRecipientInfo, SymmetricCiphertext,
+        };
+        use crate::security::security_asn::ieee1609_dot2_base_types::{
+            EciesP256EncryptedKey, Opaque, Uint8,
+        };
+        let encrypted = Ieee1609Dot2Data::new(
+            Uint8(3),
+            Ieee1609Dot2Content::encryptedData(EncryptedData::new(
+                SequenceOfRecipientInfo(vec![RecipientInfo::certRecipInfo(PKRecipientInfo::new(
+                    HashedId8(FixedOctetString::from([0x66; 8])),
+                    EncryptedDataEncryptionKey::eciesNistP256(EciesP256EncryptedKey {
+                        v: EccP256CurvePoint::compressed_y_0(vec![0x77; 32].into()),
+                        c: vec![0x88; 16].into(),
+                        t: vec![0x99; 16].into(),
+                    }),
+                ))]),
+                SymmetricCiphertext::aes128ccm(One28BitCcmCiphertext::new(
+                    vec![0x12; 12].into(),
+                    Opaque(vec![0x34; 20].into()),
+                )),
+            )),
+        );
+        check(
+            EtsiTs102941Data::new(EtsiTs102941DataContent::authorizationRequest(
+                InnerAtRequest::new(
+                    PublicKeys::new(
+                        PublicVerificationKey::ecdsaNistP256(EccP256CurvePoint::compressed_y_1(
+                            vec![0x44; 32].into(),
+                        )),
+                        None,
+                    ),
+                    FixedOctetString::from([0x55; 32]),
+                    SharedAtRequest::new(
+                        HashedId8(FixedOctetString::from([0xAA; 8])),
+                        FixedOctetString::from([0xBB; 16]),
+                        TS103097V131,
+                        CertificateSubjectAttributes::new(
+                            None,
+                            None,
+                            None,
+                            None,
+                            Some(SequenceOfPsidSsp(vec![psid_ssp(36, None)])),
+                            None,
+                        ),
+                    ),
+                    EcSignature::encryptedEcSignature(encrypted),
+                ),
+            )),
+            AT_REQUEST,
+        );
     }
 }

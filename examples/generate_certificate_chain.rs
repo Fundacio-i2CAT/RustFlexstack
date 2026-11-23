@@ -32,6 +32,9 @@ use rustflexstack::security::security_asn::ieee1609_dot2_base_types::{
 const ITS_AID_CAM: u64 = 36;
 const ITS_AID_DENM: u64 = 37;
 const ITS_AID_VAM: u64 = 638;
+/// GN-MGMT: signs the secured Beacons and LS Request / Reply of the GeoNetworking
+/// router, SSP absent (ETSI TS 103 836-4-1 V2.2.1 tables 22, 24 and 26).
+const ITS_AID_GN_MGMT: u64 = 141;
 
 /// ITS epoch: 2004-01-01 00:00:00 UTC as a UNIX timestamp.
 const ITS_EPOCH_UNIX: u64 = 1_072_915_200;
@@ -107,7 +110,7 @@ fn main() {
         ValidityPeriod::new(its_time32_now(), Duration::years(Uint16(20))),
         None,                                               // region
         None,                                               // assuranceLevel
-        Some(app_permissions(&[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM])), // appPermissions
+        Some(app_permissions(&[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM, ITS_AID_GN_MGMT])), // appPermissions
         Some(cert_issue_permissions_all(2)),                 // certIssuePermissions
         None,                                               // certRequestPermissions
         None,                                               // canRequestRollover
@@ -136,9 +139,9 @@ fn main() {
         ValidityPeriod::new(its_time32_now(), Duration::years(Uint16(10))),
         None,
         None,
-        Some(app_permissions(&[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM])),
+        Some(app_permissions(&[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM, ITS_AID_GN_MGMT])),
         Some(cert_issue_permissions_explicit(
-            &[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM],
+            &[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM, ITS_AID_GN_MGMT],
             1,
         )),
         None,
@@ -170,7 +173,7 @@ fn main() {
             ValidityPeriod::new(its_time32_now(), Duration::years(Uint16(5))),
             None,
             None,
-            Some(app_permissions(&[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM])),
+            Some(app_permissions(&[ITS_AID_CAM, ITS_AID_DENM, ITS_AID_VAM, ITS_AID_GN_MGMT])),
             None, // no certIssuePermissions for AT
             None,
             None,

@@ -6,7 +6,7 @@
 //! - Known authorization authorities.
 //! - Known root CA certificates.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::security::certificate::{Certificate, OwnCertificate};
 use crate::security::ecdsa_backend::EcdsaBackend;
@@ -18,6 +18,8 @@ pub struct CertificateLibrary {
     pub known_authorization_tickets: HashMap<[u8; 8], Certificate>,
     pub known_authorization_authorities: HashMap<[u8; 8], Certificate>,
     pub known_root_certificates: HashMap<[u8; 8], Certificate>,
+    /// HashedId8 of revoked CA certificates (CRL, ETSI TS 102 941 clause 6.3.6).
+    pub revoked: HashSet<[u8; 8]>,
 }
 
 impl CertificateLibrary {
@@ -33,6 +35,7 @@ impl CertificateLibrary {
             known_authorization_tickets: HashMap::new(),
             known_authorization_authorities: HashMap::new(),
             known_root_certificates: HashMap::new(),
+            revoked: HashSet::new(),
         };
         for c in root_certificates {
             lib.add_root_certificate(backend, c);
@@ -54,6 +57,9 @@ impl CertificateLibrary {
             IssuerIdentifier::sha256AndDigest(h) | IssuerIdentifier::sha384AndDigest(h) => {
                 let mut key = [0u8; 8];
                 key.copy_from_slice(h.0.as_ref());
+                if self.revoked.contains(&key) {
+                    return None;
+                }
                 self.known_root_certificates
                     .get(&key)
                     .or_else(|| self.known_authorization_authorities.get(&key))
@@ -64,6 +70,9 @@ impl CertificateLibrary {
 
     /// Add a root CA certificate if it verifies (self-signed).
     pub fn add_root_certificate(&mut self, backend: &EcdsaBackend, cert: Certificate) {
+        if self.revoked.contains(&cert.as_hashedid8()) {
+            return;
+        }
         if cert.verify(backend) {
             self.known_root_certificates
                 .insert(cert.as_hashedid8(), cert);
@@ -93,6 +102,66 @@ impl CertificateLibrary {
     }
 
     /// Add an own certificate if its issuer is known and it verifies.
+    /// Add a CA certificate received from a peer (P2PCD, IEEE 1609.2 clause
+    /// 8.2.4) when its issuer is a known root and its signature verifies;
+    /// returns true when it is (now) known.
+    pub fn learn_ca_certificate(&mut self, backend: &EcdsaBackend, cert: Certificate) -> bool {
+        let h = cert.as_hashedid8();
+        if self.known_authorization_authorities.contains_key(&h) {
+            return true;
+        }
+        let issuer = match self.get_issuer_certificate(&cert) {
+            Some(issuer)
+                if self
+                    .known_root_certificates
+                    .contains_key(&issuer.as_hashedid8()) =>
+            {
+                issuer.clone()
+            }
+            _ => return false,
+        };
+        self.add_authorization_authority(backend, Certificate::from_asn(cert.inner, Some(issuer)));
+        self.known_authorization_authorities.contains_key(&h)
+    }
+
+    /// Forget a root or AA certificate (e.g. deleted from a CTL) and every
+    /// certificate issued under it.
+    pub fn remove_certificate(&mut self, h: &[u8; 8]) {
+        self.known_root_certificates.remove(h);
+        self.known_authorization_authorities.remove(h);
+        self.purge();
+    }
+
+    /// Apply a CRL: the CA certificates `revoked` are revoked permanently (ETSI
+    /// TS 102 941 V2.2.1 clause 6.3.3); they and every certificate issued under
+    /// them are no longer trusted, and they cannot be re-added.
+    pub fn revoke(&mut self, revoked: &HashSet<[u8; 8]>) {
+        self.revoked.extend(revoked.iter().copied());
+        for h in revoked {
+            self.known_root_certificates.remove(h);
+            self.known_authorization_authorities.remove(h);
+        }
+        self.purge();
+    }
+
+    /// Drop the AAs and ATs whose issuer is no longer known.
+    fn purge(&mut self) {
+        let issued_by = |cert: &Certificate,
+                         issuers: &HashMap<[u8; 8], Certificate>,
+                         revoked: &HashSet<[u8; 8]>| {
+            cert.get_issuer_hashedid8()
+                .is_some_and(|i| !revoked.contains(&i) && issuers.contains_key(&i))
+        };
+        let roots = self.known_root_certificates.clone();
+        let revoked = self.revoked.clone();
+        self.known_authorization_authorities
+            .retain(|_, c| issued_by(c, &roots, &revoked));
+        let mut cas = roots;
+        cas.extend(self.known_authorization_authorities.clone());
+        self.known_authorization_tickets
+            .retain(|_, c| issued_by(c, &cas, &revoked));
+    }
+
     pub fn add_own_certificate(&mut self, backend: &EcdsaBackend, cert: OwnCertificate) {
         if self.get_issuer_certificate(&cert.cert).is_some() && cert.verify(backend) {
             self.own_certificates.insert(cert.as_hashedid8(), cert);
@@ -113,6 +182,12 @@ impl CertificateLibrary {
         backend: &EcdsaBackend,
     ) -> Option<Certificate> {
         if certs.is_empty() {
+            return None;
+        }
+        if certs[1..]
+            .iter()
+            .any(|c| self.revoked.contains(&c.as_hashedid8()))
+        {
             return None;
         }
         if certs.len() == 1 {
@@ -198,6 +273,39 @@ mod tests {
         PublicVerificationKey, SequenceOfPsidSsp, Time32, Uint16, Uint32, ValidityPeriod,
     };
     use rasn::prelude::*;
+
+    /// Canonical OER (X.696): the DEFAULT components of PsidGroupPermissions
+    /// (minChainLength 1, chainLengthRange 0, eeType {app}) are not encoded.
+    /// Same vector in FlexStack (test_canonical_oer.py).
+    #[test]
+    fn psid_group_permissions_encoding_is_canonical() {
+        let app = {
+            let mut bits = FixedBitString::<8>::default();
+            bits.set(0, true);
+            EndEntityType(bits)
+        };
+        let group = |min: i64, range: i64, ee: EndEntityType| {
+            PsidGroupPermissions::new(
+                SubjectPermissions::all(()),
+                Integer::from(min),
+                Integer::from(range),
+                ee,
+            )
+        };
+        let hex = |g: &PsidGroupPermissions| -> String {
+            rasn::coer::encode(g)
+                .unwrap()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        };
+        assert_eq!(hex(&group(2, 0, app.clone())), "80810102");
+        assert_eq!(hex(&group(1, 0, app)), "0081");
+        let mut both = FixedBitString::<8>::default();
+        both.set(0, true);
+        both.set(1, true);
+        assert_eq!(hex(&group(2, 0, EndEntityType(both))), "a0810102c0");
+    }
 
     fn make_root_tbs() -> crate::security::security_asn::ieee1609_dot2::ToBeSignedCertificate {
         let validity = ValidityPeriod::new(Time32(Uint32(0)), AsnDuration::years(Uint16(30)));

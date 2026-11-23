@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2024 Fundació Privada Internet i Innovació Digital a Catalunya (i2CAT)
 
-//! GUC Extended Header — ETSI EN 302 636-4-1 V1.4.1 (2020-01) §9.8.2 (Table 11).
+//! GUC Extended Header — ETSI TS 103 836-4-1 V2.2.1 (2026-04) §9.8.2 (Table 11).
 //!
 //! Layout (48 bytes):
 //!   SN         2 octets

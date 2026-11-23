@@ -23,8 +23,8 @@ use std::thread;
 
 use super::btp_header::{BTPAHeader, BTPBHeader};
 use super::service_access_point::{BTPDataIndication, BTPDataRequest};
-use crate::geonet::mib::Mib;
-use crate::geonet::service_access_point::CommonNH;
+use crate::geonet::mib::{GnSecurity, Mib};
+use crate::geonet::service_access_point::{CommonNH, HeaderType};
 use crate::geonet::service_access_point::{GNDataIndication, GNDataRequest};
 
 // ------------------------------------------------------------------
@@ -35,6 +35,8 @@ pub enum BTPRouterInput {
     BTPDataRequest(BTPDataRequest),
     GNDataIndication(GNDataIndication),
     RegisterPort(u16, Sender<BTPDataIndication>),
+    /// A port whose service accepts unsecured packets with itsGnSecurity ENABLED.
+    RegisterUnsecuredPort(u16, Sender<BTPDataIndication>),
     UnregisterPort(u16),
     Shutdown,
 }
@@ -44,8 +46,11 @@ pub enum BTPRouterInput {
 // ------------------------------------------------------------------
 
 pub struct Router {
-    _mib: Mib,
+    mib: Mib,
     port_callbacks: HashMap<u16, Sender<BTPDataIndication>>,
+    /// Ports open to unsecured packets although itsGnSecurity is ENABLED (the
+    /// CRL / CTL broadcast, ETSI TS 103 601 V2.1.1 clause 5.4.2).
+    unsecured_ports: std::collections::HashSet<u16>,
     gn_request_tx: Sender<GNDataRequest>,
 }
 
@@ -71,6 +76,19 @@ impl BTPRouterHandle {
             .send(BTPRouterInput::RegisterPort(port, callback_tx));
     }
 
+    /// Register `port` for a service whose payload authenticates itself: its
+    /// unsecured packets are delivered although itsGnSecurity is ENABLED (an
+    /// unsecured packet to another port is then discarded).
+    pub fn register_port_accepting_unsecured(
+        &self,
+        port: u16,
+        callback_tx: Sender<BTPDataIndication>,
+    ) {
+        let _ = self
+            .input_tx
+            .send(BTPRouterInput::RegisterUnsecuredPort(port, callback_tx));
+    }
+
     pub fn unregister_port(&self, port: u16) {
         let _ = self.input_tx.send(BTPRouterInput::UnregisterPort(port));
     }
@@ -87,8 +105,9 @@ impl BTPRouterHandle {
 impl Router {
     pub fn new(mib: Mib, gn_request_tx: Sender<GNDataRequest>) -> Self {
         Router {
-            _mib: mib,
+            mib,
             port_callbacks: HashMap::new(),
+            unsecured_ports: Default::default(),
             gn_request_tx,
         }
     }
@@ -118,8 +137,13 @@ impl Router {
                 Ok(BTPRouterInput::RegisterPort(port, tx)) => {
                     self.port_callbacks.insert(port, tx);
                 }
+                Ok(BTPRouterInput::RegisterUnsecuredPort(port, tx)) => {
+                    self.port_callbacks.insert(port, tx);
+                    self.unsecured_ports.insert(port);
+                }
                 Ok(BTPRouterInput::UnregisterPort(port)) => {
                     self.port_callbacks.remove(&port);
+                    self.unsecured_ports.remove(&port);
                 }
                 Ok(BTPRouterInput::Shutdown) | Err(_) => break,
             }
@@ -155,7 +179,14 @@ impl Router {
             security_permissions: request.security_permissions.clone(),
             max_hop_limit: request.gn_max_hop_limit,
             max_packet_lifetime: request.gn_max_packet_lifetime,
-            destination: request.destination,
+            // EN 302 636-5-1 table 6: Destination address = GN Destination address
+            // (GeoUnicast); `destination` takes precedence when set.
+            destination: request
+                .destination
+                .or(
+                    (request.gn_packet_transport_type.header_type == HeaderType::GeoUnicast)
+                        .then_some(request.gn_destination_address),
+                ),
             length: payload.len() as u16,
             area: request.gn_area,
             data: payload,
@@ -177,9 +208,7 @@ impl Router {
         let indication = BTPDataIndication::initialize_with_gn_data_indication(&gn_ind)
             .set_destination_port_and_info(header.destination_port, header.destination_port_info);
 
-        if let Some(tx) = self.port_callbacks.get(&indication.destination_port) {
-            let _ = tx.send(indication);
-        }
+        self.deliver(&gn_ind, indication);
     }
 
     fn btpa_data_indication(&mut self, gn_ind: GNDataIndication) {
@@ -193,6 +222,18 @@ impl Router {
             .set_destination_port_and_info(header.destination_port(), 0);
         indication.source_port = header.source_port();
 
+        self.deliver(&gn_ind, indication);
+    }
+
+    /// Hand `indication` to the service of its port. With itsGnSecurity ENABLED an
+    /// unsecured packet reaches only a port open to unsecured packets.
+    fn deliver(&self, gn_ind: &GNDataIndication, indication: BTPDataIndication) {
+        if gn_ind.security.is_none()
+            && self.mib.itsGnSecurity == GnSecurity::Enabled
+            && !self.unsecured_ports.contains(&indication.destination_port)
+        {
+            return;
+        }
         if let Some(tx) = self.port_callbacks.get(&indication.destination_port) {
             let _ = tx.send(indication);
         }
@@ -237,8 +278,10 @@ mod tests {
                 tc_id: 0,
             },
             destination_area: None,
+            destination: None,
             remaining_packet_lifetime: None,
             remaining_hop_limit: None,
+            security: None,
             length: data.len() as u16,
             data,
         }
@@ -285,6 +328,33 @@ mod tests {
         handle.shutdown();
     }
 
+    /// Destination port, destination port info and payload
+    /// of a BTP-B packet built by the router (EN 302 636-5-1 clause 7.3.2).
+    #[test]
+    fn btpb_request_with_destination_port_info() {
+        let mib = make_mib();
+        let (handle, gn_rx) = Router::spawn(mib);
+
+        let mut req = BTPDataRequest::new();
+        req.btp_type = CommonNH::BtpB;
+        req.destination_port = 2001;
+        req.destination_port_info = 0x1234;
+        req.gn_packet_transport_type = PacketTransportType {
+            header_type: HeaderType::Tsb,
+            header_sub_type: HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop),
+        };
+        req.data = vec![0xCA, 0xFE];
+        req.length = 2;
+
+        handle.send_btp_data_request(req);
+
+        let gn_req = gn_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(gn_req.upper_protocol_entity, CommonNH::BtpB);
+        assert_eq!(gn_req.data, vec![0x07, 0xD1, 0x12, 0x34, 0xCA, 0xFE]);
+
+        handle.shutdown();
+    }
+
     #[test]
     fn btpa_request_produces_gn_request() {
         let mib = make_mib();
@@ -310,6 +380,33 @@ mod tests {
         assert_eq!(btpa.destination_port(), 2001);
         assert_eq!(btpa.source_port(), 3000);
 
+        handle.shutdown();
+    }
+
+    /// With itsGnSecurity ENABLED an unsecured packet (no security indication)
+    /// reaches only a port registered with `register_port_accepting_unsecured`
+    /// (the CRL / CTL broadcast, ETSI TS 103 601 V2.1.1 clause 5.4.2).
+    #[test]
+    fn unsecured_packet_only_to_ports_open_to_it() {
+        let mut mib = make_mib();
+        mib.itsGnSecurity = GnSecurity::Enabled;
+        let (handle, _gn_rx) = Router::spawn(mib);
+        let (closed_tx, closed_rx) = mpsc::channel();
+        let (open_tx, open_rx) = mpsc::channel();
+        handle.register_port(2001, closed_tx);
+        handle.register_port_accepting_unsecured(2015, open_tx);
+        for port in [2001u16, 2015] {
+            let mut payload = BTPBHeader {
+                destination_port: port,
+                destination_port_info: 0,
+            }
+            .encode()
+            .to_vec();
+            payload.push(0xCC);
+            handle.send_gn_data_indication(make_gn_data_indication(CommonNH::BtpB, payload));
+        }
+        assert!(open_rx.recv_timeout(Duration::from_secs(1)).is_ok());
+        assert!(closed_rx.recv_timeout(Duration::from_millis(200)).is_err());
         handle.shutdown();
     }
 

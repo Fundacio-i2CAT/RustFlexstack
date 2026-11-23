@@ -73,6 +73,13 @@ pub struct RawLinkLayer {
     mac_address: [u8; 6],
     /// Shared stop flag.  Setting this to `true` causes the RX thread to exit.
     stop_flag: Arc<AtomicBool>,
+    /// Optional channel receiving GN payloads together with the Ethernet
+    /// source address (the previous sender, used by the GeoNetworking CBF
+    /// algorithms); when set it replaces `gn_tx` for received frames.
+    sender_tx: Option<Sender<(Vec<u8>, [u8; 6])>>,
+    /// Optional channel of GN payloads addressed to a next hop (destination
+    /// MAC address), e.g. from `Router::set_unicast_sender`.
+    unicast_rx: Option<Receiver<(Vec<u8>, [u8; 6])>>,
 }
 
 impl RawLinkLayer {
@@ -94,7 +101,31 @@ impl RawLinkLayer {
             iface_name: iface_name.to_string(),
             mac_address,
             stop_flag: Arc::new(AtomicBool::new(false)),
+            sender_tx: None,
+            unicast_rx: None,
         }
+    }
+
+    /// Deliver received GN payloads with the Ethernet source address of the
+    /// frame, e.g. to `RouterHandle::send_incoming_packet_from`.
+    pub fn with_sender_channel(mut self, sender_tx: Sender<(Vec<u8>, [u8; 6])>) -> Self {
+        self.sender_tx = Some(sender_tx);
+        self
+    }
+
+    /// Transmit the GN payloads of unicast forwarding steps with their
+    /// next-hop MAC address (ETSI TS 103 836-4-1 clause E.2, NH_LL_ADDR),
+    /// e.g. from `Router::set_unicast_sender`. The frames of `gn_rx` keep the
+    /// broadcast address.
+    pub fn with_unicast_receiver(mut self, unicast_rx: Receiver<(Vec<u8>, [u8; 6])>) -> Self {
+        self.unicast_rx = Some(unicast_rx);
+        self
+    }
+
+    /// MID of GN over ITS-G5: the MAC address of the interface (ETSI TS
+    /// 103 836-4-2 clause 6.1).
+    pub fn media_dependent_mid(&self) -> crate::geonet::gn_address::MID {
+        crate::geonet::gn_address::MID::from_its_g5_mac(self.mac_address)
     }
 
     /// Return a clone of the stop flag so the caller can signal shutdown.
@@ -114,6 +145,8 @@ impl RawLinkLayer {
             iface_name,
             mac_address,
             stop_flag,
+            sender_tx,
+            unicast_rx,
         } = self;
 
         let iface_name_rx = iface_name.clone();
@@ -227,7 +260,16 @@ impl RawLinkLayer {
                 if !is_geonet_frame(frame) {
                     continue;
                 }
-                let _ = gn_tx.send(frame[14..].to_vec());
+                match &sender_tx {
+                    Some(sender_tx) => {
+                        let mut source = [0u8; 6];
+                        source.copy_from_slice(&frame[6..12]);
+                        let _ = sender_tx.send((frame[14..].to_vec(), source));
+                    }
+                    None => {
+                        let _ = gn_tx.send(frame[14..].to_vec());
+                    }
+                }
             }
 
             unsafe {
@@ -235,38 +277,40 @@ impl RawLinkLayer {
             }
         });
 
-        // ── TX thread: GeoNetworking ──► NIC ─────────────────────────────────
+        // ── TX threads: GeoNetworking ──► NIC ────────────────────────────────
+        if let Some(unicast_rx) = unicast_rx {
+            let iface = iface_name_tx.clone();
+            thread::spawn(move || transmit_loop(&iface, mac_address, || unicast_rx.recv().ok()));
+        }
         thread::spawn(move || {
-            let interface = match find_interface(&iface_name_tx) {
-                Some(i) => i,
-                None => {
-                    return;
-                }
-            };
-            let config = Config {
-                write_timeout: None,
-                ..Config::default()
-            };
-            let (mut tx, _rx) = match datalink::channel(&interface, config) {
-                Ok(Channel::Ethernet(t, r)) => (t, r),
-                Ok(_) => {
-                    return;
-                }
-                Err(_) => {
-                    return;
-                }
-            };
-
-            // Loop until the GN router drops the sender side of the channel
-            while let Ok(gn_payload) = gn_rx.recv() {
-                // GeoNetworking always broadcasts at L2; unicast forwarding
-                // requires a neighbour table lookup (not yet implemented).
-                let dest_mac: [u8; 6] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
-                let frame = build_eth_frame(dest_mac, mac_address, &gn_payload);
-                // send_to returns Option<io::Result<()>>; None means no-op.
-                let _ = tx.send_to(&frame, None);
-            }
+            transmit_loop(&iface_name_tx, mac_address, || {
+                gn_rx.recv().ok().map(|payload| (payload, [0xFF; 6]))
+            })
         });
+    }
+}
+
+/// Send `(GN payload, destination MAC)` items until `next` returns `None`
+/// (the router dropped its sender).
+fn transmit_loop(
+    iface_name: &str,
+    mac_address: [u8; 6],
+    mut next: impl FnMut() -> Option<(Vec<u8>, [u8; 6])>,
+) {
+    let Some(interface) = find_interface(iface_name) else {
+        return;
+    };
+    let config = Config {
+        write_timeout: None,
+        ..Config::default()
+    };
+    let Ok(Channel::Ethernet(mut tx, _rx)) = datalink::channel(&interface, config) else {
+        return;
+    };
+    while let Some((gn_payload, dest_mac)) = next() {
+        let frame = build_eth_frame(dest_mac, mac_address, &gn_payload);
+        // send_to returns Option<io::Result<()>>; None means no-op.
+        let _ = tx.send_to(&frame, None);
     }
 }
 

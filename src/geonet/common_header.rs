@@ -3,7 +3,8 @@
 
 use super::mib::Mib;
 use super::service_access_point::{
-    CommonNH, GNDataRequest, HeaderSubType, HeaderType, TrafficClass, UnspecifiedHST,
+    CommonNH, GNDataRequest, HeaderSubType, HeaderType, TopoBroadcastHST, TrafficClass,
+    UnspecifiedHST,
 };
 use std::cmp::PartialEq;
 
@@ -29,8 +30,18 @@ impl CommonHeader {
             hst: request.packet_transport_type.header_sub_type.clone(),
             tc: request.traffic_class,
             flags: (mib.itsGnIsMobile.encode()) << 7,
-            pl: request.length,
-            mhl: request.max_hop_limit,
+            // PL: length of the payload carried after the GN headers (clause 9.7.4)
+            pl: request.data.len() as u16,
+            // SHB: MHL = 1 (clause 10.3.10.2, table 36)
+            mhl: if matches!(
+                request.packet_transport_type.header_sub_type,
+                HeaderSubType::TopoBroadcast(TopoBroadcastHST::SingleHop)
+            ) && request.packet_transport_type.header_type == HeaderType::Tsb
+            {
+                1
+            } else {
+                request.max_hop_limit
+            },
             reserved2: 0,
         }
     }
@@ -185,6 +196,7 @@ mod tests {
     fn common_header_payload_length_encoding() {
         let mib = Mib::new();
         let mut req = make_gn_request();
+        req.data = vec![0; 1024]; // PL is the length of the payload carried
         req.length = 1024;
         let ch = CommonHeader::initialize_with_request(&req, &mib);
         let bytes = ch.encode();

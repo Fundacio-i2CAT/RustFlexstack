@@ -13,11 +13,10 @@
 
 pub use super::cam_bindings::cam_pdu_descriptions::{
     BasicVehicleContainerHighFrequency, BasicVehicleContainerLowFrequency, CamParameters,
-    CamPayload, EHorizonLocationSharingContainer, ExtensionContainerId,
-    GeneralizedLanePositionsContainer, HighFrequencyContainer, LowFrequencyContainer,
-    PathPredictionContainer, SpecialVehicleContainer, TwoWheelerContainer,
-    VehicleMovementControlContainer, VeryLowFrequencyContainer, WrappedExtensionContainer,
-    WrappedExtensionContainers, CAM,
+    CamPayload, EHorizonLocationSharingContainer, ExtensionContainerId, HighFrequencyContainer,
+    LowFrequencyContainer, PathPredictionContainer, RoadLanePositionsContainer,
+    SpecialVehicleContainer, TwoWheelerContainer, VehicleMovementControlContainer,
+    VeryLowFrequencyContainer, WrappedExtensionContainer, WrappedExtensionContainers, CAM,
 };
 pub use super::cam_bindings::etsi_its_cdd::{
     AccelerationComponent, AccelerationConfidence, AccelerationValue, Altitude, AltitudeConfidence,
@@ -34,13 +33,19 @@ pub use super::cam_bindings::etsi_its_cdd::{
 use rasn::prelude::*;
 use std::ops::{Add, Sub};
 
-// ─── Extension container IDs (§6.1.3) ────────────────────────────────────────
+// ─── Extension container IDs (§6.1.2) ────────────────────────────────────────
 
 pub const EXTENSION_CONTAINER_ID_TWO_WHEELER: u8 = 1;
 pub const EXTENSION_CONTAINER_ID_E_HORIZON: u8 = 2;
 pub const EXTENSION_CONTAINER_ID_VLF: u8 = 3;
 pub const EXTENSION_CONTAINER_ID_PATH_PREDICTION: u8 = 4;
-pub const EXTENSION_CONTAINER_ID_GEN_LANE_POS: u8 = 5;
+pub const EXTENSION_CONTAINER_ID_ROAD_LANE_POS: u8 = 5;
+/// Pre-v2.3 name of [`EXTENSION_CONTAINER_ID_ROAD_LANE_POS`].
+#[deprecated(note = "renamed to EXTENSION_CONTAINER_ID_ROAD_LANE_POS in CAM v2.3")]
+pub const EXTENSION_CONTAINER_ID_GEN_LANE_POS: u8 = EXTENSION_CONTAINER_ID_ROAD_LANE_POS;
+/// Pre-v2.3 (TS 103 900 V2.3.1) name of [`RoadLanePositionsContainer`].
+#[deprecated(note = "renamed to RoadLanePositionsContainer in CAM v2.3 (TS 103 900 V2.3.1)")]
+pub type GeneralizedLanePositionsContainer = RoadLanePositionsContainer;
 pub const EXTENSION_CONTAINER_ID_VEHICLE_MOVEMENT_CONTROL: u8 = 6;
 
 /// High-level enum wrapping the six ETSI extension containers.
@@ -50,7 +55,7 @@ pub enum ExtensionContainer {
     EHorizonLocationSharing(EHorizonLocationSharingContainer),
     VeryLowFrequency(VeryLowFrequencyContainer),
     PathPrediction(PathPredictionContainer),
-    GeneralizedLanePositions(GeneralizedLanePositionsContainer),
+    RoadLanePositions(RoadLanePositionsContainer),
     VehicleMovementControl(VehicleMovementControlContainer),
 }
 
@@ -61,7 +66,7 @@ impl ExtensionContainer {
             Self::EHorizonLocationSharing(_) => EXTENSION_CONTAINER_ID_E_HORIZON,
             Self::VeryLowFrequency(_) => EXTENSION_CONTAINER_ID_VLF,
             Self::PathPrediction(_) => EXTENSION_CONTAINER_ID_PATH_PREDICTION,
-            Self::GeneralizedLanePositions(_) => EXTENSION_CONTAINER_ID_GEN_LANE_POS,
+            Self::RoadLanePositions(_) => EXTENSION_CONTAINER_ID_ROAD_LANE_POS,
             Self::VehicleMovementControl(_) => EXTENSION_CONTAINER_ID_VEHICLE_MOVEMENT_CONTROL,
         }
     }
@@ -276,9 +281,9 @@ impl CamCoder {
             ExtensionContainer::PathPrediction(c) => rasn::uper::encode(c)
                 .map(|b| b.to_vec())
                 .map_err(|e| format!("PathPredictionContainer encode error: {e}")),
-            ExtensionContainer::GeneralizedLanePositions(c) => rasn::uper::encode(c)
+            ExtensionContainer::RoadLanePositions(c) => rasn::uper::encode(c)
                 .map(|b| b.to_vec())
-                .map_err(|e| format!("GeneralizedLanePositionsContainer encode error: {e}")),
+                .map_err(|e| format!("RoadLanePositionsContainer encode error: {e}")),
             ExtensionContainer::VehicleMovementControl(c) => rasn::uper::encode(c)
                 .map(|b| b.to_vec())
                 .map_err(|e| format!("VehicleMovementControlContainer encode error: {e}")),
@@ -308,10 +313,10 @@ impl CamCoder {
                     .map(ExtensionContainer::PathPrediction)
                     .map_err(|e| format!("PathPredictionContainer decode error: {e}"))
             }
-            EXTENSION_CONTAINER_ID_GEN_LANE_POS => {
-                rasn::uper::decode::<GeneralizedLanePositionsContainer>(data)
-                    .map(ExtensionContainer::GeneralizedLanePositions)
-                    .map_err(|e| format!("GeneralizedLanePositionsContainer decode error: {e}"))
+            EXTENSION_CONTAINER_ID_ROAD_LANE_POS => {
+                rasn::uper::decode::<RoadLanePositionsContainer>(data)
+                    .map(ExtensionContainer::RoadLanePositions)
+                    .map_err(|e| format!("RoadLanePositionsContainer decode error: {e}"))
             }
             EXTENSION_CONTAINER_ID_VEHICLE_MOVEMENT_CONTROL => {
                 rasn::uper::decode::<VehicleMovementControlContainer>(data)
@@ -353,6 +358,45 @@ impl CamCoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// UPER of WrappedExtensionContainers with one VeryLowFrequencyContainer
+    /// (id 3, all fields absent: containerData = 00), X.691: SEQUENCE OF
+    /// extension bit 0, count - 1 = 000 (SIZE(1..8,...)); containerId extension
+    /// bit 0 and 3 - 1 = 0010 (INTEGER (1..16,...)); open type: length 01, 00.
+    /// Same octets as FlexStack (Python) and asn1c.
+    #[test]
+    fn wrapped_extension_containers_uper() {
+        use crate::facilities::ca_basic_service::cam_bindings::cam_pdu_descriptions::{
+            ExtensionContainerId, WrappedExtensionContainer, WrappedExtensionContainers,
+        };
+        let containers = WrappedExtensionContainers(vec![WrappedExtensionContainer::new(
+            ExtensionContainerId(Integer::from(3)),
+            Any::new(vec![0x00]),
+        )]);
+        let encoded = rasn::uper::encode(&containers).unwrap();
+        assert_eq!(encoded, vec![0x01, 0x00, 0x80, 0x00]);
+    }
+
+    /// A CAM with a VeryLowFrequencyContainer as extension container
+    /// (extension addition of CamParameters, X.691 clause 19.9: an open type
+    /// holding the value above), as FlexStack Python sends it. Frozen vector,
+    /// also in FlexStack (test_cam_coder). Before the field constraint fix, Rust
+    /// refused it and encoded the extension as 4 octets of another value.
+    #[test]
+    fn cam_with_extension_container_matches_x691() {
+        let frozen = [
+            0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x2f, 0x20, 0x80, 0x59, 0xca, 0x02, 0x27, 0xed,
+            0x92, 0x9d, 0xf5, 0xe0, 0xc8, 0x0c, 0x80, 0x01, 0xb7, 0x74, 0x3e, 0x00, 0x3d, 0xff,
+            0xc1, 0xf4, 0x7e, 0x3f, 0xe9, 0xed, 0x07, 0x37, 0xfe, 0xeb, 0xff, 0xf6, 0x00, 0x41,
+            0x00, 0x40, 0x20, 0x00, 0x00,
+        ];
+        let cam: Cam = rasn::uper::decode(&frozen).unwrap();
+        let ext = cam.cam.cam_parameters.extension_containers.clone().unwrap();
+        assert_eq!(ext.0.len(), 1);
+        assert_eq!(ext.0[0].container_id.0, Integer::from(3));
+        assert_eq!(ext.0[0].container_data.as_bytes(), &[0x00]);
+        assert_eq!(rasn::uper::encode(&cam).unwrap(), frozen.to_vec());
+    }
 
     #[test]
     fn generation_delta_time_set_in_normal_timestamp() {

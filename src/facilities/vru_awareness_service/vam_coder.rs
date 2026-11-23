@@ -26,13 +26,13 @@ pub use super::vam_bindings::vam_pdu_descriptions::{
 
 // ─── GenerationDeltaTime helpers ─────────────────────────────────────────────
 
-/// ITS epoch offset from UNIX epoch in milliseconds
-/// (2004-01-01T00:00:00 UTC = 1 072 911 600 s).
-const ITS_EPOCH_MS: u64 = 1_072_911_600_000;
+/// ITS epoch (2004-01-01T00:00:00Z) as a Unix timestamp in milliseconds.
+#[cfg(test)]
+const ITS_EPOCH_MS: u64 = crate::security::time_service::ITS_EPOCH_MS;
 
 /// Compute a [`GenerationDeltaTime`] from a UNIX timestamp in milliseconds.
 pub fn generation_delta_time_from_unix_ms(unix_ms: u64) -> GenerationDeltaTime {
-    let tai_ms = unix_ms.saturating_sub(ITS_EPOCH_MS);
+    let tai_ms = crate::security::time_service::unix_ms_to_its_ms(unix_ms);
     GenerationDeltaTime((tai_ms % 65_536) as u16)
 }
 
@@ -100,13 +100,14 @@ mod tests {
 
     #[test]
     fn generation_delta_time_from_unix_ms_basic() {
+        // TimestampIts counts TAI ms: 2 s after the epoch plus 5 leap seconds.
         let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 2000);
-        assert_eq!(gdt.0, 2000);
+        assert_eq!(gdt.0, 7000);
     }
 
     #[test]
     fn generation_delta_time_wraps() {
-        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 65_536);
+        let gdt = generation_delta_time_from_unix_ms(ITS_EPOCH_MS + 65_536 - 5_000);
         assert_eq!(gdt.0, 0);
     }
 
